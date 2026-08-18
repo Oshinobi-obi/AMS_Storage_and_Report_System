@@ -1,7 +1,58 @@
 ﻿@page "/"
 
-<PageTitle>Home</PageTitle>
+<PageTitle>StockWatch — Asset Management Section</PageTitle>
 
-<h1>Hello, world!</h1>
+<div class="landing">
 
-Welcome to your new app.
+    <header class="topbar">
+        <div class="brand">
+            <span class="brand-mark">AMS</span>
+            <span class="brand-text">Asset Management Section</span>
+        </div>
+        <nav class="topnav">
+            <a href="/login" class="nav-cta">Sign in</a>
+        </nav>
+    </header>
+
+    <main class="hero">
+        <p class="eyebrow">Asset Management Section</p>
+        <h1 class="title">StockWatch</h1>
+        <p class="subtitle">Stock Monitoring and Report Summary System</p>
+        <p class="lede">
+            Track stock levels, flag low inventory, and pull report summaries —
+            all from one place.
+        </p>
+        <div class="cta-row">
+            <a href="/dashboard" class="btn-primary">Open Dashboard</a>
+            <a href="/reports" class="btn-ghost">View Reports</a>
+        </div>
+    </main>
+
+    <section class="ledger" aria-label="System overview">
+        <div class="ledger-row">
+            <span class="ledger-label">Items Tracked</span>
+            <span class="ledger-value">—</span>
+        </div>
+        <div class="ledger-row">
+            <span class="ledger-label">Low Stock Alerts</span>
+            <span class="ledger-value">—</span>
+        </div>
+        <div class="ledger-row">
+            <span class="ledger-label">Pending Reports</span>
+            <span class="ledger-value">—</span>
+        </div>
+        <div class="ledger-row">
+            <span class="ledger-label">Last Sync</span>
+            <span class="ledger-value">—</span>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <span>&copy; @DateTime.Now.Year Asset Management Section - Mico D. Intertas</span>
+    </footer>
+
+</div>
+
+@code {
+
+}

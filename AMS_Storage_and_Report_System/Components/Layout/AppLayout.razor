@@ -1,0 +1,79 @@
+﻿@inherits LayoutComponentBase
+@using Microsoft.AspNetCore.Components.Authorization
+@inject AntiforgeryStateProvider AntiforgeryStateProvider
+
+<div class="app-shell">
+
+    <header class="app-topbar">
+        <button class="hamburger" @onclick="ToggleSidebar" aria-label="Toggle menu">
+            <span></span>
+            <span></span>
+            <span></span>
+        </button>
+        <span class="app-topbar-title">StockWatch</span>
+    </header>
+
+    <aside class="sidebar @(sidebarOpen ? "open" : "")">
+        <AuthorizeView>
+            <Authorized>
+                <div class="sidebar-user">
+                    <div class="avatar">@GetInitial(GetFullName(context))</div>
+                    <div class="sidebar-user-info">
+                        <div class="sidebar-user-name">@GetFullName(context)</div>
+                        <div class="sidebar-user-role">@GetRole(context)</div>
+                    </div>
+                </div>
+
+                <nav class="sidebar-nav">
+                    <a href="/dashboard">Dashboard</a>
+                    <a href="/inventory">Inventory</a>
+                    <a href="/property-documents">Property Documents</a>
+                    <a href="/reports">Reports</a>
+                    <a href="/profile">Profile</a>
+
+                    <AuthorizeView Roles="SuperAdmin" Context="superAdminContext">
+                        <Authorized>
+                            <a href="/account">Account</a>
+                        </Authorized>
+                    </AuthorizeView>
+
+                    <a href="/settings">Settings</a>
+                </nav>
+
+                <form method="post" action="/account/logout" class="sidebar-logout">
+                    <input type="hidden" name="__RequestVerificationToken"
+                           value="@AntiforgeryStateProvider.GetAntiforgeryToken()?.Value" />
+                    <button type="submit" class="logout-btn">Logout</button>
+                </form>
+            </Authorized>
+        </AuthorizeView>
+    </aside>
+
+    @if (sidebarOpen)
+    {
+        <div class="sidebar-backdrop" @onclick="ToggleSidebar"></div>
+    }
+
+    <main class="app-content">
+        @Body
+    </main>
+
+</div>
+
+@code {
+    private bool sidebarOpen = false;
+
+    private void ToggleSidebar()
+    {
+        sidebarOpen = !sidebarOpen;
+    }
+
+    private static string GetInitial(string? name) =>
+        string.IsNullOrEmpty(name) ? "?" : name.Substring(0, 1).ToUpper();
+
+    private static string GetFullName(AuthenticationState state) =>
+        state.User.FindFirst("FullName")?.Value ?? state.User.Identity?.Name ?? "Unknown";
+
+    private static string GetRole(AuthenticationState state) =>
+        state.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";
+}

@@ -1,0 +1,60 @@
+﻿@page "/login"
+@layout EmptyLayout
+@inject AntiforgeryStateProvider AntiforgeryStateProvider
+
+<PageTitle>Sign In — Asset Management Section</PageTitle>
+
+<div class="login-page">
+    <div class="login-card">
+
+        <div class="login-brand">
+            <span class="brand-mark">AMS</span>
+            <span class="brand-text">Asset Management Section</span>
+        </div>
+
+        <h1 class="login-title">Sign in to StockWatch</h1>
+        <p class="login-subtitle">Stock Monitoring and Report Summary System</p>
+
+        @if (!string.IsNullOrEmpty(ErrorMessage))
+        {
+            <div class="login-error">@ErrorMessage</div>
+        }
+
+        <form method="post" action="/account/login">
+            <input type="hidden" name="__RequestVerificationToken"
+                   value="@AntiforgeryStateProvider.GetAntiforgeryToken()?.Value" />
+            <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+
+            <label class="field-label" for="username">Username</label>
+            <input class="field-input" type="text" id="username" name="username"
+                   autocomplete="username" required />
+
+            <label class="field-label" for="password">Password</label>
+            <div class="field-wrapper">
+                <input class="field-input" type="password" id="password" name="password"
+                       autocomplete="current-password" required />
+                <button type="button" class="toggle-password" onclick="togglePassword()"
+                        aria-label="Show password">
+                    <svg id="eye-icon" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                    </svg>
+                </button>
+            </div>
+
+            <button type="submit" class="btn-primary">Sign In</button>
+        </form>
+
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery]
+    public string? Error { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? ReturnUrl { get; set; }
+
+    private string? ErrorMessage => string.IsNullOrEmpty(Error) ? null : Uri.UnescapeDataString(Error);
+}

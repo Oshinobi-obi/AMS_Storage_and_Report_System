@@ -1,0 +1,414 @@
+﻿@page "/property-documents"
+@layout AppLayout
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using AMS_Storage_and_Report_System.Data
+@using AMS_Storage_and_Report_System.Models
+@inject AppDbContext Db
+@inject IWebHostEnvironment Env
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Property Documents — StockWatch</PageTitle>
+
+<div class="pd-header">
+    <h1 class="page-title">Property Documents</h1>
+    <button class="btn-primary" @onclick="OpenAddModal">Add File +</button>
+</div>
+
+<div class="filter-card">
+    <div class="filter-row">
+        <div class="field">
+            <label>Office:</label>
+            <select @bind="filterOfficeId" @bind:after="OnFilterOfficeChanged">
+                <option value="0">-- Select --</option>
+                @foreach (var o in offices)
+                {
+                    <option value="@o.OfficeId">@o.OfficeName (@o.OfficeAcronym)</option>
+                }
+            </select>
+        </div>
+
+        <div class="field">
+            <label>Property Document:</label>
+            <select @bind="filterDocumentType">
+                <option value="">-- Select --</option>
+                <option value="PAR">PAR</option>
+                <option value="ICS">ICS</option>
+                <option value="Return Slip">Return Slip</option>
+            </select>
+        </div>
+
+        <div class="field">
+            <label>Type of Property:</label>
+            <select @bind="filterPropertyTypeId">
+                <option value="0">-- Select --</option>
+                @foreach (var t in propertyTypes)
+                {
+                    <option value="@t.PropertyTypeId">@t.TypeName</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    <div class="filter-row">
+        <div class="field">
+            <label>RO Personnel:</label>
+            <select @bind="filterPersonnelId" @bind:after="OnFilterPersonnelChanged">
+                <option value="0">-- Select --</option>
+                @foreach (var p in filterPersonnelOptions)
+                {
+                    <option value="@p.PersonnelId">@p.FullName</option>
+                }
+            </select>
+        </div>
+
+        <div class="field">
+            <label>Position:</label>
+            <input type="text" value="@filterPosition" readonly />
+        </div>
+    </div>
+
+    <div class="filter-actions">
+        <button class="btn-primary" @onclick="RunFilter">Filter</button>
+    </div>
+</div>
+
+@if (results is not null)
+{
+    <div class="results-toolbar">
+        <span class="results-count">@results.Count result(s)</span>
+        @if (selectedIds.Count > 0)
+        {
+            <a class="btn-ghost" href="@BulkDownloadUrl" target="_blank">
+                Download Selected (@selectedIds.Count)
+            </a>
+        }
+    </div>
+
+    <table class="results-table">
+        <thead>
+            <tr>
+                <th></th>
+                <th>Document</th>
+                <th>Property Type</th>
+                <th>Office</th>
+                <th>RO Personnel</th>
+                <th>Position</th>
+                <th>Uploaded</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var doc in results)
+            {
+                <tr>
+                    <td>
+                        <input type="checkbox" checked="@selectedIds.Contains(doc.DocumentId)"
+                               @onchange="e => ToggleSelected(doc.DocumentId, (bool)e.Value!)" />
+                    </td>
+                    <td>@doc.DocumentType</td>
+                    <td>@doc.PropertyType?.TypeName</td>
+                    <td>@doc.Office?.OfficeAcronym</td>
+                    <td>@doc.Personnel?.FullName</td>
+                    <td>@doc.Personnel?.Position</td>
+                    <td>@doc.UploadedAt.ToString("MMM d, yyyy")</td>
+                    <td class="row-actions">
+                        <a href="/documents/view/@doc.DocumentId" target="_blank">View</a>
+                        <a href="/documents/download/@doc.DocumentId" target="_blank">Download</a>
+                        <button class="link-danger" @onclick="() => DeleteDocument(doc.DocumentId)">Delete</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@if (showAddModal)
+{
+    <div class="modal-backdrop" @onclick="CloseAddModal">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <h2 class="modal-title">Add Property Document</h2>
+
+            <div class="field">
+                <label>Office:</label>
+                <select @bind="newOfficeId" @bind:after="OnModalOfficeChanged">
+                    <option value="0">-- Select --</option>
+                    @foreach (var o in offices)
+                    {
+                        <option value="@o.OfficeId">@o.OfficeName (@o.OfficeAcronym)</option>
+                    }
+                </select>
+            </div>
+
+            <div class="field">
+                <label>Property Document:</label>
+                <select @bind="newDocumentType">
+                    <option value="">-- Select --</option>
+                    <option value="PAR">PAR</option>
+                    <option value="ICS">ICS</option>
+                    <option value="Return Slip">Return Slip</option>
+                </select>
+            </div>
+
+            <div class="field">
+                <label>Type of Property:</label>
+                <select @bind="newPropertyTypeId">
+                    <option value="0">-- Select --</option>
+                    @foreach (var t in propertyTypes)
+                    {
+                        <option value="@t.PropertyTypeId">@t.TypeName</option>
+                    }
+                </select>
+            </div>
+
+            <div class="field">
+                <label>RO Personnel:</label>
+                <select @bind="newPersonnelId" @bind:after="OnModalPersonnelChanged">
+                    <option value="0">-- Select --</option>
+                    @foreach (var p in modalPersonnelOptions)
+                    {
+                        <option value="@p.PersonnelId">@p.FullName</option>
+                    }
+                </select>
+            </div>
+
+            <div class="field">
+                <label>Position:</label>
+                <input type="text" value="@newPosition" readonly />
+            </div>
+
+            <div class="field">
+                <label>Attach File (PDF only):</label>
+                <p class="field-hint">Must include the signature of the AMS Chief and the end user.</p>
+                <InputFile OnChange="OnFileSelected" accept=".pdf" />
+                @if (selectedFile is not null)
+                {
+                    <p class="field-hint">Selected: @selectedFile.Name</p>
+                }
+            </div>
+
+            @if (!string.IsNullOrEmpty(uploadError))
+            {
+                <div class="upload-error">@uploadError</div>
+            }
+
+            <div class="modal-actions">
+                <button class="btn-ghost" @onclick="CloseAddModal">Cancel</button>
+                <button class="btn-primary" @onclick="SubmitNewDocument" disabled="@isSubmitting">
+                    @(isSubmitting ? "Submitting..." : "Submit")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Office> offices = new();
+    private List<PropertyType> propertyTypes = new();
+    private List<RoPersonnel> filterPersonnelOptions = new();
+    private List<RoPersonnel> modalPersonnelOptions = new();
+    private List<PropertyDocument>? results;
+    private HashSet<int> selectedIds = new();
+
+    // Filter state
+    private int filterOfficeId = 0;
+    private string filterDocumentType = "";
+    private int filterPropertyTypeId = 0;
+    private int filterPersonnelId = 0;
+    private string filterPosition = "";
+
+    // Add-modal state
+    private bool showAddModal = false;
+    private int newOfficeId = 0;
+    private string newDocumentType = "";
+    private int newPropertyTypeId = 0;
+    private int newPersonnelId = 0;
+    private string newPosition = "";
+    private IBrowserFile? selectedFile;
+    private string uploadError = "";
+    private bool isSubmitting = false;
+
+    private string BulkDownloadUrl => "/documents/download-bulk?ids=" + string.Join(",", selectedIds);
+
+    protected override async Task OnInitializedAsync()
+    {
+        offices = await Db.Offices.OrderBy(o => o.OfficeAcronym).ToListAsync();
+        propertyTypes = await Db.PropertyTypes.OrderBy(t => t.TypeName).ToListAsync();
+    }
+
+    private async Task OnFilterOfficeChanged()
+    {
+        filterPersonnelOptions = filterOfficeId == 0
+            ? new()
+            : await Db.RoPersonnel.Where(p => p.OfficeId == filterOfficeId).ToListAsync();
+        filterPersonnelId = 0;
+        filterPosition = "";
+    }
+
+    private void OnFilterPersonnelChanged()
+    {
+        var person = filterPersonnelOptions.FirstOrDefault(p => p.PersonnelId == filterPersonnelId);
+        filterPosition = person?.Position ?? "";
+    }
+
+    private async Task RunFilter()
+    {
+        var query = Db.PropertyDocuments
+            .Include(d => d.Office)
+            .Include(d => d.PropertyType)
+            .Include(d => d.Personnel)
+            .AsQueryable();
+
+        if (filterOfficeId != 0)
+            query = query.Where(d => d.OfficeId == filterOfficeId);
+
+        if (!string.IsNullOrEmpty(filterDocumentType))
+            query = query.Where(d => d.DocumentType == filterDocumentType);
+
+        if (filterPropertyTypeId != 0)
+            query = query.Where(d => d.PropertyTypeId == filterPropertyTypeId);
+
+        if (filterPersonnelId != 0)
+            query = query.Where(d => d.PersonnelId == filterPersonnelId);
+
+        results = await query.OrderByDescending(d => d.UploadedAt).ToListAsync();
+        selectedIds.Clear();
+    }
+
+    private void ToggleSelected(int id, bool isChecked)
+    {
+        if (isChecked) selectedIds.Add(id);
+        else selectedIds.Remove(id);
+    }
+
+    private async Task DeleteDocument(int id)
+    {
+        var doc = await Db.PropertyDocuments.FindAsync(id);
+        if (doc is null) return;
+
+        var fullPath = Path.Combine(Env.ContentRootPath, "App_Data", "property-documents", doc.FilePath);
+        if (File.Exists(fullPath)) File.Delete(fullPath);
+
+        Db.PropertyDocuments.Remove(doc);
+        await Db.SaveChangesAsync();
+
+        results?.RemoveAll(d => d.DocumentId == id);
+        selectedIds.Remove(id);
+    }
+
+    private void OpenAddModal()
+    {
+        newOfficeId = 0;
+        newDocumentType = "";
+        newPropertyTypeId = 0;
+        newPersonnelId = 0;
+        newPosition = "";
+        selectedFile = null;
+        uploadError = "";
+        modalPersonnelOptions = new();
+        showAddModal = true;
+    }
+
+    private void CloseAddModal()
+    {
+        showAddModal = false;
+    }
+
+    private async Task OnModalOfficeChanged()
+    {
+        modalPersonnelOptions = newOfficeId == 0
+            ? new()
+            : await Db.RoPersonnel.Where(p => p.OfficeId == newOfficeId).ToListAsync();
+        newPersonnelId = 0;
+        newPosition = "";
+    }
+
+    private void OnModalPersonnelChanged()
+    {
+        var person = modalPersonnelOptions.FirstOrDefault(p => p.PersonnelId == newPersonnelId);
+        newPosition = person?.Position ?? "";
+    }
+
+    private const long MaxFileSizeBytes = 50 * 1024 * 1024;
+
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        uploadError = "";
+        var file = e.File;
+
+        if (!file.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+        {
+            uploadError = "Only PDF files are allowed.";
+            selectedFile = null;
+            return;
+        }
+
+        if (file.Size > MaxFileSizeBytes)
+        {
+            uploadError = $"File is too large ({file.Size / 1024.0 / 1024.0:F1} MB). Maximum is 50 MB.";
+            selectedFile = null;
+            return;
+        }
+
+        selectedFile = file;
+    }
+
+    private async Task SubmitNewDocument()
+    {
+        uploadError = "";
+
+        if (newOfficeId == 0 || string.IsNullOrEmpty(newDocumentType) ||
+            newPropertyTypeId == 0 || newPersonnelId == 0 || selectedFile is null)
+        {
+            uploadError = "Please fill in every field and attach a PDF.";
+            return;
+        }
+
+        isSubmitting = true;
+
+        try
+        {
+            var storageDir = Path.Combine(Env.ContentRootPath, "App_Data", "property-documents");
+            Directory.CreateDirectory(storageDir);
+
+            var storedFileName = $"{Guid.NewGuid()}.pdf";
+            var fullPath = Path.Combine(storageDir, storedFileName);
+
+            await using (var fileStream = new FileStream(fullPath, FileMode.Create))
+            {
+                await using var readStream = selectedFile.OpenReadStream(maxAllowedSize: MaxFileSizeBytes);
+                await readStream.CopyToAsync(fileStream);
+            }
+
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var userIdClaim = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            uint.TryParse(userIdClaim, out var uploadedByUserId);
+
+            Db.PropertyDocuments.Add(new PropertyDocument
+            {
+                OfficeId = newOfficeId,
+                DocumentType = newDocumentType,
+                PropertyTypeId = newPropertyTypeId,
+                PersonnelId = newPersonnelId,
+                FilePath = storedFileName,
+                OriginalFileName = selectedFile.Name,
+                UploadedBy = uploadedByUserId,
+                UploadedAt = DateTime.UtcNow
+            });
+
+            await Db.SaveChangesAsync();
+            showAddModal = false;
+        }
+        catch (Exception ex)
+        {
+            uploadError = "Upload failed: " + ex.Message;
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+}
