@@ -124,7 +124,7 @@
     flex: 1;
 }
 
-    .sidebar-nav a {
+    .sidebar-nav ::deep a {
         padding: 0.6rem 0.7rem;
         border-radius: 6px;
         color: var(--ink);
@@ -133,8 +133,16 @@
         font-weight: 500;
     }
 
-        .sidebar-nav a:hover {
+        .sidebar-nav ::deep a:hover {
             background: var(--bg);
+        }
+
+        .sidebar-nav ::deep a.active {
+            background: var(--bg);
+            color: var(--brand);
+            font-weight: 700;
+            border-left: 3px solid var(--accent);
+            padding-left: calc(0.7rem - 3px);
         }
 
 .sidebar-logout {

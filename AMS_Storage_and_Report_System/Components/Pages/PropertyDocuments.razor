@@ -7,9 +7,11 @@
 @using Microsoft.EntityFrameworkCore
 @using AMS_Storage_and_Report_System.Data
 @using AMS_Storage_and_Report_System.Models
+@using AMS_Storage_and_Report_System.Services
 @inject AppDbContext Db
-@inject IWebHostEnvironment Env
+@inject PropertyDocumentStorage Storage
 @inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JS
 
 <PageTitle>Property Documents — StockWatch</PageTitle>
 
@@ -82,7 +84,8 @@
         <span class="results-count">@results.Count result(s)</span>
         @if (selectedIds.Count > 0)
         {
-            <a class="btn-ghost" href="@BulkDownloadUrl" target="_blank">
+            <a class="btn-ghost action-link" href="@BulkDownloadUrl" target="_blank">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                 Download Selected (@selectedIds.Count)
             </a>
         }
@@ -98,7 +101,7 @@
                 <th>RO Personnel</th>
                 <th>Position</th>
                 <th>Uploaded</th>
-                <th></th>
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -116,9 +119,18 @@
                     <td>@doc.Personnel?.Position</td>
                     <td>@doc.UploadedAt.ToString("MMM d, yyyy")</td>
                     <td class="row-actions">
-                        <a href="/documents/view/@doc.DocumentId" target="_blank">View</a>
-                        <a href="/documents/download/@doc.DocumentId" target="_blank">Download</a>
-                        <button class="link-danger" @onclick="() => DeleteDocument(doc.DocumentId)">Delete</button>
+                        <a href="/documents/view/@doc.DocumentId" target="_blank" class="action-link">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                            View
+                        </a>
+                        <a href="/documents/download/@doc.DocumentId" target="_blank" class="action-link">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                            Download
+                        </a>
+                        <button class="link-danger action-link" @onclick="() => pendingDeleteId = doc.DocumentId">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                            Delete
+                        </button>
                     </td>
                 </tr>
             }
@@ -205,6 +217,20 @@
     </div>
 }
 
+@if (pendingDeleteId is not null)
+{
+    <div class="modal-backdrop" @onclick="() => pendingDeleteId = null">
+        <div class="modal-card confirm-card" @onclick:stopPropagation="true">
+            <h2 class="modal-title">Delete this document?</h2>
+            <p class="confirm-text">This can't be undone — the file will be permanently removed.</p>
+            <div class="modal-actions">
+                <button class="btn-ghost" @onclick="() => pendingDeleteId = null">Cancel</button>
+                <button class="btn-danger" @onclick="ConfirmDelete">Delete</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private List<Office> offices = new();
     private List<PropertyType> propertyTypes = new();
@@ -212,15 +238,12 @@
     private List<RoPersonnel> modalPersonnelOptions = new();
     private List<PropertyDocument>? results;
     private HashSet<int> selectedIds = new();
-
-    // Filter state
+    private int? pendingDeleteId;
     private int filterOfficeId = 0;
     private string filterDocumentType = "";
     private int filterPropertyTypeId = 0;
     private int filterPersonnelId = 0;
     private string filterPosition = "";
-
-    // Add-modal state
     private bool showAddModal = false;
     private int newOfficeId = 0;
     private string newDocumentType = "";
@@ -232,6 +255,11 @@
     private bool isSubmitting = false;
 
     private string BulkDownloadUrl => "/documents/download-bulk?ids=" + string.Join(",", selectedIds);
+
+    private async Task ShowToast(string text, string type = "success")
+    {
+        await JS.InvokeVoidAsync("showToast", text, type);
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -284,12 +312,20 @@
         else selectedIds.Remove(id);
     }
 
+    private async Task ConfirmDelete()
+    {
+        if (pendingDeleteId is null) return;
+        var id = pendingDeleteId.Value;
+        pendingDeleteId = null;
+        await DeleteDocument(id);
+    }
+
     private async Task DeleteDocument(int id)
     {
         var doc = await Db.PropertyDocuments.FindAsync(id);
         if (doc is null) return;
 
-        var fullPath = Path.Combine(Env.ContentRootPath, "App_Data", "property-documents", doc.FilePath);
+        var fullPath = Path.Combine(Storage.RootPath, doc.FilePath);
         if (File.Exists(fullPath)) File.Delete(fullPath);
 
         Db.PropertyDocuments.Remove(doc);
@@ -297,6 +333,8 @@
 
         results?.RemoveAll(d => d.DocumentId == id);
         selectedIds.Remove(id);
+
+        await ShowToast("Document deleted.", "danger");
     }
 
     private void OpenAddModal()
@@ -371,11 +409,8 @@
 
         try
         {
-            var storageDir = Path.Combine(Env.ContentRootPath, "App_Data", "property-documents");
-            Directory.CreateDirectory(storageDir);
-
             var storedFileName = $"{Guid.NewGuid()}.pdf";
-            var fullPath = Path.Combine(storageDir, storedFileName);
+            var fullPath = Path.Combine(Storage.RootPath, storedFileName);
 
             await using (var fileStream = new FileStream(fullPath, FileMode.Create))
             {
@@ -401,10 +436,13 @@
 
             await Db.SaveChangesAsync();
             showAddModal = false;
+
+            await ShowToast("RO Personnel document added successfully.");
         }
         catch (Exception ex)
         {
             uploadError = "Upload failed: " + ex.Message;
+            await ShowToast("Failed to add RO Personnel document.", "danger");
         }
         finally
         {

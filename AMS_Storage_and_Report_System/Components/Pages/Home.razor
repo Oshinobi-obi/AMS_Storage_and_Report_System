@@ -1,4 +1,7 @@
 ﻿@page "/"
+@using Microsoft.AspNetCore.Components.Authorization
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
 
 <PageTitle>StockWatch — Asset Management Section</PageTitle>
 
@@ -54,5 +57,12 @@
 </div>
 
 @code {
-
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        if (authState.User.Identity?.IsAuthenticated == true)
+        {
+            Navigation.NavigateTo("/dashboard", forceLoad: true);
+        }
+    }
 }

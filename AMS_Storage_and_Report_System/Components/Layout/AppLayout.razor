@@ -1,11 +1,12 @@
 ﻿@inherits LayoutComponentBase
 @using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Routing
 @inject AntiforgeryStateProvider AntiforgeryStateProvider
 
 <div class="app-shell">
 
     <header class="app-topbar">
-        <button class="hamburger" @onclick="ToggleSidebar" aria-label="Toggle menu">
+        <button class="hamburger" onclick="toggleSidebar()" aria-label="Toggle menu">
             <span></span>
             <span></span>
             <span></span>
@@ -13,7 +14,7 @@
         <span class="app-topbar-title">StockWatch</span>
     </header>
 
-    <aside class="sidebar @(sidebarOpen ? "open" : "")">
+    <aside class="sidebar" id="app-sidebar">
         <AuthorizeView>
             <Authorized>
                 <div class="sidebar-user">
@@ -25,19 +26,20 @@
                 </div>
 
                 <nav class="sidebar-nav">
-                    <a href="/dashboard">Dashboard</a>
-                    <a href="/inventory">Inventory</a>
-                    <a href="/property-documents">Property Documents</a>
-                    <a href="/reports">Reports</a>
-                    <a href="/profile">Profile</a>
+                    <NavLink href="/dashboard" Match="NavLinkMatch.All">Dashboard</NavLink>
+                    <NavLink href="/employees" Match="NavLinkMatch.All">Employees</NavLink>
+                    <NavLink href="/inventory" Match="NavLinkMatch.All">Inventory</NavLink>
+                    <NavLink href="/property-documents" Match="NavLinkMatch.All">Property Documents</NavLink>
+                    <NavLink href="/reports" Match="NavLinkMatch.All">Reports</NavLink>
+                    <NavLink href="/profile" Match="NavLinkMatch.All">Profile</NavLink>
 
                     <AuthorizeView Roles="SuperAdmin" Context="superAdminContext">
                         <Authorized>
-                            <a href="/account">Account</a>
+                            <NavLink href="/account" Match="NavLinkMatch.All">Account</NavLink>
                         </Authorized>
                     </AuthorizeView>
 
-                    <a href="/settings">Settings</a>
+                    <NavLink href="/settings" Match="NavLinkMatch.All">Settings</NavLink>
                 </nav>
 
                 <form method="post" action="/account/logout" class="sidebar-logout">
@@ -49,10 +51,7 @@
         </AuthorizeView>
     </aside>
 
-    @if (sidebarOpen)
-    {
-        <div class="sidebar-backdrop" @onclick="ToggleSidebar"></div>
-    }
+    <div class="sidebar-backdrop" id="sidebar-backdrop" style="display: none;" onclick="toggleSidebar()"></div>
 
     <main class="app-content">
         @Body
@@ -61,13 +60,6 @@
 </div>
 
 @code {
-    private bool sidebarOpen = false;
-
-    private void ToggleSidebar()
-    {
-        sidebarOpen = !sidebarOpen;
-    }
-
     private static string GetInitial(string? name) =>
         string.IsNullOrEmpty(name) ? "?" : name.Substring(0, 1).ToUpper();
 

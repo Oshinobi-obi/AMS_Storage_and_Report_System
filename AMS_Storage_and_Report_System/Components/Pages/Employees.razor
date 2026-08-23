@@ -1,0 +1,391 @@
+﻿@page "/employees"
+@layout AppLayout
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.EntityFrameworkCore
+@using AMS_Storage_and_Report_System.Data
+@using AMS_Storage_and_Report_System.Models
+@inject AppDbContext Db
+@inject IJSRuntime JS
+
+<PageTitle>Employees — StockWatch</PageTitle>
+
+<div class="pd-header">
+    <h1 class="page-title">Employees</h1>
+    <button class="btn-primary" @onclick="OpenAddModal">Add Employee +</button>
+</div>
+
+<div class="filter-card">
+    <div class="filter-row">
+        <div class="field">
+            <label>Office:</label>
+            <select @bind="filterOfficeId" @bind:after="LoadData">
+                <option value="0">-- All Offices --</option>
+                @foreach (var o in allOffices)
+                {
+                    <option value="@o.OfficeId">@o.OfficeName (@o.OfficeAcronym)</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    <div class="filter-actions">
+        <button class="btn-primary" @onclick="LoadData">Filter</button>
+    </div>
+</div>
+
+@if (groups.Count == 0)
+{
+    <p class="empty-state">No employees found.</p>
+}
+
+@foreach (var group in groups)
+{
+    <div class="office-group">
+        <div class="office-group-header">
+            @group.Office.OfficeName <span class="office-acronym">(@group.Office.OfficeAcronym)</span>
+        </div>
+
+        <table class="results-table">
+            <thead>
+                <tr>
+                    <th>RO Personnel</th>
+                    <th>Position</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var person in group.Personnel)
+                {
+                    <tr>
+                        <td>@person.FullName</td>
+                        <td>@person.Position</td>
+                        <td class="row-actions">
+                            <button class="action-link edit-link" @onclick="() => OpenEditModal(person, group.Office)">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"></path></svg>
+                                Edit
+                            </button>
+                            <button class="link-danger action-link" @onclick="() => pendingDeleteId = person.PersonnelId">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                                Delete
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (showEmployeeModal)
+{
+    <div class="modal-backdrop" @onclick="CloseModal">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <h2 class="modal-title">@(editingPersonnelId is null ? "Add Employee" : "Edit Employee")</h2>
+
+            <div class="field">
+                <label>Office (Full Name):</label>
+                @if (useExistingOffice)
+                {
+                    <select @bind="selectedExistingOfficeId" @bind:after="OnExistingOfficeSelected">
+                        <option value="0">-- Select Office --</option>
+                        @foreach (var o in allOffices)
+                        {
+                            <option value="@o.OfficeId">@o.OfficeName (@o.OfficeAcronym)</option>
+                        }
+                    </select>
+                }
+                else
+                {
+                    <input type="text" value="@officeNameInput" @oninput="OnOfficeNameInput" />
+                }
+            </div>
+
+            <div class="field checkbox-field">
+                <label class="checkbox-label">
+                    <input type="checkbox" @bind="useExistingOffice" @bind:after="OnToggleExistingOffice" />
+                    Already in Office?
+                </label>
+            </div>
+
+            <div class="field">
+                <label>Acronym:</label>
+                <input type="text" value="@officeAcronymInput" @oninput="OnAcronymInput" readonly="@useExistingOffice" />
+                @if (!useExistingOffice)
+                {
+                    <p class="field-hint">Fills in automatically as you type the office name -- edit it if it's wrong.</p>
+                }
+            </div>
+
+            <div class="field">
+                <label>RO Personnel (Full Name):</label>
+                <input type="text" @bind="personnelFullNameInput" />
+            </div>
+
+            <div class="field">
+                <label>Position:</label>
+                <input type="text" @bind="personnelPositionInput" placeholder="e.g. Division Chief" />
+                <p class="field-hint">Avoid abbreviations.</p>
+            </div>
+
+            @if (!string.IsNullOrEmpty(formError))
+            {
+                <div class="upload-error">@formError</div>
+            }
+
+            <div class="modal-actions">
+                <button class="btn-ghost" @onclick="CloseModal">Cancel</button>
+                <button class="btn-primary" @onclick="SaveEmployee" disabled="@isSaving">
+                    @(isSaving ? "Saving..." : "Save")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (pendingDeleteId is not null)
+{
+    <div class="modal-backdrop" @onclick="() => pendingDeleteId = null">
+        <div class="modal-card confirm-card" @onclick:stopPropagation="true">
+            <h2 class="modal-title">Remove this employee?</h2>
+            <p class="confirm-text">This can't be undone.</p>
+            <div class="modal-actions">
+                <button class="btn-ghost" @onclick="() => pendingDeleteId = null">Cancel</button>
+                <button class="btn-danger" @onclick="ConfirmDelete">Delete</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private record OfficeGroup(Office Office, List<RoPersonnel> Personnel);
+
+    private List<Office> allOffices = new();
+    private List<OfficeGroup> groups = new();
+    private int filterOfficeId = 0;
+    private bool showEmployeeModal = false;
+    private int? editingPersonnelId;
+    private string officeNameInput = "";
+    private string officeAcronymInput = "";
+    private bool acronymTouched = false;
+    private bool useExistingOffice = false;
+    private int selectedExistingOfficeId = 0;
+    private string personnelFullNameInput = "";
+    private string personnelPositionInput = "";
+    private string formError = "";
+    private bool isSaving = false;
+    private int? pendingDeleteId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        allOffices = await Db.Offices.OrderBy(o => o.OfficeAcronym).ToListAsync();
+        var personnel = await Db.RoPersonnel.ToListAsync();
+
+        var source = filterOfficeId == 0
+            ? allOffices
+            : allOffices.Where(o => o.OfficeId == filterOfficeId).ToList();
+
+        groups = source
+            .Select(o => new OfficeGroup(o, personnel.Where(p => p.OfficeId == o.OfficeId)
+                                                        .OrderBy(p => p.FullName)
+                                                        .ToList()))
+            .Where(g => g.Personnel.Count > 0)
+            .OrderBy(g => g.Office.OfficeAcronym)
+            .ToList();
+    }
+
+    private void OpenAddModal()
+    {
+        editingPersonnelId = null;
+        officeNameInput = "";
+        officeAcronymInput = "";
+        acronymTouched = false;
+        useExistingOffice = false;
+        selectedExistingOfficeId = 0;
+        personnelFullNameInput = "";
+        personnelPositionInput = "";
+        formError = "";
+        showEmployeeModal = true;
+    }
+
+    private void OpenEditModal(RoPersonnel person, Office office)
+    {
+        editingPersonnelId = person.PersonnelId;
+        officeNameInput = office.OfficeName;
+        officeAcronymInput = office.OfficeAcronym;
+        acronymTouched = true;
+        useExistingOffice = false;
+        selectedExistingOfficeId = 0;
+        personnelFullNameInput = person.FullName;
+        personnelPositionInput = person.Position;
+        formError = "";
+        showEmployeeModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showEmployeeModal = false;
+    }
+
+    private void OnOfficeNameInput(ChangeEventArgs e)
+    {
+        officeNameInput = e.Value?.ToString() ?? "";
+
+        if (!acronymTouched)
+        {
+            officeAcronymInput = GenerateAcronym(officeNameInput);
+        }
+    }
+
+    private void OnAcronymInput(ChangeEventArgs e)
+    {
+        officeAcronymInput = e.Value?.ToString() ?? "";
+        acronymTouched = true;
+    }
+
+    private void OnToggleExistingOffice()
+    {
+        if (useExistingOffice)
+        {
+            selectedExistingOfficeId = 0;
+            officeNameInput = "";
+            officeAcronymInput = "";
+        }
+        else
+        {
+            selectedExistingOfficeId = 0;
+            acronymTouched = false;
+        }
+    }
+
+    private void OnExistingOfficeSelected()
+    {
+        var office = allOffices.FirstOrDefault(o => o.OfficeId == selectedExistingOfficeId);
+        officeNameInput = office?.OfficeName ?? "";
+        officeAcronymInput = office?.OfficeAcronym ?? "";
+    }
+
+    private static string GenerateAcronym(string officeName)
+    {
+        if (string.IsNullOrWhiteSpace(officeName)) return "";
+
+        var skipWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "and", "of", "the", "for", "&" };
+        var words = officeName.Split(new[] { ' ', ',', '-' }, StringSplitOptions.RemoveEmptyEntries);
+
+        var letters = words.Where(w => !skipWords.Contains(w))
+                            .Select(w => char.ToUpper(w[0]));
+
+        return string.Concat(letters);
+    }
+
+    private async Task SaveEmployee()
+    {
+        formError = "";
+
+        var officeValid = useExistingOffice
+            ? selectedExistingOfficeId != 0
+            : !string.IsNullOrWhiteSpace(officeNameInput) && !string.IsNullOrWhiteSpace(officeAcronymInput);
+
+        if (!officeValid || string.IsNullOrWhiteSpace(personnelFullNameInput) || string.IsNullOrWhiteSpace(personnelPositionInput))
+        {
+            formError = "Please fill in every field.";
+            return;
+        }
+
+        isSaving = true;
+
+        try
+        {
+            Office office;
+            if (useExistingOffice)
+            {
+                office = await Db.Offices.FindAsync(selectedExistingOfficeId)
+                    ?? throw new InvalidOperationException("Selected office no longer exists.");
+            }
+            else
+            {
+                office = await FindOrCreateOffice(officeNameInput.Trim(), officeAcronymInput.Trim());
+            }
+
+            if (editingPersonnelId is null)
+            {
+                Db.RoPersonnel.Add(new RoPersonnel
+                {
+                    OfficeId = office.OfficeId,
+                    FullName = personnelFullNameInput.Trim(),
+                    Position = personnelPositionInput.Trim()
+                });
+                await Db.SaveChangesAsync();
+                showEmployeeModal = false;
+                await LoadData();
+                await ShowToast("RO Personnel added successfully.");
+            }
+            else
+            {
+                var existing = await Db.RoPersonnel.FindAsync(editingPersonnelId.Value);
+                if (existing is not null)
+                {
+                    existing.OfficeId = office.OfficeId;
+                    existing.FullName = personnelFullNameInput.Trim();
+                    existing.Position = personnelPositionInput.Trim();
+                    await Db.SaveChangesAsync();
+                }
+                showEmployeeModal = false;
+                await LoadData();
+                await ShowToast("Employee updated.");
+            }
+        }
+        catch (Exception ex)
+        {
+            formError = "Save failed: " + ex.Message;
+
+            var failureMessage = editingPersonnelId is null
+                ? "Failed to add RO Personnel."
+                : "Failed to update RO Personnel.";
+            await ShowToast(failureMessage, "danger");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task<Office> FindOrCreateOffice(string name, string acronym)
+    {
+        var existing = await Db.Offices
+            .FirstOrDefaultAsync(o => o.OfficeName.ToLower() == name.ToLower());
+
+        if (existing is not null) return existing;
+
+        var newOffice = new Office { OfficeName = name, OfficeAcronym = acronym };
+        Db.Offices.Add(newOffice);
+        await Db.SaveChangesAsync();
+        return newOffice;
+    }
+
+    private async Task ConfirmDelete()
+    {
+        if (pendingDeleteId is null) return;
+        var id = pendingDeleteId.Value;
+        pendingDeleteId = null;
+
+        var person = await Db.RoPersonnel.FindAsync(id);
+        if (person is null) return;
+
+        Db.RoPersonnel.Remove(person);
+        await Db.SaveChangesAsync();
+        await LoadData();
+        await ShowToast("Employee deleted.", "danger");
+    }
+
+    private async Task ShowToast(string text, string type = "success")
+    {
+        await JS.InvokeVoidAsync("showToast", text, type);
+    }
+}

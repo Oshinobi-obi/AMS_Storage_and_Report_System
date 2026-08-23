@@ -133,6 +133,26 @@
         color: var(--ink);
     }
 
+.remember-me {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
+}
+
+    .remember-me input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        accent-color: var(--brand);
+        cursor: pointer;
+    }
+
+    .remember-me label {
+        font-size: 0.85rem;
+        color: var(--ink-soft);
+        cursor: pointer;
+    }
+
 .btn-primary {
     width: 100%;
     background: var(--brand);
