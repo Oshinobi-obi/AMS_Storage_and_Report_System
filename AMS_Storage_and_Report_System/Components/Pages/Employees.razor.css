@@ -110,6 +110,45 @@
     justify-content: center;
 }
 
+.summary-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.summary-card {
+    background: #fff;
+    border: 1px solid #E3E6EA;
+    border-radius: 12px;
+    padding: 1.1rem 1.25rem;
+    text-align: left;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    font-family: inherit;
+    transition: border-color 0.15s ease, transform 0.1s ease;
+}
+
+    .summary-card:hover {
+        border-color: #1E3A5F;
+        transform: translateY(-1px);
+    }
+
+.summary-value {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: #1E3A5F;
+}
+
+.summary-label {
+    font-size: 0.8rem;
+    color: #5B6472;
+    font-weight: 600;
+}
+
 .empty-state {
     color: #5B6472;
     font-size: 0.9rem;
@@ -159,46 +198,42 @@
     font-size: 0.85rem;
 }
 
-.results-table {
-    width: 100%;
-    border-collapse: collapse;
-    table-layout: fixed;
+.personnel-table {
+    display: flex;
+    flex-direction: column;
 }
 
-    .results-table th:nth-child(1),
-    .results-table td:nth-child(1) {
-        width: 35%;
-    }
+.personnel-row {
+    display: grid;
+    grid-template-columns: 35% 35% 30%;
+    align-items: start;
+    gap: 0.5rem;
+    padding: 0.65rem 1.1rem;
+    border-bottom: 1px solid #E3E6EA;
+}
 
-    .results-table th:nth-child(2),
-    .results-table td:nth-child(2) {
-        width: 35%;
-    }
-
-    .results-table th:nth-child(3),
-    .results-table td:nth-child(3) {
-        width: 30%;
-    }
-
-    .results-table th {
-        text-align: left;
-        font-size: 0.72rem;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: #5B6472;
-        padding: 0.6rem 1.1rem;
-        border-bottom: 1px solid #E3E6EA;
-    }
-
-    .results-table td {
-        padding: 0.65rem 1.1rem;
+    .personnel-row > div {
         font-size: 0.85rem;
-        border-bottom: 1px solid #E3E6EA;
         overflow-wrap: break-word;
     }
 
-    .results-table tr:last-child td {
-        border-bottom: none;
+.personnel-table .personnel-row:last-child {
+    border-bottom: none;
+}
+
+.personnel-header {
+    font-size: 0.72rem !important;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #5B6472;
+    font-weight: 600;
+    background: transparent;
+}
+
+    .personnel-header > div {
+        font-size: 0.72rem !important;
+        color: #5B6472;
+        font-weight: 600;
     }
 
 .row-actions {

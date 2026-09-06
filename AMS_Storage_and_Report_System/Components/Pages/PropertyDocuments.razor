@@ -37,8 +37,8 @@
             <label>Property Document:</label>
             <select @bind="filterDocumentType">
                 <option value="">-- Select --</option>
-                <option value="PAR">PAR</option>
-                <option value="ICS">ICS</option>
+                <option value="PAR">Property Acknowledgement Receipt (PAR)</option>
+                <option value="ICS">Inventory Custodian Slip (ICS)</option>
                 <option value="Return Slip">Return Slip</option>
             </select>
         </div>
@@ -76,6 +76,21 @@
     <div class="filter-actions">
         <button class="btn-primary" @onclick="RunFilter">Filter</button>
     </div>
+</div>
+
+<div class="summary-cards">
+    <button class="summary-card" @onclick='() => FilterByDocumentType("PAR")'>
+        <span class="summary-value">@totalPar</span>
+        <span class="summary-label">Property Acknowledgement Receipt (PAR)</span>
+    </button>
+    <button class="summary-card" @onclick='() => FilterByDocumentType("ICS")'>
+        <span class="summary-value">@totalIcs</span>
+        <span class="summary-label">Inventory Custodian Slip (ICS)</span>
+    </button>
+    <button class="summary-card" @onclick='() => FilterByDocumentType("Return Slip")'>
+        <span class="summary-value">@totalReturnSlip</span>
+        <span class="summary-label">Return Slip</span>
+    </button>
 </div>
 
 @if (results is not null)
@@ -159,8 +174,8 @@
                 <label>Property Document:</label>
                 <select @bind="newDocumentType">
                     <option value="">-- Select --</option>
-                    <option value="PAR">PAR</option>
-                    <option value="ICS">ICS</option>
+                    <option value="PAR">Property Acknowledgement Receipt (PAR)</option>
+                    <option value="ICS">Inventory Custodian Slip (ICS)</option>
                     <option value="Return Slip">Return Slip</option>
                 </select>
             </div>
@@ -253,6 +268,9 @@
     private IBrowserFile? selectedFile;
     private string uploadError = "";
     private bool isSubmitting = false;
+    private int totalPar = 0;
+    private int totalIcs = 0;
+    private int totalReturnSlip = 0;
 
     private string BulkDownloadUrl => "/documents/download-bulk?ids=" + string.Join(",", selectedIds);
 
@@ -265,6 +283,22 @@
     {
         offices = await Db.Offices.OrderBy(o => o.OfficeAcronym).ToListAsync();
         propertyTypes = await Db.PropertyTypes.OrderBy(t => t.TypeName).ToListAsync();
+
+        await LoadSummaryCounts();
+        await RunFilter();
+    }
+
+    private async Task LoadSummaryCounts()
+    {
+        totalPar = await Db.PropertyDocuments.CountAsync(d => d.DocumentType == "PAR");
+        totalIcs = await Db.PropertyDocuments.CountAsync(d => d.DocumentType == "ICS");
+        totalReturnSlip = await Db.PropertyDocuments.CountAsync(d => d.DocumentType == "Return Slip");
+    }
+
+    private async Task FilterByDocumentType(string type)
+    {
+        filterDocumentType = type;
+        await RunFilter();
     }
 
     private async Task OnFilterOfficeChanged()
@@ -334,6 +368,7 @@
         results?.RemoveAll(d => d.DocumentId == id);
         selectedIds.Remove(id);
 
+        await LoadSummaryCounts();
         await ShowToast("Document deleted.", "danger");
     }
 
@@ -437,6 +472,8 @@
             await Db.SaveChangesAsync();
             showAddModal = false;
 
+            await LoadSummaryCounts();
+            await RunFilter();
             await ShowToast("RO Personnel document added successfully.");
         }
         catch (Exception ex)

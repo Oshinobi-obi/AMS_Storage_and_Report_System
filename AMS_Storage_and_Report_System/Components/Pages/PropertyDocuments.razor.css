@@ -105,6 +105,45 @@
     margin-top: 0.5rem;
 }
 
+.summary-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.summary-card {
+    background: #fff;
+    border: 1px solid #E3E6EA;
+    border-radius: 12px;
+    padding: 1.1rem 1.25rem;
+    text-align: left;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    font-family: inherit;
+    transition: border-color 0.15s ease, transform 0.1s ease;
+}
+
+    .summary-card:hover {
+        border-color: #1E3A5F;
+        transform: translateY(-1px);
+    }
+
+.summary-value {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: #1E3A5F;
+}
+
+.summary-label {
+    font-size: 0.8rem;
+    color: #5B6472;
+    font-weight: 600;
+}
+
 /* Results */
 .results-toolbar {
     display: flex;
@@ -141,6 +180,7 @@
         padding: 0.7rem 0.75rem;
         font-size: 0.85rem;
         border-bottom: 1px solid #E3E6EA;
+        vertical-align: top;
     }
 
 .row-actions {
