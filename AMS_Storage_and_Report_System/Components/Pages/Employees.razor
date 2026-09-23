@@ -206,7 +206,8 @@
 
         groups = source
             .Select(o => new OfficeGroup(o, personnel.Where(p => p.OfficeId == o.OfficeId)
-                                                        .OrderBy(p => p.FullName)
+                                                        .OrderBy(p => GetPositionRank(p.Position))
+                                                        .ThenBy(p => p.FullName)
                                                         .ToList()))
             .Where(g => g.Personnel.Count > 0)
             .OrderBy(g => g.Office.OfficeAcronym)
@@ -289,6 +290,25 @@
         officeNameInput = office?.OfficeName ?? "";
         officeAcronymInput = office?.OfficeAcronym ?? "";
     }
+
+    private static int GetPositionRank(string position)
+    {
+        if (string.IsNullOrWhiteSpace(position)) return 99;
+
+        var p = position.Trim();
+        if (ContainsAny(p, "Regional Director", "Director")) return 1;
+        if (ContainsAny(p, "Assistant Regional Director", "Asst. Regional Director", "Asst Regional Director")) return 2;
+        if (ContainsAny(p, "Chief")) return 3;
+        if (ContainsAny(p, "Officer V", "Administrative Officer V")) return 4;
+        if (ContainsAny(p, "Administrative Officer", "Admin Officer")) return 5;
+        if (ContainsAny(p, "Specialist V", "Engineer V", "Scientist V",
+                            "Specialist IV", "Engineer IV", "Scientist IV")) return 6;
+
+        return 99;
+    }
+
+    private static bool ContainsAny(string source, params string[] terms) =>
+        terms.Any(t => source.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0);
 
     private static string GenerateAcronym(string officeName)
     {

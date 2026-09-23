@@ -1,0 +1,51 @@
+@inject NavigationManager Navigation
+
+@if (Show)
+{
+    <div class="modal-backdrop" @onclick="OnClose">
+        <div class="modal-card access-denied-card" @onclick:stopPropagation="true">
+            <div class="access-denied-icon">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="15" y1="9" x2="9" y2="15"></line>
+                    <line x1="9" y1="9" x2="15" y2="15"></line>
+                </svg>
+            </div>
+            <h2 class="modal-title">Access Denied</h2>
+            <p class="access-denied-message">@Message</p>
+            <div class="modal-actions">
+                <button class="btn-primary" @onclick="OnClose">Go Back</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public bool Show { get; set; }
+
+    [Parameter]
+    public string Message { get; set; } = "You currently have no access to this page.";
+
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    [Parameter]
+    public string? RedirectUrl { get; set; }
+
+    private async Task HandleClose()
+    {
+        if (OnClose.HasDelegate)
+        {
+            await OnClose.InvokeAsync();
+        }
+        else if (!string.IsNullOrEmpty(RedirectUrl))
+        {
+            Navigation.NavigateTo(RedirectUrl);
+        }
+        else
+        {
+            Navigation.NavigateTo("/dashboard");
+        }
+    }
+}

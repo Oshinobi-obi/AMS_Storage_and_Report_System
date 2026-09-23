@@ -12,6 +12,7 @@ public class AppDbContext : DbContext
     public DbSet<RoPersonnel> RoPersonnel => Set<RoPersonnel>();
     public DbSet<PropertyType> PropertyTypes => Set<PropertyType>();
     public DbSet<PropertyDocument> PropertyDocuments => Set<PropertyDocument>();
+    public DbSet<UserActivity> UserActivities => Set<UserActivity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -24,9 +25,12 @@ public class AppDbContext : DbContext
             entity.Property(u => u.Username).HasColumnName("username");
             entity.Property(u => u.Email).HasColumnName("email");
             entity.Property(u => u.FullName).HasColumnName("full_name");
+            entity.Property(u => u.DisplayName).HasColumnName("display_name");
+            entity.Property(u => u.ProfilePicturePath).HasColumnName("profile_picture_path");
             entity.Property(u => u.PasswordHash).HasColumnName("password_hash");
             entity.Property(u => u.Role).HasColumnName("role").HasConversion<string>();
             entity.Property(u => u.IsActive).HasColumnName("is_active");
+            entity.Property(u => u.RequirePasswordChange).HasColumnName("require_password_change");
             entity.Property(u => u.FailedLoginAttempts).HasColumnName("failed_login_attempts");
             entity.Property(u => u.LockedUntil).HasColumnName("locked_until");
             entity.Property(u => u.LastLoginAt).HasColumnName("last_login_at");
@@ -80,6 +84,20 @@ public class AppDbContext : DbContext
             entity.HasOne(d => d.Office).WithMany().HasForeignKey(d => d.OfficeId);
             entity.HasOne(d => d.PropertyType).WithMany().HasForeignKey(d => d.PropertyTypeId);
             entity.HasOne(d => d.Personnel).WithMany().HasForeignKey(d => d.PersonnelId);
+        });
+
+        modelBuilder.Entity<UserActivity>(entity =>
+        {
+            entity.ToTable("user_activities");
+            entity.HasKey(a => a.ActivityId);
+            entity.Property(a => a.ActivityId).HasColumnName("activity_id");
+            entity.Property(a => a.UserId).HasColumnName("user_id");
+            entity.Property(a => a.ActivityType).HasColumnName("activity_type");
+            entity.Property(a => a.Description).HasColumnName("description");
+            entity.Property(a => a.IpAddress).HasColumnName("ip_address");
+            entity.Property(a => a.CreatedAt).HasColumnName("created_at");
+
+            entity.HasOne(a => a.User).WithMany().HasForeignKey(a => a.UserId);
         });
     }
 }

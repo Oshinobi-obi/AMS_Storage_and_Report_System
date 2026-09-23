@@ -12,9 +12,12 @@ public class User
     public string Username { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string FullName { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public string? ProfilePicturePath { get; set; }
     public string PasswordHash { get; set; } = string.Empty;
     public UserRole Role { get; set; }
     public bool IsActive { get; set; }
+    public bool RequirePasswordChange { get; set; }
     public int FailedLoginAttempts { get; set; }
     public DateTime? LockedUntil { get; set; }
     public DateTime? LastLoginAt { get; set; }

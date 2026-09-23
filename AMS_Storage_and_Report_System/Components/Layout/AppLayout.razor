@@ -1,7 +1,9 @@
 ﻿@inherits LayoutComponentBase
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Components.Routing
+@using AMS_Storage_and_Report_System.Services
 @inject AntiforgeryStateProvider AntiforgeryStateProvider
+@inject ProfilePictureStorage ProfileStorage
 
 <div class="app-shell">
 
@@ -18,9 +20,20 @@
         <AuthorizeView>
             <Authorized>
                 <div class="sidebar-user">
-                    <div class="avatar">@GetInitial(GetFullName(context))</div>
+                    @{
+                        var profilePic = GetProfilePicture(context);
+                        var displayName = GetDisplayName(context);
+                    }
+                    @if (!string.IsNullOrEmpty(profilePic))
+                    {
+                        <img src="@ProfileStorage.GetProfilePictureUrl(profilePic)" alt="Profile" class="avatar-img" />
+                    }
+                    else
+                    {
+                        <div class="avatar">@GetInitial(displayName)</div>
+                    }
                     <div class="sidebar-user-info">
-                        <div class="sidebar-user-name">@GetFullName(context)</div>
+                        <div class="sidebar-user-name">@displayName</div>
                         <div class="sidebar-user-role">@GetRole(context)</div>
                     </div>
                 </div>
@@ -42,16 +55,15 @@
                     <NavLink href="/settings" Match="NavLinkMatch.All">Settings</NavLink>
                 </nav>
 
-                <form method="post" action="/account/logout" class="sidebar-logout">
-                    <input type="hidden" name="__RequestVerificationToken"
-                           value="@AntiforgeryStateProvider.GetAntiforgeryToken()?.Value" />
-                    <button type="submit" class="logout-btn">Logout</button>
-                </form>
+                <div class="sidebar-logout">
+                    <button type="button" class="logout-btn" @onclick="ShowLogoutModal">Logout</button>
+                </div>
             </Authorized>
         </AuthorizeView>
     </aside>
 
     <div class="sidebar-backdrop" id="sidebar-backdrop" style="display: none;" onclick="toggleSidebar()"></div>
+
 
     <main class="app-content">
         @Body
@@ -59,12 +71,54 @@
 
 </div>
 
+@if (showLogoutModal)
+{
+    <div class="modal-backdrop" @onclick="_ => CloseLogoutModal()">
+        <div class="modal-card confirm-modal" @onclick:stopPropagation="true">
+            <div class="confirm-icon">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="logout-icon">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                    <polyline points="16 17 21 12 16 7"></polyline>
+                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                </svg>
+            </div>
+            <h2 class="modal-title">Confirm Logout</h2>
+            <p class="confirm-message">Are you sure you want to log out of your account?</p>
+            <p class="confirm-hint">You'll need to log in again to access your account.</p>
+
+            <form method="post" action="/account/logout">
+                <input type="hidden" name="__RequestVerificationToken"
+                       value="@AntiforgeryStateProvider.GetAntiforgeryToken()?.Value" />
+                <div class="modal-actions">
+                    <button type="button" class="btn-ghost" @onclick="_ => CloseLogoutModal()">Cancel</button>
+                    <button type="submit" class="btn-primary">Yes, Logout</button>
+                </div>
+            </form>
+        </div>
+    </div>
+}
+
 @code {
+    private bool showLogoutModal = false;
+
+    private void ShowLogoutModal() => showLogoutModal = true;
+
+    private void CloseLogoutModal() => showLogoutModal = false;
+
     private static string GetInitial(string? name) =>
         string.IsNullOrEmpty(name) ? "?" : name.Substring(0, 1).ToUpper();
 
-    private static string GetFullName(AuthenticationState state) =>
-        state.User.FindFirst("FullName")?.Value ?? state.User.Identity?.Name ?? "Unknown";
+    private static string GetDisplayName(AuthenticationState state)
+    {
+        var displayName = state.User.FindFirst("DisplayName")?.Value;
+        if (!string.IsNullOrWhiteSpace(displayName))
+            return displayName;
+
+        return state.User.FindFirst("FullName")?.Value ?? state.User.Identity?.Name ?? "Unknown";
+    }
+
+    private static string GetProfilePicture(AuthenticationState state) =>
+        state.User.FindFirst("ProfilePicture")?.Value ?? "";
 
     private static string GetRole(AuthenticationState state) =>
         state.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";

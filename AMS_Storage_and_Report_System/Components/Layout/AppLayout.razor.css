@@ -103,6 +103,15 @@
     flex-shrink: 0;
 }
 
+.avatar-img {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+    border: 2px solid var(--line);
+}
+
 .sidebar-user-name {
     font-weight: 600;
     font-size: 0.9rem;

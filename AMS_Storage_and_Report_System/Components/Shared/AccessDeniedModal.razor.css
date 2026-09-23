@@ -1,0 +1,68 @@
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(16, 21, 31, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    padding: 1.5rem;
+}
+
+.modal-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 2rem;
+    width: 100%;
+    max-width: 420px;
+}
+
+.access-denied-card {
+    text-align: center;
+}
+
+.access-denied-icon {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 1rem;
+}
+
+    .access-denied-icon svg {
+        color: #B3261E;
+    }
+
+.modal-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #1E3A5F;
+    margin: 0 0 1rem;
+}
+
+.access-denied-message {
+    font-size: 0.95rem;
+    color: #5B6472;
+    margin: 0 0 1.5rem;
+    line-height: 1.5;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: center;
+    gap: 0.75rem;
+}
+
+.btn-primary {
+    background: #1E3A5F;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 0.6rem 1.5rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+    .btn-primary:hover {
+        background: #16304e;
+    }
