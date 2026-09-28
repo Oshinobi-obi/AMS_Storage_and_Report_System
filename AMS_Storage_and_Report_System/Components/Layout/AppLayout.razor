@@ -56,7 +56,7 @@
                 </nav>
 
                 <div class="sidebar-logout">
-                    <button type="button" class="logout-btn" @onclick="ShowLogoutModal">Logout</button>
+                    <button type="button" class="logout-btn" onclick="document.getElementById('logout-dialog').showModal()">Logout</button>
                 </div>
             </Authorized>
         </AuthorizeView>
@@ -69,12 +69,8 @@
         @Body
     </main>
 
-</div>
-
-@if (showLogoutModal)
-{
-    <div class="modal-backdrop" @onclick="_ => CloseLogoutModal()">
-        <div class="modal-card confirm-modal" @onclick:stopPropagation="true">
+    <dialog id="logout-dialog" class="logout-dialog" onclick="if (event.target === this) this.close()">
+        <div class="modal-card confirm-modal">
             <div class="confirm-icon">
                 <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="logout-icon">
                     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
@@ -90,21 +86,16 @@
                 <input type="hidden" name="__RequestVerificationToken"
                        value="@AntiforgeryStateProvider.GetAntiforgeryToken()?.Value" />
                 <div class="modal-actions">
-                    <button type="button" class="btn-ghost" @onclick="_ => CloseLogoutModal()">Cancel</button>
+                    <button type="button" class="btn-ghost" onclick="this.closest('dialog').close()">Cancel</button>
                     <button type="submit" class="btn-primary">Yes, Logout</button>
                 </div>
             </form>
         </div>
-    </div>
-}
+    </dialog>
+
+</div>
 
 @code {
-    private bool showLogoutModal = false;
-
-    private void ShowLogoutModal() => showLogoutModal = true;
-
-    private void CloseLogoutModal() => showLogoutModal = false;
-
     private static string GetInitial(string? name) =>
         string.IsNullOrEmpty(name) ? "?" : name.Substring(0, 1).ToUpper();
 
