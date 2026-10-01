@@ -127,7 +127,10 @@
                         <input type="checkbox" checked="@selectedIds.Contains(doc.DocumentId)"
                                @onchange="e => ToggleSelected(doc.DocumentId, (bool)e.Value!)" />
                     </td>
-                    <td>@doc.DocumentType</td>
+                    <td>
+                        <div class="doc-type">@doc.DocumentType</div>
+                        <div class="doc-filename" title="@doc.OriginalFileName">@doc.OriginalFileName</div>
+                    </td>
                     <td>@doc.PropertyType?.TypeName</td>
                     <td>@doc.Office?.OfficeAcronym</td>
                     <td>@doc.Personnel?.FullName</td>
@@ -172,7 +175,7 @@
 
             <div class="field">
                 <label>Property Document:</label>
-                <select @bind="newDocumentType">
+                <select @bind="newDocumentType" @bind:after="OnModalDocumentTypeChanged">
                     <option value="">-- Select --</option>
                     <option value="PAR">Property Acknowledgement Receipt (PAR)</option>
                     <option value="ICS">Inventory Custodian Slip (ICS)</option>
@@ -182,13 +185,21 @@
 
             <div class="field">
                 <label>Type of Property:</label>
-                <select @bind="newPropertyTypeId">
+                <select @bind="newPropertyTypeId" disabled="@(!IsReturnSlip)">
                     <option value="0">-- Select --</option>
                     @foreach (var t in propertyTypes)
                     {
                         <option value="@t.PropertyTypeId">@t.TypeName</option>
                     }
                 </select>
+                @if (newDocumentType is "PAR" or "ICS")
+                {
+                    <p class="field-hint">Assigned automatically based on the selected document.</p>
+                }
+                else if (IsReturnSlip)
+                {
+                    <p class="field-hint">Select the type of property being returned.</p>
+                }
             </div>
 
             <div class="field">
@@ -399,6 +410,31 @@
         newPosition = "";
     }
 
+    private bool IsReturnSlip => newDocumentType == "Return Slip";
+
+    private void OnModalDocumentTypeChanged()
+    {
+        uploadError = "";
+
+        newPropertyTypeId = IsReturnSlip ? 0 : GetAutoPropertyTypeId(newDocumentType);
+
+        if ((newDocumentType is "PAR" or "ICS") && newPropertyTypeId == 0)
+            uploadError = "Could not find the matching Type of Property in the database. Please check the Property Types list.";
+    }
+
+    private int GetAutoPropertyTypeId(string documentType) => documentType switch
+    {
+        "ICS" => FindPropertyTypeId("Semi-Expendable", "Semi Expendable", "(SE)"),
+        "PAR" => FindPropertyTypeId("Property, Plant", "Property Plant", "(PPE)"),
+        _ => 0
+    };
+
+    private int FindPropertyTypeId(params string[] keywords) =>
+        propertyTypes
+            .FirstOrDefault(t => keywords.Any(k =>
+                (t.TypeName ?? "").Contains(k, StringComparison.OrdinalIgnoreCase)))
+            ?.PropertyTypeId ?? 0;
+
     private void OnModalPersonnelChanged()
     {
         var person = modalPersonnelOptions.FirstOrDefault(p => p.PersonnelId == newPersonnelId);
@@ -432,6 +468,9 @@
     private async Task SubmitNewDocument()
     {
         uploadError = "";
+
+        if (newDocumentType is "PAR" or "ICS")
+            newPropertyTypeId = GetAutoPropertyTypeId(newDocumentType);
 
         if (newOfficeId == 0 || string.IsNullOrEmpty(newDocumentType) ||
             newPropertyTypeId == 0 || newPersonnelId == 0 || selectedFile is null)
