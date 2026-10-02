@@ -1,116 +1,154 @@
-﻿@inherits LayoutComponentBase
-@using Microsoft.AspNetCore.Components.Authorization
-@using Microsoft.AspNetCore.Components.Routing
-@using AMS_Storage_and_Report_System.Services
-@inject AntiforgeryStateProvider AntiforgeryStateProvider
+@inherits LayoutComponentBase
+@implements IDisposable
 @inject ProfilePictureStorage ProfileStorage
+@inject NavigationManager Nav
+@inject ModalService Modal
+@inject IJSRuntime JS
 
-<div class="app-shell">
-
-    <header class="app-topbar">
-        <button class="hamburger" onclick="toggleSidebar()" aria-label="Toggle menu">
-            <span></span>
-            <span></span>
-            <span></span>
+<div class="shell">
+    @* Phone / tablet top bar *@
+    <header class="mobile-bar">
+        <button type="button" class="menu-btn" aria-label="Open menu" aria-expanded="@(_menuOpen ? "true" : "false")"
+                aria-controls="app-sidebar" @onclick="() => _menuOpen = true">
+            <i class="bi bi-list" aria-hidden="true"></i>
         </button>
-        <span class="app-topbar-title">StockWatch</span>
+        <span class="brand-pill"><img src="images/one-ncr-stronger-together.png" alt="DepEd NCR" width="88" height="28" /></span>
     </header>
 
-    <aside class="sidebar" id="app-sidebar">
+    <aside id="app-sidebar" class="sidebar @(_menuOpen ? "open" : "")" aria-label="Main menu">
+        <div class="sidebar-brand">
+            <a href="/dashboard" class="brand-pill" aria-label="AMS StockWatch dashboard">
+                <img src="images/one-ncr-stronger-together.png" alt="DepEd NCR, One NCR Stronger Together" width="106" height="34" />
+            </a>
+            <p class="sidebar-app">
+                <strong>AMS StockWatch</strong>
+                <span>Asset Management Section</span>
+            </p>
+        </div>
+
+        <nav class="sidebar-nav">
+            <div class="nav-group">
+                <NavLink class="nav-item" href="dashboard" Match="NavLinkMatch.All"><i class="bi bi-speedometer2" aria-hidden="true"></i>Dashboard</NavLink>
+            </div>
+
+            <div class="nav-group">
+                <div class="nav-group-label">Supplies</div>
+                <NavLink class="nav-item" href="requisitions"><i class="bi bi-inbox" aria-hidden="true"></i>Requisitions<span class="nav-soon">Next</span></NavLink>
+                <NavLink class="nav-item" href="inventory"><i class="bi bi-box-seam" aria-hidden="true"></i>Inventory</NavLink>
+                <NavLink class="nav-item" href="reports"><i class="bi bi-file-earmark-bar-graph" aria-hidden="true"></i>Reports<span class="nav-soon">Soon</span></NavLink>
+            </div>
+
+            <div class="nav-group">
+                <div class="nav-group-label">Records</div>
+                <NavLink class="nav-item" href="employees"><i class="bi bi-people" aria-hidden="true"></i>Employees</NavLink>
+                <NavLink class="nav-item" href="property-documents"><i class="bi bi-folder2-open" aria-hidden="true"></i>Property documents</NavLink>
+            </div>
+
+            <div class="nav-group">
+                <div class="nav-group-label">Administration</div>
+                <AuthorizeView Roles="SuperAdmin" Context="superAdmin">
+                    <NavLink class="nav-item" href="account"><i class="bi bi-person-gear" aria-hidden="true"></i>Accounts</NavLink>
+                </AuthorizeView>
+                <NavLink class="nav-item" href="profile"><i class="bi bi-person-circle" aria-hidden="true"></i>My profile</NavLink>
+                <NavLink class="nav-item" href="settings"><i class="bi bi-sliders" aria-hidden="true"></i>Settings<span class="nav-soon">Soon</span></NavLink>
+            </div>
+        </nav>
+
         <AuthorizeView>
             <Authorized>
-                <div class="sidebar-user">
-                    @{
-                        var profilePic = GetProfilePicture(context);
-                        var displayName = GetDisplayName(context);
-                    }
-                    @if (!string.IsNullOrEmpty(profilePic))
-                    {
-                        <img src="@ProfileStorage.GetProfilePictureUrl(profilePic)" alt="Profile" class="avatar-img" />
-                    }
-                    else
-                    {
-                        <div class="avatar">@GetInitial(displayName)</div>
-                    }
-                    <div class="sidebar-user-info">
-                        <div class="sidebar-user-name">@displayName</div>
-                        <div class="sidebar-user-role">@GetRole(context)</div>
-                    </div>
-                </div>
-
-                <nav class="sidebar-nav">
-                    <NavLink href="/dashboard" Match="NavLinkMatch.All">Dashboard</NavLink>
-                    <NavLink href="/employees" Match="NavLinkMatch.All">Employees</NavLink>
-                    <NavLink href="/inventory" Match="NavLinkMatch.All">Inventory</NavLink>
-                    <NavLink href="/property-documents" Match="NavLinkMatch.All">Property Documents</NavLink>
-                    <NavLink href="/reports" Match="NavLinkMatch.All">Reports</NavLink>
-                    <NavLink href="/profile" Match="NavLinkMatch.All">Profile</NavLink>
-
-                    <AuthorizeView Roles="SuperAdmin" Context="superAdminContext">
-                        <Authorized>
-                            <NavLink href="/account" Match="NavLinkMatch.All">Account</NavLink>
-                        </Authorized>
-                    </AuthorizeView>
-
-                    <NavLink href="/settings" Match="NavLinkMatch.All">Settings</NavLink>
-                </nav>
-
-                <div class="sidebar-logout">
-                    <button type="button" class="logout-btn" onclick="document.getElementById('logout-dialog').showModal()">Logout</button>
+                <div class="sidebar-foot">
+                    <a class="user-chip" href="/profile">
+                        <span class="avatar">
+                            @if (PictureUrl(context) is { } url)
+                            {
+                                <img src="@url" alt="" />
+                            }
+                            else
+                            {
+                                @Initial(context)
+                            }
+                        </span>
+                        <span class="user-chip-text">
+                            <strong>@DisplayName(context)</strong>
+                            <span>@RoleLabel(context)</span>
+                        </span>
+                    </a>
+                    <form method="post" action="/account/logout" class="m-0" @ref="_logoutForm" autocomplete="off">
+                        <AntiforgeryToken />
+                        <button type="button" class="btn-logout" @onclick="ConfirmLogoutAsync">
+                            <i class="bi bi-box-arrow-right" aria-hidden="true"></i> Log out
+                        </button>
+                    </form>
                 </div>
             </Authorized>
         </AuthorizeView>
     </aside>
 
-    <div class="sidebar-backdrop" id="sidebar-backdrop" style="display: none;" onclick="toggleSidebar()"></div>
+    @if (_menuOpen)
+    {
+        <div class="sidebar-backdrop" @onclick="() => _menuOpen = false"></div>
+    }
 
-
-    <main class="app-content">
+    <main class="shell-main">
         @Body
     </main>
 
-    <dialog id="logout-dialog" class="logout-dialog" onclick="if (event.target === this) this.close()">
-        <div class="modal-card confirm-modal">
-            <div class="confirm-icon">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="logout-icon">
-                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                    <polyline points="16 17 21 12 16 7"></polyline>
-                    <line x1="21" y1="12" x2="9" y2="12"></line>
-                </svg>
-            </div>
-            <h2 class="modal-title">Confirm Logout</h2>
-            <p class="confirm-message">Are you sure you want to log out of your account?</p>
-            <p class="confirm-hint">You'll need to log in again to access your account.</p>
-
-            <form method="post" action="/account/logout">
-                <input type="hidden" name="__RequestVerificationToken"
-                       value="@AntiforgeryStateProvider.GetAntiforgeryToken()?.Value" />
-                <div class="modal-actions">
-                    <button type="button" class="btn-ghost" onclick="this.closest('dialog').close()">Cancel</button>
-                    <button type="submit" class="btn-primary">Yes, Logout</button>
-                </div>
-            </form>
-        </div>
-    </dialog>
-
+    <ModalHost />
 </div>
 
 @code {
-    private static string GetInitial(string? name) =>
-        string.IsNullOrEmpty(name) ? "?" : name.Substring(0, 1).ToUpper();
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
 
-    private static string GetDisplayName(AuthenticationState state)
+    private bool _menuOpen;
+    private ElementReference _logoutForm;
+
+    protected override void OnInitialized() => Nav.LocationChanged += OnLocationChanged;
+
+    // A user flagged "must change password" can only use their profile page.
+    protected override async Task OnParametersSetAsync()
     {
-        var displayName = state.User.FindFirst("DisplayName")?.Value;
-        if (!string.IsNullOrWhiteSpace(displayName))
-            return displayName;
-
-        return state.User.FindFirst("FullName")?.Value ?? state.User.Identity?.Name ?? "Unknown";
+        if (AuthState is null) return;
+        var user = (await AuthState).User;
+        if (user.FindFirst("MustChangePassword")?.Value == "1")
+        {
+            var path = "/" + Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0];
+            if (!path.StartsWith("/profile", StringComparison.OrdinalIgnoreCase))
+                Nav.NavigateTo("/profile?requirePasswordChange=true", replace: true);
+        }
     }
 
-    private static string GetProfilePicture(AuthenticationState state) =>
-        state.User.FindFirst("ProfilePicture")?.Value ?? "";
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (!_menuOpen) return;
+        _menuOpen = false;
+        _ = InvokeAsync(StateHasChanged);
+    }
 
-    private static string GetRole(AuthenticationState state) =>
-        state.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";
+    private async Task ConfirmLogoutAsync()
+    {
+        if (await Modal.ConfirmAsync("Log out?", "You'll need to sign in again to use AMS StockWatch.",
+                                     "Log out", "Stay signed in", ModalVariant.Warning))
+            await JS.InvokeVoidAsync("ams.submitForm", _logoutForm);
+    }
+
+    private static string DisplayName(AuthenticationState s)
+    {
+        var name = s.User.FindFirst("DisplayName")?.Value;
+        return !string.IsNullOrWhiteSpace(name) ? name : s.User.FindFirst("FullName")?.Value ?? s.User.Identity?.Name ?? "Signed in";
+    }
+
+    private static string Initial(AuthenticationState s) => DisplayName(s)[..1].ToUpperInvariant();
+
+    private string? PictureUrl(AuthenticationState s) =>
+        ProfileStorage.GetProfilePictureUrl(s.User.FindFirst("ProfilePicture")?.Value);
+
+    private static string RoleLabel(AuthenticationState s) =>
+        s.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value switch
+        {
+            "SuperAdmin" => "Super Admin",
+            "Admin" => "Admin",
+            var r => r ?? "",
+        };
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
 }

@@ -1,0 +1,17 @@
+@page "/reports"
+@layout AppLayout
+@attribute [Authorize]
+
+<PageTitle>Reports | AMS StockWatch</PageTitle>
+
+<PageHeader Title="Reports" Subtitle="Summaries built from requisitions, issuances and stock movements." />
+
+<div class="wrap page-body">
+    <ComingSoon Icon="bi-file-earmark-bar-graph" Heading="Reports are coming soon"
+                Description="Planned reports:"
+                Planned="@(new[] {
+                    "Report of Supplies and Materials Issued (RSMI), monthly",
+                    "Stock card and supplies ledger per item",
+                    "APP-CSE utilization per office",
+                    "Low and out-of-stock list for reordering" })" />
+</div>

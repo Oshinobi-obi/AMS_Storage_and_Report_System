@@ -1,10 +1,213 @@
-﻿@page "/dashboard"
+@page "/dashboard"
 @layout AppLayout
-@rendermode InteractiveServer
 @attribute [Authorize]
-@using Microsoft.AspNetCore.Authorization
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject ILogger<Dashboard> Log
 
-<PageTitle>Dashboard — StockWatch</PageTitle>
+<PageTitle>Dashboard | AMS StockWatch</PageTitle>
 
-<h1 class="page-title">Dashboard</h1>
-<p class="page-subtitle">Overview of stock levels and pending reports.</p>
+<PageHeader Title="@Greeting" Subtitle="@($"{PhTime.Now:dddd, MMMM d, yyyy}. Here's what needs attention today.")" />
+
+<div class="wrap page-body">
+    @if (_loading)
+    {
+        <div class="panel"><div class="loading">Loading the dashboard…</div></div>
+    }
+    else
+    {
+        @if (_supplyTablesMissing)
+        {
+            <div class="callout"><i class="bi bi-database-exclamation" aria-hidden="true"></i>
+                <p>Requisition and inventory figures will appear once the AMS Supplies database update (<code>001_requisition_portal.sql</code>) has been run.</p></div>
+        }
+
+        <div class="stat-grid">
+            <a class="stat" href="/requisitions">
+                <span class="stat-icon is-gold"><i class="bi bi-inbox" aria-hidden="true"></i></span>
+                <span><span class="stat-value">@_pendingRis</span><span class="stat-label">Requisitions waiting for approval</span></span>
+            </a>
+            <a class="stat" href="/inventory?stock=low">
+                <span class="stat-icon is-warn"><i class="bi bi-exclamation-circle" aria-hidden="true"></i></span>
+                <span><span class="stat-value">@_lowStock</span><span class="stat-label">Items low on stock</span></span>
+            </a>
+            <a class="stat" href="/inventory?stock=out">
+                <span class="stat-icon is-bad"><i class="bi bi-x-circle" aria-hidden="true"></i></span>
+                <span><span class="stat-value">@_outOfStock</span><span class="stat-label">Items out of stock</span></span>
+            </a>
+            <a class="stat" href="/property-documents">
+                <span class="stat-icon"><i class="bi bi-folder2-open" aria-hidden="true"></i></span>
+                <span><span class="stat-value">@_documents</span><span class="stat-label">Property documents on file</span></span>
+            </a>
+            <a class="stat" href="/employees">
+                <span class="stat-icon is-ok"><i class="bi bi-people" aria-hidden="true"></i></span>
+                <span><span class="stat-value">@_personnel</span><span class="stat-label">RO personnel in @_offices offices</span></span>
+            </a>
+        </div>
+
+        <div class="row g-3">
+            <div class="col-lg-6">
+                <section class="panel h-100">
+                    <header class="panel-head">
+                        <h2>Waiting for approval</h2>
+                        <a class="act" href="/requisitions">Open queue <i class="bi bi-chevron-right" aria-hidden="true"></i></a>
+                    </header>
+                    @if (_pending.Count == 0)
+                    {
+                        <div class="empty-state"><i class="bi bi-check2-circle" aria-hidden="true"></i><h2>All caught up</h2><p>No requisitions are waiting for AMS.</p></div>
+                    }
+                    else
+                    {
+                        <div class="table-wrap">
+                            <table class="data-table">
+                                <thead><tr><th>RIS no.</th><th>Office</th><th class="t-num">Items</th><th>Submitted</th></tr></thead>
+                                <tbody>
+                                    @foreach (var r in _pending)
+                                    {
+                                        <tr>
+                                            <td class="cell-strong text-nowrap">@r.RisNo</td>
+                                            <td>@r.OfficeAcronym</td>
+                                            <td class="t-num">@r.ItemCount</td>
+                                            <td class="text-nowrap">@r.RequestedAt.ToString("MMM d, h:mm tt")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </section>
+            </div>
+
+            <div class="col-lg-6">
+                <section class="panel h-100">
+                    <header class="panel-head">
+                        <h2>Needs restocking</h2>
+                        <a class="act" href="/inventory?stock=low">View inventory <i class="bi bi-chevron-right" aria-hidden="true"></i></a>
+                    </header>
+                    @if (_restock.Count == 0)
+                    {
+                        <div class="empty-state"><i class="bi bi-check2-circle" aria-hidden="true"></i><h2>Stock levels look fine</h2><p>Nothing is at or below its reorder level.</p></div>
+                    }
+                    else
+                    {
+                        <div class="table-wrap">
+                            <table class="data-table">
+                                <thead><tr><th>Item</th><th class="t-num">On hand</th><th class="t-num">Reorder at</th><th>Status</th></tr></thead>
+                                <tbody>
+                                    @foreach (var i in _restock)
+                                    {
+                                        <tr>
+                                            <td><span class="cell-strong">@i.ItemName</span><span class="cell-sub">@i.StockNo</span></td>
+                                            <td class="t-num">@i.StockOnHand @i.Unit</td>
+                                            <td class="t-num">@i.ReorderLevel</td>
+                                            <td>
+                                                @if (i.StockOnHand <= 0)
+                                                {
+                                                    <span class="badge-pill badge-bad"><i class="bi bi-x-circle-fill" aria-hidden="true"></i>Out of stock</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge-pill badge-warn"><i class="bi bi-exclamation-circle-fill" aria-hidden="true"></i>Low stock</span>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </section>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    public sealed class PendingRow
+    {
+        public string RisNo { get; set; } = "";
+        public string OfficeAcronym { get; set; } = "";
+        public DateTime RequestedAt { get; set; }
+        public long ItemCount { get; set; }
+    }
+
+    public sealed class RestockRow
+    {
+        public string StockNo { get; set; } = "";
+        public string ItemName { get; set; } = "";
+        public string Unit { get; set; } = "";
+        public long StockOnHand { get; set; }
+        public long ReorderLevel { get; set; }
+    }
+
+    private bool _loading = true, _supplyTablesMissing;
+    private string _name = "";
+    private long _pendingRis, _lowStock, _outOfStock, _documents, _personnel, _offices;
+    private List<PendingRow> _pending = [];
+    private List<RestockRow> _restock = [];
+
+    private string Greeting
+    {
+        get
+        {
+            var h = PhTime.Now.Hour;
+            var part = h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+            return string.IsNullOrWhiteSpace(_name) ? part : $"{part}, {_name}";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is not null)
+        {
+            var u = (await AuthState).User;
+            var dn = u.FindFirst("DisplayName")?.Value;
+            _name = !string.IsNullOrWhiteSpace(dn) ? dn : u.FindFirst("FullName")?.Value ?? "";
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        // Records that exist in every version of the database
+        _documents = await db.PropertyDocuments.LongCountAsync();
+        _personnel = await db.RoPersonnel.LongCountAsync();
+        _offices = await db.RoPersonnel.Select(p => p.OfficeId).Distinct().LongCountAsync();
+
+        // Supply tables come from the AMS Supplies portal update
+        try
+        {
+            _pendingRis = await Count(db, $"SELECT COUNT(*) AS Value FROM ris_transactions WHERE status = 'PendingApproval'");
+            _lowStock = await Count(db, $"SELECT COUNT(*) AS Value FROM supply_items WHERE is_active = 1 AND stock_on_hand > 0 AND stock_on_hand <= reorder_level");
+            _outOfStock = await Count(db, $"SELECT COUNT(*) AS Value FROM supply_items WHERE is_active = 1 AND stock_on_hand <= 0");
+
+            _pending = await db.Database.SqlQuery<PendingRow>($@"
+                SELECT r.ris_no AS RisNo, o.office_acronym AS OfficeAcronym, r.requested_at AS RequestedAt,
+                       (SELECT COUNT(*) FROM ris_items i WHERE i.ris_id = r.ris_id) AS ItemCount
+                  FROM ris_transactions r JOIN offices o ON o.office_id = r.office_id
+                 WHERE r.status = 'PendingApproval'
+                 ORDER BY r.requested_at
+                 LIMIT 6").ToListAsync();
+
+            _restock = await db.Database.SqlQuery<RestockRow>($@"
+                SELECT stock_no AS StockNo, item_name AS ItemName, unit_of_measure AS Unit,
+                       CAST(stock_on_hand AS SIGNED) AS StockOnHand, CAST(reorder_level AS SIGNED) AS ReorderLevel
+                  FROM supply_items
+                 WHERE is_active = 1 AND stock_on_hand <= reorder_level
+                 ORDER BY stock_on_hand, item_name
+                 LIMIT 8").ToListAsync();
+        }
+        catch (Exception ex) when (ex.GetBaseException().Message.Contains("doesn't exist"))
+        {
+            _supplyTablesMissing = true;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Dashboard supply figures failed");
+        }
+
+        _loading = false;
+    }
+
+    private static Task<long> Count(AppDbContext db, FormattableString sql) =>
+        db.Database.SqlQuery<long>(sql).SingleAsync();
+}

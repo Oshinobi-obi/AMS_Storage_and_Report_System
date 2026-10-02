@@ -1,56 +1,60 @@
+using System.IO.Compression;
+using System.Security.Claims;
 using AMS_Storage_and_Report_System.Components;
+using AMS_Storage_and_Report_System.Components.Shared.Modals;
 using AMS_Storage_and_Report_System.Data;
+using AMS_Storage_and_Report_System.Models;
 using AMS_Storage_and_Report_System.Services;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.EntityFrameworkCore;
-using System.IO.Compression;
-using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
-var dpConnectionString = builder.Configuration.GetConnectionString("Default")!;
 
-builder.Services.AddDataProtection()
+// ── Connection string (User Secrets in development; never in appsettings.json) ──
+var connectionString = builder.Configuration.GetConnectionString("Default");
+if (string.IsNullOrWhiteSpace(connectionString))
+    throw new InvalidOperationException(
+        "ConnectionStrings:Default is empty. Run in the project folder: " +
+        "dotnet user-secrets set \"ConnectionStrings:Default\" \"server=localhost;port=3306;database=ams_stockwatch;user=...;password=...;\"");
+
+// ── Data Protection keys (cookies, antiforgery) stored in MySQL ─────────────────
+var dataProtection = builder.Services.AddDataProtection()
     .SetApplicationName("AMS_StockWatch")
-    .AddKeyManagementOptions(options =>
-    {
-        options.XmlRepository = new MySqlXmlRepository(dpConnectionString);
-    });
+    .AddKeyManagementOptions(o => o.XmlRepository = new MySqlXmlRepository(connectionString));
+if (OperatingSystem.IsWindows())
+    dataProtection.ProtectKeysWithDpapi(protectToLocalMachine: true);   // keys are no longer stored in plain text
 
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents()
-    .AddHubOptions(options =>
-    {
-        options.MaximumReceiveMessageSize = 50 * 1024 * 1024;
-    });
+    .AddInteractiveServerComponents(o => o.DetailedErrors = builder.Environment.IsDevelopment())
+    .AddHubOptions(o => o.MaximumReceiveMessageSize = 50 * 1024 * 1024);   // PDF uploads
 
-builder.Services.AddDbContext<AppDbContext>(options =>
-{
-    var connStr = builder.Configuration.GetConnectionString("Default");
-    options.UseMySql(connStr, ServerVersion.AutoDetect(connStr));
-});
+// One short-lived DbContext per operation (Blazor Server circuits are long-lived).
+var serverVersion = ServerVersion.Parse("8.0.46-mysql");
+builder.Services.AddDbContextFactory<AppDbContext>(o => o.UseMySql(connectionString, serverVersion));
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<AuthService>();
+builder.Services.AddScoped<ModalService>();
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {
         options.LoginPath = "/login";
-        options.AccessDeniedPath = "/login";
+        options.AccessDeniedPath = "/dashboard";
+        options.Cookie.Name = "ams_stockwatch_auth";
         options.Cookie.HttpOnly = true;
-        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
-        options.Cookie.SameSite = SameSiteMode.Strict;
+        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+            ? CookieSecurePolicy.SameAsRequest
+            : CookieSecurePolicy.Always;
+        options.Cookie.SameSite = SameSiteMode.Lax;   // Strict drops the cookie when the site is opened from a link
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
         options.SlidingExpiration = true;
     });
-
-builder.Services.AddAuthorizationCore();
-builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddAuthorization();
+builder.Services.AddCascadingAuthenticationState();
 
 builder.Services.AddSingleton<PropertyDocumentStorage>();
 builder.Services.AddSingleton<ProfilePictureStorage>();
@@ -68,6 +72,7 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Pages show personal data; don't let the browser cache them.
 app.Use(async (context, next) =>
 {
     context.Response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate";
@@ -82,6 +87,21 @@ app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
+// ── Sign in / out ───────────────────────────────────────────────────────────
+static string SafeLocal(string? url) =>
+    !string.IsNullOrEmpty(url) && url.StartsWith('/') && !url.StartsWith("//") && !url.StartsWith("/\\") ? url : "/dashboard";
+
+static List<Claim> BuildClaims(User user) =>
+[
+    new(ClaimTypes.NameIdentifier, user.UserId.ToString()),
+    new(ClaimTypes.Name, user.Username),
+    new(ClaimTypes.Role, user.Role.ToString()),
+    new("FullName", user.FullName),
+    new("DisplayName", user.DisplayName ?? ""),
+    new("ProfilePicture", user.ProfilePicturePath ?? ""),
+    new("MustChangePassword", user.RequirePasswordChange ? "1" : "0"),
+];
+
 app.MapPost("/account/login", async (HttpContext http, AuthService authService, IAntiforgery antiforgery) =>
 {
     await antiforgery.ValidateRequestAsync(http);
@@ -92,169 +112,134 @@ app.MapPost("/account/login", async (HttpContext http, AuthService authService, 
     var returnUrl = form["returnUrl"].ToString();
     var rememberMe = form.ContainsKey("rememberMe");
 
-    var result = await authService.ValidateLoginAsync(username, password);
-
+    var result = await authService.ValidateLoginAsync(username, password, http.Connection.RemoteIpAddress?.ToString());
     if (!result.Succeeded || result.User is null)
     {
-        var msg = Uri.EscapeDataString(result.ErrorMessage ?? "Login failed.");
-        return Results.Redirect($"/login?Error={msg}");
+        var msg = Uri.EscapeDataString(result.ErrorMessage ?? "Sign-in failed.");
+        var back = string.IsNullOrEmpty(returnUrl) ? "" : $"&returnUrl={Uri.EscapeDataString(returnUrl)}";
+        return Results.LocalRedirect($"/login?error={msg}{back}");
     }
 
-    var claims = new List<Claim>
-    {
-        new(ClaimTypes.NameIdentifier, result.User.UserId.ToString()),
-        new(ClaimTypes.Name, result.User.Username),
-        new(ClaimTypes.Role, result.User.Role.ToString()),
-        new("FullName", result.User.FullName),
-        new("DisplayName", result.User.DisplayName ?? ""),
-        new("ProfilePicture", result.User.ProfilePicturePath ?? "")
-    };
-
-    var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-    var principal = new ClaimsPrincipal(identity);
-
+    var principal = new ClaimsPrincipal(new ClaimsIdentity(BuildClaims(result.User), CookieAuthenticationDefaults.AuthenticationScheme));
     await http.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, new AuthenticationProperties
     {
         IsPersistent = rememberMe,
-        ExpiresUtc = rememberMe ? DateTimeOffset.UtcNow.AddDays(30) : DateTimeOffset.UtcNow.AddHours(8)
+        ExpiresUtc = rememberMe ? DateTimeOffset.UtcNow.AddDays(30) : DateTimeOffset.UtcNow.AddHours(8),
     });
 
-    // Check if user needs to change password
-    if (result.User.RequirePasswordChange)
-    {
-        return Results.Redirect("/profile?requirePasswordChange=true");
-    }
-
-    return Results.Redirect(string.IsNullOrEmpty(returnUrl) ? "/dashboard" : returnUrl);
+    return result.User.RequirePasswordChange
+        ? Results.LocalRedirect("/profile?requirePasswordChange=true")
+        : Results.LocalRedirect(SafeLocal(returnUrl));
 });
 
 app.MapPost("/account/logout", async (HttpContext http) =>
 {
     await http.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-    return Results.Redirect("/");
+    return Results.LocalRedirect("/login?signedOut=true");
 });
 
-app.MapGet("/account/refresh-session", async (HttpContext http, AppDbContext db, string? returnUrl) =>
+// Re-issues the cookie after the profile, picture or password changes.
+app.MapGet("/account/refresh-session", async (HttpContext http, IDbContextFactory<AppDbContext> dbFactory, string? returnUrl) =>
 {
     var username = http.User.Identity?.Name;
-    if (string.IsNullOrEmpty(username))
-    {
-        return Results.Redirect("/login");
-    }
+    if (string.IsNullOrEmpty(username)) return Results.LocalRedirect("/login");
 
-    var user = await db.Users.FirstOrDefaultAsync(u => u.Username == username);
-    if (user is null)
+    await using var db = await dbFactory.CreateDbContextAsync();
+    var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Username == username);
+    if (user is null || !user.IsActive || !user.IsStaff)
     {
         await http.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-        return Results.Redirect("/login");
+        return Results.LocalRedirect("/login");
     }
 
-    // Create updated claims with fresh data from database
-    var claims = new List<Claim>
-    {
-        new(ClaimTypes.NameIdentifier, user.UserId.ToString()),
-        new(ClaimTypes.Name, user.Username),
-        new(ClaimTypes.Role, user.Role.ToString()),
-        new("FullName", user.FullName),
-        new("DisplayName", user.DisplayName ?? ""),
-        new("ProfilePicture", user.ProfilePicturePath ?? "")
-    };
+    var auth = await http.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    var isPersistent = auth.Properties?.IsPersistent ?? false;
+    await http.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme,
+        new ClaimsPrincipal(new ClaimsIdentity(BuildClaims(user), CookieAuthenticationDefaults.AuthenticationScheme)),
+        new AuthenticationProperties
+        {
+            IsPersistent = isPersistent,
+            ExpiresUtc = isPersistent ? DateTimeOffset.UtcNow.AddDays(30) : DateTimeOffset.UtcNow.AddHours(8),
+        });
 
-    var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-    var principal = new ClaimsPrincipal(identity);
-
-    // Get existing authentication properties to maintain session settings
-    var authenticateResult = await http.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-    var isPersistent = authenticateResult.Properties?.IsPersistent ?? false;
-
-    await http.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, new AuthenticationProperties
-    {
-        IsPersistent = isPersistent,
-        ExpiresUtc = isPersistent ? DateTimeOffset.UtcNow.AddDays(30) : DateTimeOffset.UtcNow.AddHours(8)
-    });
-
-    return Results.Redirect(string.IsNullOrEmpty(returnUrl) ? "/profile" : returnUrl);
+    return Results.LocalRedirect(string.IsNullOrEmpty(returnUrl) ? "/profile" : SafeLocal(returnUrl));
 }).RequireAuthorization();
 
-var propertyDocsPath = app.Services.GetRequiredService<PropertyDocumentStorage>().RootPath;
-var profilePicsPath = app.Services.GetRequiredService<ProfilePictureStorage>().RootPath;
+// ── Property documents (PDF) ────────────────────────────────────────────────
+var docStorage = app.Services.GetRequiredService<PropertyDocumentStorage>();
+var pictureStorage = app.Services.GetRequiredService<ProfilePictureStorage>();
 
-app.MapGet("/documents/download/{id:int}", async (int id, AppDbContext db) =>
+string? DocPath(PropertyDocument doc)
 {
+    var name = Path.GetFileName(doc.FilePath);
+    var full = Path.Combine(docStorage.RootPath, name);
+    return File.Exists(full) ? full : null;
+}
+
+app.MapGet("/documents/view/{id:int}", async (int id, IDbContextFactory<AppDbContext> dbFactory) =>
+{
+    await using var db = await dbFactory.CreateDbContextAsync();
     var doc = await db.PropertyDocuments.FindAsync(id);
-    if (doc is null) return Results.NotFound();
-
-    var fullPath = Path.Combine(propertyDocsPath, doc.FilePath);
-    if (!File.Exists(fullPath)) return Results.NotFound();
-
-    return Results.File(fullPath, "application/pdf", doc.OriginalFileName);
+    var path = doc is null ? null : DocPath(doc);
+    return path is null ? Results.NotFound() : Results.File(File.OpenRead(path), "application/pdf");
 }).RequireAuthorization();
 
-app.MapGet("/documents/view/{id:int}", async (int id, AppDbContext db) =>
+app.MapGet("/documents/download/{id:int}", async (int id, IDbContextFactory<AppDbContext> dbFactory) =>
 {
+    await using var db = await dbFactory.CreateDbContextAsync();
     var doc = await db.PropertyDocuments.FindAsync(id);
-    if (doc is null) return Results.NotFound();
-
-    var fullPath = Path.Combine(propertyDocsPath, doc.FilePath);
-    if (!File.Exists(fullPath)) return Results.NotFound();
-
-    return Results.File(File.OpenRead(fullPath), "application/pdf");
+    var path = doc is null ? null : DocPath(doc);
+    return path is null ? Results.NotFound() : Results.File(path, "application/pdf", doc!.OriginalFileName);
 }).RequireAuthorization();
 
-app.MapGet("/documents/download-bulk", async (string ids, AppDbContext db) =>
+app.MapGet("/documents/download-bulk", async (string? ids, IDbContextFactory<AppDbContext> dbFactory) =>
 {
-    var idList = ids.Split(',', StringSplitOptions.RemoveEmptyEntries)
-                     .Select(int.Parse)
-                     .ToList();
+    var idList = (ids ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
+        .Select(s => int.TryParse(s, out var n) ? n : (int?)null)
+        .Where(n => n is not null).Select(n => n!.Value)
+        .Distinct().Take(200).ToList();
+    if (idList.Count == 0) return Results.BadRequest("No documents selected.");
 
-    var docs = await db.PropertyDocuments
-        .Where(d => idList.Contains(d.DocumentId))
-        .ToListAsync();
+    await using var db = await dbFactory.CreateDbContextAsync();
+    var docs = await db.PropertyDocuments.Where(d => idList.Contains(d.DocumentId)).ToListAsync();
 
     var memoryStream = new MemoryStream();
     using (var archive = new ZipArchive(memoryStream, ZipArchiveMode.Create, leaveOpen: true))
     {
+        var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var doc in docs)
         {
-            var fullPath = Path.Combine(propertyDocsPath, doc.FilePath);
-            if (!File.Exists(fullPath)) continue;
-
-            var entry = archive.CreateEntry(doc.OriginalFileName);
-            using var entryStream = entry.Open();
-            using var fileStream = File.OpenRead(fullPath);
+            var path = DocPath(doc);
+            if (path is null) continue;
+            // Two files with the same original name would overwrite each other in the zip.
+            var entryName = Path.GetFileName(doc.OriginalFileName);
+            if (!usedNames.Add(entryName))
+                entryName = $"{Path.GetFileNameWithoutExtension(entryName)} ({doc.DocumentId}){Path.GetExtension(entryName)}";
+            var entry = archive.CreateEntry(entryName);
+            await using var entryStream = entry.Open();
+            await using var fileStream = File.OpenRead(path);
             await fileStream.CopyToAsync(entryStream);
         }
     }
-
     memoryStream.Position = 0;
-    return Results.File(memoryStream, "application/zip", "property-documents.zip");
+    return Results.File(memoryStream, "application/zip", $"property-documents-{PhTime.Now:yyyyMMdd}.zip");
 }).RequireAuthorization();
 
-app.MapGet("/api/profile-picture/{fileName}", async (string fileName) =>
+// ── Profile pictures ────────────────────────────────────────────────────────
+app.MapGet("/api/profile-picture/{fileName}", (string fileName) =>
 {
-    if (string.IsNullOrWhiteSpace(fileName))
-        return Results.NotFound();
+    var path = pictureStorage.ResolveSafe(fileName);
+    if (path is null || !File.Exists(path)) return Results.NotFound();
 
-    var fullPath = Path.Combine(profilePicsPath, fileName);
-    if (!File.Exists(fullPath))
-        return Results.NotFound();
-
-    var extension = Path.GetExtension(fileName).ToLowerInvariant();
-    var contentType = extension switch
+    var contentType = Path.GetExtension(path).ToLowerInvariant() switch
     {
         ".jpg" or ".jpeg" => "image/jpeg",
         ".png" => "image/png",
         ".gif" => "image/gif",
         ".webp" => "image/webp",
-        _ => "application/octet-stream"
+        _ => "application/octet-stream",
     };
-
-    return Results.File(File.OpenRead(fullPath), contentType);
+    return Results.File(File.OpenRead(path), contentType);
 }).RequireAuthorization();
-
-app.MapGet("/api/profile-picture/default", () =>
-{
-    return Results.NotFound();
-});
 
 app.Run();

@@ -1,0 +1,22 @@
+@* Placeholder body for sections that are planned but not built yet. *@
+<div class="empty-state">
+    <i class="bi @Icon" aria-hidden="true"></i>
+    <h2>@Heading</h2>
+    <p>@Description</p>
+    @if (Planned is { Count: > 0 })
+    {
+        <ul class="text-start d-inline-block mb-0" style="max-width: 52ch">
+            @foreach (var p in Planned)
+            {
+                <li>@p</li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    [Parameter] public string Icon { get; set; } = "bi-hourglass-split";
+    [Parameter] public string Heading { get; set; } = "Coming soon";
+    [Parameter] public string Description { get; set; } = "";
+    [Parameter] public IReadOnlyList<string>? Planned { get; set; }
+}

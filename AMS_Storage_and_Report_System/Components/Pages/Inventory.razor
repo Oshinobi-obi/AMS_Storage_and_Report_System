@@ -1,0 +1,150 @@
+@page "/inventory"
+@layout AppLayout
+@attribute [Authorize]
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject ILogger<Inventory> Log
+
+<PageTitle>Inventory | AMS StockWatch</PageTitle>
+
+<PageHeader Title="Inventory" Subtitle="Warehouse stock of every supply in the AMS Supplies catalog." />
+
+<div class="wrap page-body">
+    @if (_items is null && !_missing)
+    {
+        <div class="panel"><div class="loading">Loading inventory…</div></div>
+    }
+    else if (_missing)
+    {
+        <div class="empty-state">
+            <i class="bi bi-database-exclamation" aria-hidden="true"></i>
+            <h2>No supply catalog yet</h2>
+            <p>Run the AMS Supplies database update (<code>001_requisition_portal.sql</code>) to create the catalog tables.</p>
+        </div>
+    }
+    else
+    {
+        <div class="stat-grid">
+            <button type="button" class="stat @(_stock == "" ? "is-active" : "")" @onclick='() => _stock = ""'>
+                <span class="stat-icon"><i class="bi bi-box-seam" aria-hidden="true"></i></span>
+                <span><span class="stat-value">@_items!.Count</span><span class="stat-label">Items in catalog</span></span>
+            </button>
+            <button type="button" class="stat @(_stock == "in" ? "is-active" : "")" @onclick='() => _stock = "in"'>
+                <span class="stat-icon is-ok"><i class="bi bi-check-circle" aria-hidden="true"></i></span>
+                <span><span class="stat-value">@_items.Count(i => i.Level == "in")</span><span class="stat-label">In stock</span></span>
+            </button>
+            <button type="button" class="stat @(_stock == "low" ? "is-active" : "")" @onclick='() => _stock = "low"'>
+                <span class="stat-icon is-warn"><i class="bi bi-exclamation-circle" aria-hidden="true"></i></span>
+                <span><span class="stat-value">@_items.Count(i => i.Level == "low")</span><span class="stat-label">Low stock</span></span>
+            </button>
+            <button type="button" class="stat @(_stock == "out" ? "is-active" : "")" @onclick='() => _stock = "out"'>
+                <span class="stat-icon is-bad"><i class="bi bi-x-circle" aria-hidden="true"></i></span>
+                <span><span class="stat-value">@_items.Count(i => i.Level == "out")</span><span class="stat-label">Out of stock</span></span>
+            </button>
+        </div>
+
+        <section class="panel">
+            <header class="panel-head">
+                <div class="input-icon flex-grow-1" style="max-width: 420px">
+                    <i class="bi bi-search" aria-hidden="true"></i>
+                    <input type="search" class="form-control" placeholder="Search by item, specification or stock number"
+                           aria-label="Search inventory" autocomplete="off" @bind="_search" @bind:event="oninput" />
+                </div>
+                <span class="meta">@Visible.Count() shown</span>
+            </header>
+
+            @if (!Visible.Any())
+            {
+                <div class="empty-state"><i class="bi bi-search" aria-hidden="true"></i><h2>No items match</h2><p>Try another word or clear the stock filter.</p></div>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>Stock no.</th><th>Item</th><th>Category</th><th class="t-num">On hand</th><th class="t-num">Reorder at</th><th class="t-num">Unit price</th><th>Status</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var i in Visible)
+                            {
+                                <tr class="@(i.IsActive ? "" : "is-dim")" @key="i.ItemId">
+                                    <td class="text-nowrap">@i.StockNo</td>
+                                    <td><span class="cell-strong">@i.ItemName</span>@if (!string.IsNullOrWhiteSpace(i.Specifications)) {<span class="cell-sub">@i.Specifications</span>}</td>
+                                    <td class="is-muted">@(i.Category ?? "Uncategorized")</td>
+                                    <td class="t-num"><strong>@i.StockOnHand.ToString("N0")</strong> @i.Unit</td>
+                                    <td class="t-num">@i.ReorderLevel.ToString("N0")</td>
+                                    <td class="t-num">₱@i.UnitPrice.ToString("N2")</td>
+                                    <td>
+                                        @if (!i.IsActive) { <span class="badge-pill badge-grey">Inactive</span> }
+                                        else if (i.Level == "out") { <span class="badge-pill badge-bad"><i class="bi bi-x-circle-fill" aria-hidden="true"></i>Out of stock</span> }
+                                        else if (i.Level == "low") { <span class="badge-pill badge-warn"><i class="bi bi-exclamation-circle-fill" aria-hidden="true"></i>Low stock</span> }
+                                        else { <span class="badge-pill badge-ok"><i class="bi bi-check-circle-fill" aria-hidden="true"></i>In stock</span> }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        <p class="small text-muted-2"><i class="bi bi-info-circle" aria-hidden="true"></i> Recording deliveries and stock adjustments will be added to this page next.</p>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "stock")] public string? StockQuery { get; set; }
+
+    public sealed class ItemRow
+    {
+        public long ItemId { get; set; }
+        public string StockNo { get; set; } = "";
+        public string ItemName { get; set; } = "";
+        public string? Specifications { get; set; }
+        public string Unit { get; set; } = "";
+        public string? Category { get; set; }
+        public long StockOnHand { get; set; }
+        public long ReorderLevel { get; set; }
+        public decimal UnitPrice { get; set; }
+        public bool IsActive { get; set; }
+
+        public string Level => StockOnHand <= 0 ? "out" : StockOnHand <= ReorderLevel ? "low" : "in";
+    }
+
+    private List<ItemRow>? _items;
+    private bool _missing;
+    private string _search = "";
+    private string _stock = "";
+
+    private IEnumerable<ItemRow> Visible => (_items ?? new List<ItemRow>())
+        .Where(i => _stock == "" || (i.IsActive && i.Level == _stock))
+        .Where(i => string.IsNullOrWhiteSpace(_search)
+                 || i.ItemName.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase)
+                 || i.StockNo.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase)
+                 || (i.Specifications?.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase) ?? false));
+
+    protected override async Task OnInitializedAsync()
+    {
+        _stock = StockQuery is "in" or "low" or "out" ? StockQuery : "";
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            _items = await db.Database.SqlQuery<ItemRow>($@"
+                SELECT CAST(i.item_id AS SIGNED) AS ItemId, i.stock_no AS StockNo, i.item_name AS ItemName,
+                       i.specifications AS Specifications, i.unit_of_measure AS Unit, c.category_name AS Category,
+                       CAST(i.stock_on_hand AS SIGNED) AS StockOnHand, CAST(i.reorder_level AS SIGNED) AS ReorderLevel,
+                       i.unit_price AS UnitPrice, i.is_active AS IsActive
+                  FROM supply_items i
+                  LEFT JOIN item_categories c ON c.category_id = i.category_id
+                 ORDER BY i.is_active DESC, COALESCE(c.sort_order, 999), i.item_name").ToListAsync();
+        }
+        catch (Exception ex) when (ex.GetBaseException().Message.Contains("doesn't exist"))
+        {
+            _missing = true;
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Inventory failed to load");
+            _items = [];
+        }
+    }
+}

@@ -1,68 +1,15 @@
-﻿@page "/"
-@using Microsoft.AspNetCore.Components.Authorization
+@page "/"
+@layout EmptyLayout
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Navigation
 
-<PageTitle>StockWatch — Asset Management Section</PageTitle>
-
-<div class="landing">
-
-    <header class="topbar">
-        <div class="brand">
-            <span class="brand-mark">AMS</span>
-            <span class="brand-text">Asset Management Section</span>
-        </div>
-        <nav class="topnav">
-            <a href="/login" class="nav-cta">Sign in</a>
-        </nav>
-    </header>
-
-    <main class="hero">
-        <p class="eyebrow">Asset Management Section</p>
-        <h1 class="title">StockWatch</h1>
-        <p class="subtitle">Stock Monitoring and Report Summary System</p>
-        <p class="lede">
-            Track stock levels, flag low inventory, and pull report summaries —
-            all from one place.
-        </p>
-        <div class="cta-row">
-            <a href="/dashboard" class="btn-primary">Open Dashboard</a>
-            <a href="/reports" class="btn-ghost">View Reports</a>
-        </div>
-    </main>
-
-    <section class="ledger" aria-label="System overview">
-        <div class="ledger-row">
-            <span class="ledger-label">Items Tracked</span>
-            <span class="ledger-value">—</span>
-        </div>
-        <div class="ledger-row">
-            <span class="ledger-label">Low Stock Alerts</span>
-            <span class="ledger-value">—</span>
-        </div>
-        <div class="ledger-row">
-            <span class="ledger-label">Pending Reports</span>
-            <span class="ledger-value">—</span>
-        </div>
-        <div class="ledger-row">
-            <span class="ledger-label">Last Sync</span>
-            <span class="ledger-value">—</span>
-        </div>
-    </section>
-
-    <footer class="footer">
-        <span>&copy; @DateTime.Now.Year Asset Management Section - Mico D. Intertas</span>
-    </footer>
-
-</div>
+@* The site opens straight to sign-in (or the dashboard if already signed in). *@
 
 @code {
     protected override async Task OnInitializedAsync()
     {
-        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-        if (authState.User.Identity?.IsAuthenticated == true)
-        {
-            Navigation.NavigateTo("/dashboard", forceLoad: true);
-        }
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        var signedIn = state.User.Identity?.IsAuthenticated == true;
+        Navigation.NavigateTo(signedIn ? "/dashboard" : "/login", forceLoad: true);
     }
 }

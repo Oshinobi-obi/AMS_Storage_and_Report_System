@@ -1,0 +1,12 @@
+@* Shown instead of a page the signed-in role can't use. *@
+<div class="empty-state">
+    <i class="bi bi-shield-lock" aria-hidden="true"></i>
+    <h2>@Title</h2>
+    <p>@Message</p>
+    <a class="btn btn-primary" href="/dashboard">Back to dashboard</a>
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "You don't have access to this page";
+    [Parameter] public string Message { get; set; } = "Ask a Super Admin if you need it.";
+}

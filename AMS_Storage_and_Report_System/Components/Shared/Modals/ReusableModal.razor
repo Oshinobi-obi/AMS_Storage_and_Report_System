@@ -1,0 +1,151 @@
+@* ReusableModal.razor — the single visual shell for confirmations, alerts,
+   prompts and custom forms. Rendered by <ModalHost/>; you rarely use it directly. *@
+
+<div class="am-backdrop" style="z-index:@(1050 + StackIndex * 10)"
+     @onclick="OnBackdropClick">
+    <div @ref="_dialog"
+         class="am-dialog am-@SizeClass am-@VariantClass"
+         role="@(IsAlertType ? "alertdialog" : "dialog")"
+         aria-modal="true"
+         aria-labelledby="@($"m-title-{Instance.Id}")"
+         aria-describedby="@($"m-desc-{Instance.Id}")"
+         tabindex="-1"
+         @onclick:stopPropagation="true"
+         @onkeydown="OnKeyDown">
+
+        <header class="am-header">
+            @if (Options.Variant != ModalVariant.Neutral)
+            {
+                <span class="am-icon" aria-hidden="true"><i class="bi @IconClass"></i></span>
+            }
+            <h2 class="am-title" id="@($"m-title-{Instance.Id}")">@Options.Title</h2>
+            @if (!_busy && (Options.CancelText is not null || Options.ComponentType is not null))
+            {
+                <button type="button" class="am-close" aria-label="Close" @onclick="Cancel">
+                    <i class="bi bi-x-lg" aria-hidden="true"></i>
+                </button>
+            }
+        </header>
+
+        <div class="am-body" id="@($"m-desc-{Instance.Id}")">
+            @if (!string.IsNullOrWhiteSpace(Options.Message))
+            {
+                <p class="am-message">@Options.Message</p>
+            }
+
+            @Options.Body
+
+            @if (Options.ComponentType is not null)
+            {
+                <DynamicComponent Type="Options.ComponentType" Parameters="Options.ComponentParameters" />
+            }
+
+            @if (Options.ShowTextInput)
+            {
+                <label class="form-label am-input-label" for="@($"m-input-{Instance.Id}")">@Options.InputLabel</label>
+                <textarea autocomplete="off" id="@($"m-input-{Instance.Id}")" class="form-control" rows="4"
+                          maxlength="@Options.InputMaxLength"
+                          placeholder="@Options.InputPlaceholder"
+                          @bind="_text" @bind:event="oninput" disabled="@_busy"></textarea>
+                <div class="am-counter @(TextTooShort ? "is-short" : "")">
+                    @if (TextTooShort) { <span>At least @Options.InputMinLength characters · </span> }
+                    @(_text?.Length ?? 0) / @Options.InputMaxLength
+                </div>
+            }
+
+            @if (_error is not null)
+            {
+                <div class="alert alert-danger am-inline-error" role="alert">@_error</div>
+            }
+        </div>
+
+        @if (Options.ComponentType is null)
+        {
+            <footer class="am-footer">
+                @if (Options.CancelText is not null)
+                {
+                    <button type="button" class="btn btn-light am-btn" @onclick="Cancel" disabled="@_busy">
+                        @Options.CancelText
+                    </button>
+                }
+                <button type="button" class="btn am-btn am-btn-primary" @onclick="ConfirmAsync"
+                        disabled="@(_busy || TextTooShort)">
+                    @if (_busy)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+                        <span>Working…</span>
+                    }
+                    else { @Options.ConfirmText }
+                </button>
+            </footer>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ModalInstance Instance { get; set; } = default!;
+    [Parameter] public bool IsTopMost { get; set; } = true;
+    [Parameter] public int StackIndex { get; set; }
+
+    private ElementReference _dialog;
+    private string? _text;
+    private string? _error;
+    private bool _busy;
+
+    private ModalOptions Options => Instance.Options;
+    private bool IsAlertType => Options.CancelText is null && Options.ComponentType is null;
+    private bool TextTooShort => Options.ShowTextInput && (_text?.Trim().Length ?? 0) < Options.InputMinLength;
+
+    private string SizeClass => Options.Size switch
+    {
+        ModalSize.Small => "sm", ModalSize.Large => "lg", ModalSize.ExtraLarge => "xl", _ => "md",
+    };
+    private string VariantClass => Options.Variant.ToString().ToLowerInvariant();
+    private string IconClass => Options.Variant switch
+    {
+        ModalVariant.Success => "bi-check-circle-fill",
+        ModalVariant.Warning => "bi-exclamation-triangle-fill",
+        ModalVariant.Danger  => "bi-x-octagon-fill",
+        _                    => "bi-info-circle-fill",
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && IsTopMost)
+            await _dialog.FocusAsync();   // keyboard users land inside the dialog
+    }
+
+    private void OnBackdropClick()
+    {
+        if (IsTopMost && !_busy && Options.DismissOnBackdrop && !IsAlertType) Cancel();
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (!IsTopMost || _busy) return;
+        if (e.Key == "Escape" && Options.CancelText is not null) Cancel();
+        else if (e.Key == "Enter" && IsAlertType) await ConfirmAsync();
+    }
+
+    private void Cancel() => Instance.Cancel();
+
+    private async Task ConfirmAsync()
+    {
+        if (_busy || TextTooShort) return;
+        if (Options.OnConfirmAsync is not null)
+        {
+            _busy = true; _error = null;
+            try
+            {
+                _error = await Options.OnConfirmAsync(_text?.Trim());
+            }
+            catch (Exception)
+            {
+                _error = "Something went wrong while saving. Nothing was changed — please try again.";
+            }
+            finally { _busy = false; }
+            if (_error is not null) return;   // stay open, show inline error
+        }
+        Instance.Close(new ModalResult(true, _text?.Trim()));
+    }
+}

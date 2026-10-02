@@ -1,0 +1,17 @@
+@page "/requisitions"
+@layout AppLayout
+@attribute [Authorize]
+
+<PageTitle>Requisitions | AMS StockWatch</PageTitle>
+
+<PageHeader Title="Requisitions" Subtitle="Requisition and Issue Slips submitted by offices through the AMS Supplies portal." />
+
+<div class="wrap page-body">
+    <ComingSoon Icon="bi-inbox" Heading="The approval queue is being built next"
+                Description="This page will list every RIS waiting for AMS, so you can:"
+                Planned="@(new[] {
+                    "Review each slip next to the warehouse stock",
+                    "Lower issue quantities for partial issue",
+                    "Approve or reject with a reason (with confirmation)",
+                    "Record who received the items, and print the RIS" })" />
+</div>

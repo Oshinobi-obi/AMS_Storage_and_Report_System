@@ -1,33 +1,47 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#00007f" />
     <base href="/" />
     <ResourcePreloader />
+    @* Everything is served from wwwroot so the system works without internet. *@
     <link rel="stylesheet" href="@Assets["lib/bootstrap/dist/css/bootstrap.min.css"]" />
+    <link rel="stylesheet" href="@Assets["lib/bootstrap-icons/bootstrap-icons.min.css"]" />
+    <link rel="stylesheet" href="@Assets["css/admin.css"]" />
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["AMS_Storage_and_Report_System.styles.css"]" />
-    <link rel="stylesheet" href="css/toast.css" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
-    <script src="js/site.js"></script>
-    <script src="js/toast.js"></script>
-    <ImportMap />
     <link rel="icon" type="image/png" href="favicon.png" />
-    <HeadOutlet />
+    <link rel="apple-touch-icon" href="images/apple-touch-icon.png" />
+    <ImportMap />
+    <HeadOutlet @rendermode="PageRenderMode" />
 </head>
 
 <body>
-    <Routes />
+    <Routes @rendermode="PageRenderMode" />
     <ReconnectModal />
-    <div id="toast-container"></div>
+    @* Shown by Blazor when the interactive connection hits an error, instead of buttons silently doing nothing. *@
+    <div id="blazor-error-ui" data-nosnippet>
+        <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
+        <span>Something went wrong on this page. Reload to continue.</span>
+        <a href="" class="reload">Reload</a>
+        <button type="button" class="dismiss" aria-label="Dismiss">✕</button>
+    </div>
+    <div id="toast-container" aria-live="polite"></div>
+    <script src="@Assets["js/toast.js"]"></script>
+    <script src="@Assets["js/app.js"]"></script>
     <script src="@Assets["_framework/blazor.web.js"]"></script>
-    <script src="js/AppLayout.js"></script>
 </body>
 
 </html>
+
+@code {
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    // Every page is interactive except ones marked [ExcludeFromInteractiveRouting] (Error).
+    private IComponentRenderMode? PageRenderMode =>
+        HttpContext.AcceptsInteractiveRouting() ? InteractiveServer : null;
+}

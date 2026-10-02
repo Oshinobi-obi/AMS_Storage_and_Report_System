@@ -1,651 +1,385 @@
 @page "/profile"
 @layout AppLayout
-@rendermode InteractiveServer
 @attribute [Authorize(Roles = "SuperAdmin,Admin")]
-@using Microsoft.AspNetCore.Authorization
-@using Microsoft.AspNetCore.Components.Authorization
-@using Microsoft.AspNetCore.Authentication
-@using Microsoft.AspNetCore.Authentication.Cookies
-@using Microsoft.EntityFrameworkCore
-@using AMS_Storage_and_Report_System.Data
-@using AMS_Storage_and_Report_System.Models
-@using AMS_Storage_and_Report_System.Services
-@using System.Security.Claims
-@inject AppDbContext Db
+@inject IDbContextFactory<AppDbContext> DbFactory
 @inject AuthenticationStateProvider AuthStateProvider
-@inject ProfilePictureStorage ProfileStorage
-@inject IJSRuntime JS
+@inject ProfilePictureStorage Pictures
 @inject NavigationManager Navigation
-@inject IHttpContextAccessor HttpContextAccessor
+@inject IJSRuntime JS
+@inject ILogger<Profile> Log
 
-<PageTitle>Profile — StockWatch</PageTitle>
+<PageTitle>My profile | AMS StockWatch</PageTitle>
 
-@if (currentUser?.RequirePasswordChange == true)
-{
-    <div class="password-required-banner">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-            <line x1="12" y1="9" x2="12" y2="13"></line>
-            <line x1="12" y1="17" x2="12.01" y2="17"></line>
-        </svg>
-        <div>
-            <strong>Password Change Required</strong>
-            <p>Your administrator has requested that you change your password. Please update your password to continue.</p>
-        </div>
-    </div>
-}
+<PageHeader Title="My profile" Subtitle="Your name, picture and password." />
 
-<div class="profile-header">
-    <h1 class="page-title">Profile</h1>
-</div>
+<div class="wrap page-body">
+    @if (_user is null)
+    {
+        <div class="panel"><div class="loading">Loading your profile…</div></div>
+    }
+    else
+    {
+        @if (_user.RequirePasswordChange)
+        {
+            <div class="callout" role="alert">
+                <i class="bi bi-shield-exclamation" aria-hidden="true"></i>
+                <div>
+                    <p><strong>Choose your own password to continue.</strong> You're using a temporary password set by a Super Admin.</p>
+                    <button type="button" class="btn btn-primary btn-sm mt-2" @onclick="OpenPassword">Change password</button>
+                </div>
+            </div>
+        }
 
-<div class="profile-container">
-    <div class="profile-card">
-        <div class="profile-picture-section">
-            <div class="profile-picture-wrapper">
-                @if (!string.IsNullOrEmpty(currentUser?.ProfilePicturePath))
-                {
-                    <img src="@ProfileStorage.GetProfilePictureUrl(currentUser.ProfilePicturePath)"
-                         alt="Profile Picture"
-                         class="profile-picture" />
-                }
-                else
-                {
-                    <div class="profile-picture-placeholder">
-                        @GetInitial(GetDisplayName())
+        <div class="row g-3">
+            <div class="col-lg-4">
+                <section class="panel h-100">
+                    <div class="panel-body text-center">
+                        <span class="avatar mx-auto" style="width:112px;height:112px;font-size:2.5rem">
+                            @if (Pictures.GetProfilePictureUrl(_user.ProfilePicturePath) is { } pic) { <img src="@pic" alt="Your profile picture" /> }
+                            else { @Initial }
+                        </span>
+                        <h2 class="h5 fw-bold mt-3 mb-1">@_user.Name</h2>
+                        <p class="text-muted-2 mb-3">@(_user.Role == UserRole.SuperAdmin ? "Super Admin" : "Admin"), Asset Management Section</p>
+                        <button type="button" class="btn btn-outline-primary btn-sm" @onclick="OpenPicture">
+                            <i class="bi bi-camera me-1" aria-hidden="true"></i> Change picture
+                        </button>
                     </div>
-                }
-                <button class="change-picture-btn" @onclick="() => showPictureModal = true">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
-                        <circle cx="12" cy="13" r="4"></circle>
-                    </svg>
-                    Change Picture
-                </button>
+                </section>
+            </div>
+
+            <div class="col-lg-8">
+                <section class="panel">
+                    <header class="panel-head">
+                        <h2>Account details</h2>
+                        @if (!_editing)
+                        {
+                            <button type="button" class="act" @onclick="StartEdit"><i class="bi bi-pencil" aria-hidden="true"></i>Edit</button>
+                        }
+                    </header>
+                    <div class="panel-body">
+                        <div class="row g-3">
+                            <div class="col-sm-6">
+                                <label class="form-label" for="p-display">Display name</label>
+                                <input id="p-display" class="form-control" autocomplete="off" maxlength="100"
+                                       @bind="_displayName" readonly="@(!_editing)" />
+                                <div class="form-text">Shown in the menu and on activity logs.</div>
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label" for="p-email">Email</label>
+                                <input id="p-email" type="email" class="form-control" autocomplete="off" maxlength="100"
+                                       @bind="_email" readonly="@(!_editing)" />
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label" for="p-full">Full name</label>
+                                <input id="p-full" class="form-control" value="@_user.FullName" readonly />
+                                <div class="form-text">Ask a Super Admin to correct your full name.</div>
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label" for="p-user">Username</label>
+                                <input id="p-user" class="form-control" value="@_user.Username" readonly />
+                            </div>
+                        </div>
+
+                        @if (_formError is not null)
+                        {
+                            <div class="form-error" role="alert"><i class="bi bi-exclamation-circle" aria-hidden="true"></i>@_formError</div>
+                        }
+
+                        @if (_editing)
+                        {
+                            <div class="d-flex justify-content-end gap-2 mt-3">
+                                <button type="button" class="btn btn-light" @onclick="CancelEdit" disabled="@_saving">Cancel</button>
+                                <button type="button" class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">
+                                    @if (_saving) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
+                                    Save changes
+                                </button>
+                            </div>
+                        }
+                    </div>
+                </section>
+
+                <section class="panel">
+                    <header class="panel-head"><h2>Security</h2></header>
+                    <div class="panel-body d-flex flex-wrap align-items-center justify-content-between gap-3">
+                        <div>
+                            <p class="mb-1 fw-semibold">Password</p>
+                            <p class="mb-0 text-muted-2 small">
+                                @(_user.LastLoginAt is { } l ? $"Last sign-in {l:MMMM d, yyyy 'at' h:mm tt}." : "")
+                            </p>
+                        </div>
+                        <button type="button" class="btn btn-outline-primary" @onclick="OpenPassword">
+                            <i class="bi bi-key me-1" aria-hidden="true"></i> Change password
+                        </button>
+                    </div>
+                </section>
             </div>
         </div>
-
-        <div class="profile-info-section">
-            <div class="info-group">
-                <label class="info-label">Full Name</label>
-                <div class="info-value">@currentUser?.FullName</div>
-                <p class="info-hint">Your full name cannot be changed from this page.</p>
-            </div>
-
-            <div class="info-group">
-                <label class="info-label">Display Name</label>
-                @if (isEditingProfile)
-                {
-                    <input type="text"
-                           class="info-input"
-                           @bind="displayNameInput"
-                           placeholder="Enter display name" />
-                }
-                else
-                {
-                    <div class="info-value">@GetDisplayName()</div>
-                }
-                <p class="info-hint">This is how your name appears in the app.</p>
-            </div>
-
-            <div class="info-group">
-                <label class="info-label">Email</label>
-                @if (isEditingProfile)
-                {
-                    <input type="email"
-                           class="info-input"
-                           @bind="emailInput"
-                           placeholder="Enter email" />
-                }
-                else
-                {
-                    <div class="info-value">@currentUser?.Email</div>
-                }
-            </div>
-
-            <div class="info-group">
-                <label class="info-label">Username</label>
-                <div class="info-value">@currentUser?.Username</div>
-            </div>
-
-            <div class="info-group">
-                <label class="info-label">Role</label>
-                <div class="info-value role-badge">@currentUser?.Role.ToString()</div>
-            </div>
-
-            @if (!string.IsNullOrEmpty(formError))
-            {
-                <div class="form-error">@formError</div>
-            }
-
-            <div class="profile-actions">
-                @if (isEditingProfile)
-                {
-                    <button class="btn-ghost" @onclick="CancelEditProfile">Cancel</button>
-                    <button class="btn-primary" @onclick="SaveProfile" disabled="@isSaving">
-                        @(isSaving ? "Saving..." : "Save")
-                    </button>
-                }
-                else
-                {
-                    <button class="btn-primary" @onclick="EditProfile">Edit Profile</button>
-                }
-            </div>
-
-            <div class="password-section">
-                <h3 class="section-title">Security</h3>
-                <button class="btn-change-password" @onclick="() => showPasswordModal = true">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                    </svg>
-                    Change Password
-                </button>
-            </div>
-        </div>
-    </div>
+    }
 </div>
 
-@if (showPasswordModal)
-{
-    <div class="modal-backdrop" @onclick="ClosePasswordModal">
-        <div class="modal-card" @onclick:stopPropagation="true">
-            <h2 class="modal-title">Change Password</h2>
-
-            <div class="field">
-                <label>Current Password:</label>
-                <div class="password-input-group">
-                    <input type="@(showCurrentPassword ? "text" : "password")"
-                           @bind="currentPassword"
-                           placeholder="Enter current password" />
-                    <button type="button" class="btn-icon" @onclick="() => showCurrentPassword = !showCurrentPassword">
-                        @if (showCurrentPassword)
-                        {
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                                <line x1="1" y1="1" x2="23" y2="23"></line>
-                            </svg>
-                        }
-                        else
-                        {
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                <circle cx="12" cy="12" r="3"></circle>
-                            </svg>
-                        }
-                    </button>
-                </div>
-            </div>
-
-            <div class="field">
-                <label>New Password:</label>
-                <div class="password-input-group">
-                    <input type="@(showNewPassword ? "text" : "password")"
-                           @bind="newPassword"
-                           placeholder="Enter new password" />
-                    <button type="button" class="btn-icon" @onclick="() => showNewPassword = !showNewPassword">
-                        @if (showNewPassword)
-                        {
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                                <line x1="1" y1="1" x2="23" y2="23"></line>
-                            </svg>
-                        }
-                        else
-                        {
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                <circle cx="12" cy="12" r="3"></circle>
-                            </svg>
-                        }
-                    </button>
-                </div>
-                <p class="field-hint">Minimum 8 characters with letters, numbers, and special characters.</p>
-            </div>
-
-            <div class="field">
-                <label>Confirm New Password:</label>
-                <div class="password-input-group">
-                    <input type="@(showConfirmPassword ? "text" : "password")"
-                           @bind="confirmPassword"
-                           placeholder="Confirm new password" />
-                    <button type="button" class="btn-icon" @onclick="() => showConfirmPassword = !showConfirmPassword">
-                        @if (showConfirmPassword)
-                        {
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                                <line x1="1" y1="1" x2="23" y2="23"></line>
-                            </svg>
-                        }
-                        else
-                        {
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                <circle cx="12" cy="12" r="3"></circle>
-                            </svg>
-                        }
-                    </button>
-                </div>
-            </div>
-
-            @if (!string.IsNullOrEmpty(passwordError))
-            {
-                <div class="form-error">@passwordError</div>
-            }
-
-            <div class="modal-actions">
-                <button class="btn-ghost" @onclick="ClosePasswordModal">Cancel</button>
-                <button class="btn-primary" @onclick="ChangePassword" disabled="@isChangingPassword">
-                    @(isChangingPassword ? "Changing..." : "Change Password")
-                </button>
-            </div>
+<Dialog Show="_passwordOpen" Title="Change password" Icon="bi-key" Busy="_saving" OnClose="ClosePassword">
+    <ChildContent>
+        <div class="field">
+            <label class="form-label" for="c-current">Current password</label>
+            <input id="c-current" class="form-control" type="@(_showPasswords ? "text" : "password")" autocomplete="off" @bind="_current" />
         </div>
-    </div>
-}
-
-@if (showPictureModal)
-{
-    <div class="modal-backdrop" @onclick="ClosePictureModal">
-        <div class="modal-card" @onclick:stopPropagation="true">
-            <h2 class="modal-title">Change Profile Picture</h2>
-
-            <div class="upload-zone" @ondragover:preventDefault @ondrop:preventDefault @ondrop="OnFileDrop">
-                <svg class="upload-icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="17 8 12 3 7 8"></polyline>
-                    <line x1="12" y1="3" x2="12" y2="15"></line>
-                </svg>
-                <p class="upload-text">Drag and drop an image or click to browse</p>
-                <InputFile OnChange="OnFileSelected" accept="image/*" class="file-input" />
-                <button class="btn-upload" onclick="this.previousElementSibling.click(); return false;">
-                    Browse Files
-                </button>
-            </div>
-
-            @if (selectedFileName != null)
-            {
-                <div class="selected-file">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
-                        <polyline points="13 2 13 9 20 9"></polyline>
-                    </svg>
-                    <span>@selectedFileName</span>
-                </div>
-            }
-
-            @if (!string.IsNullOrEmpty(uploadError))
-            {
-                <div class="upload-error">@uploadError</div>
-            }
-
-            <div class="modal-actions">
-                <button class="btn-ghost" @onclick="ClosePictureModal">Cancel</button>
-                <button class="btn-primary" @onclick="UploadProfilePicture" disabled="@(selectedFile == null || isUploading)">
-                    @(isUploading ? "Uploading..." : "Upload")
-                </button>
-                @if (!string.IsNullOrEmpty(currentUser?.ProfilePicturePath))
-                {
-                    <button class="btn-danger" @onclick="RemoveProfilePicture" disabled="@isUploading">
-                        Remove Picture
-                    </button>
-                }
-            </div>
+        <div class="field">
+            <label class="form-label" for="c-new">New password</label>
+            <input id="c-new" class="form-control" type="@(_showPasswords ? "text" : "password")" autocomplete="off" @bind="_new" @bind:event="oninput" />
+            <div class="form-text @(_new.Length > 0 && !StrongEnough(_new) ? "text-danger" : "")">At least 8 characters, with letters and numbers.</div>
         </div>
-    </div>
-}
+        <div class="field">
+            <label class="form-label" for="c-confirm">Type the new password again</label>
+            <input id="c-confirm" class="form-control" type="@(_showPasswords ? "text" : "password")" autocomplete="off" @bind="_confirm" @bind:event="oninput" />
+        </div>
+        <div class="form-check mt-3">
+            <input class="form-check-input" type="checkbox" id="c-show" @bind="_showPasswords" />
+            <label class="form-check-label" for="c-show">Show passwords</label>
+        </div>
+        @if (_passwordError is not null)
+        {
+            <div class="form-error" role="alert"><i class="bi bi-exclamation-circle" aria-hidden="true"></i>@_passwordError</div>
+        }
+    </ChildContent>
+    <Footer>
+        @if (!(_user?.RequirePasswordChange ?? false))
+        {
+            <button type="button" class="btn btn-light" @onclick="ClosePassword" disabled="@_saving">Cancel</button>
+        }
+        <button type="button" class="btn btn-primary" @onclick="ChangePasswordAsync" disabled="@_saving">
+            @if (_saving) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
+            Change password
+        </button>
+    </Footer>
+</Dialog>
+
+<Dialog Show="_pictureOpen" Title="Profile picture" Icon="bi-camera" Busy="_saving" OnClose="() => _pictureOpen = false">
+    <ChildContent>
+        <label class="form-label" for="pic-file">Choose an image</label>
+        <InputFile id="pic-file" class="form-control" OnChange="OnPictureSelected" accept=".jpg,.jpeg,.png,.gif,.webp" />
+        <div class="form-text">JPG, PNG, GIF or WebP, up to 5 MB. A square photo of your face works best.</div>
+        @if (_pictureError is not null)
+        {
+            <div class="form-error" role="alert"><i class="bi bi-exclamation-circle" aria-hidden="true"></i>@_pictureError</div>
+        }
+    </ChildContent>
+    <Footer>
+        @if (!string.IsNullOrEmpty(_user?.ProfilePicturePath))
+        {
+            <button type="button" class="btn btn-light text-danger me-auto" @onclick="RemovePictureAsync" disabled="@_saving">Remove picture</button>
+        }
+        <button type="button" class="btn btn-light" @onclick="() => _pictureOpen = false" disabled="@_saving">Cancel</button>
+        <button type="button" class="btn btn-primary" @onclick="UploadPictureAsync" disabled="@(_saving || _picture is null)">
+            @if (_saving) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
+            Save picture
+        </button>
+    </Footer>
+</Dialog>
 
 @code {
-    [SupplyParameterFromQuery]
-    public bool RequirePasswordChange { get; set; }
+    [SupplyParameterFromQuery(Name = "requirePasswordChange")] public bool RequirePasswordChange { get; set; }
 
-    private User? currentUser;
-    private bool isEditingProfile = false;
-    private string displayNameInput = "";
-    private string emailInput = "";
-    private bool isSaving = false;
-    private string formError = "";
+    private const long MaxPictureBytes = 5 * 1024 * 1024;
+    private static readonly string[] PictureTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
-    private bool showPictureModal = false;
-    private IBrowserFile? selectedFile;
-    private string? selectedFileName;
-    private bool isUploading = false;
-    private string uploadError = "";
+    private User? _user;
+    private bool _editing, _saving;
+    private string _displayName = "", _email = "";
+    private string? _formError;
 
-    private bool showPasswordModal = false;
-    private string currentPassword = "";
-    private string newPassword = "";
-    private string confirmPassword = "";
-    private bool showCurrentPassword = false;
-    private bool showNewPassword = false;
-    private bool showConfirmPassword = false;
-    private string passwordError = "";
-    private bool isChangingPassword = false;
+    private bool _passwordOpen, _showPasswords;
+    private string _current = "", _new = "", _confirm = "";
+    private string? _passwordError;
+
+    private bool _pictureOpen;
+    private IBrowserFile? _picture;
+    private string? _pictureError;
+
+    private string Initial => string.IsNullOrWhiteSpace(_user?.Name) ? "?" : _user!.Name.Trim()[..1].ToUpperInvariant();
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadCurrentUser();
-
-        // If password change is required, open the modal automatically
-        if (RequirePasswordChange && currentUser?.RequirePasswordChange == true)
-        {
-            showPasswordModal = true;
-        }
+        await LoadAsync();
+        if (_user?.RequirePasswordChange == true) OpenPassword();
     }
 
-    private async Task LoadCurrentUser()
+    private async Task LoadAsync()
     {
-        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-        var username = authState.User.Identity?.Name;
-
-        if (username != null)
-        {
-            currentUser = await Db.Users.FirstOrDefaultAsync(u => u.Username == username);
-        }
+        var username = (await AuthStateProvider.GetAuthenticationStateAsync()).User.Identity?.Name;
+        if (username is null) return;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Username == username);
+        _displayName = _user?.Name ?? "";
+        _email = _user?.Email ?? "";
     }
 
-    private string GetDisplayName()
+    // Re-issue the sign-in cookie so the menu shows the new name/picture.
+    private void RefreshSession(string returnUrl = "/profile") =>
+        Navigation.NavigateTo($"/account/refresh-session?returnUrl={Uri.EscapeDataString(returnUrl)}", forceLoad: true);
+
+    // ── Details ─────────────────────────────────────────────────────────
+    private void StartEdit() { _editing = true; _formError = null; }
+
+    private void CancelEdit()
     {
-        if (currentUser == null) return "Unknown";
-        return string.IsNullOrWhiteSpace(currentUser.DisplayName)
-            ? currentUser.FullName
-            : currentUser.DisplayName;
+        _editing = false; _formError = null;
+        _displayName = _user?.Name ?? ""; _email = _user?.Email ?? "";
     }
 
-    private string GetInitial(string name)
+    private async Task SaveAsync()
     {
-        return string.IsNullOrEmpty(name) ? "?" : name.Substring(0, 1).ToUpper();
-    }
+        if (_user is null) return;
+        _formError = string.IsNullOrWhiteSpace(_displayName) ? "Enter a display name."
+                   : !_email.Contains('@') || !_email.Contains('.') ? "Enter a valid email address."
+                   : null;
+        if (_formError is not null) return;
 
-    private void EditProfile()
-    {
-        displayNameInput = currentUser?.DisplayName ?? currentUser?.FullName ?? "";
-        emailInput = currentUser?.Email ?? "";
-        isEditingProfile = true;
-        formError = "";
-    }
-
-    private void CancelEditProfile()
-    {
-        isEditingProfile = false;
-        displayNameInput = "";
-        emailInput = "";
-        formError = "";
-    }
-
-    private async Task SaveProfile()
-    {
-        if (currentUser == null) return;
-
-        formError = "";
-
-        if (string.IsNullOrWhiteSpace(displayNameInput))
-        {
-            formError = "Display name cannot be empty.";
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(emailInput))
-        {
-            formError = "Email cannot be empty.";
-            return;
-        }
-
-        // Basic email validation
-        if (!emailInput.Contains("@") || !emailInput.Contains("."))
-        {
-            formError = "Please enter a valid email address.";
-            return;
-        }
-
-        isSaving = true;
-
+        _saving = true;
         try
         {
-            currentUser.DisplayName = displayNameInput.Trim();
-            currentUser.Email = emailInput.Trim();
-            currentUser.UpdatedAt = DateTime.UtcNow;
-            await Db.SaveChangesAsync();
-
-            isEditingProfile = false;
-            await ShowToast("Profile updated successfully. Refreshing...");
-
-            // Wait a moment for the toast to show, then redirect to logout and back
-            await Task.Delay(500);
-            Navigation.NavigateTo("/account/refresh-session?returnUrl=/profile", forceLoad: true);
-        }
-        catch (Exception ex)
-        {
-            formError = "Failed to update profile: " + ex.Message;
-        }
-        finally
-        {
-            isSaving = false;
-        }
-    }
-
-    private async Task UpdateAuthenticationClaims()
-    {
-        // This method is no longer needed but kept for profile picture updates
-        // We'll use the session refresh endpoint instead
-        if (currentUser == null || HttpContextAccessor.HttpContext == null) return;
-
-        var claims = new List<Claim>
-        {
-            new(ClaimTypes.NameIdentifier, currentUser.UserId.ToString()),
-            new(ClaimTypes.Name, currentUser.Username),
-            new(ClaimTypes.Role, currentUser.Role.ToString()),
-            new("FullName", currentUser.FullName),
-            new("DisplayName", currentUser.DisplayName ?? ""),
-            new("ProfilePicture", currentUser.ProfilePicturePath ?? "")
-        };
-
-        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-        var principal = new ClaimsPrincipal(identity);
-
-        await HttpContextAccessor.HttpContext.SignInAsync(
-            CookieAuthenticationDefaults.AuthenticationScheme,
-            principal,
-            new AuthenticationProperties
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var email = _email.Trim();
+            if (await db.Users.AnyAsync(u => u.Email == email && u.UserId != _user.UserId))
             {
-                IsPersistent = HttpContextAccessor.HttpContext.User.Identities.FirstOrDefault()?.AuthenticationType == CookieAuthenticationDefaults.AuthenticationScheme,
-                ExpiresUtc = DateTimeOffset.UtcNow.AddHours(8)
-            });
-    }
-
-    private void ClosePictureModal()
-    {
-        showPictureModal = false;
-        selectedFile = null;
-        selectedFileName = null;
-        uploadError = "";
-    }
-
-    private void OnFileSelected(InputFileChangeEventArgs e)
-    {
-        selectedFile = e.File;
-        selectedFileName = e.File.Name;
-        uploadError = "";
-    }
-
-    private async Task OnFileDrop(DragEventArgs e)
-    {
-        // File drop handling would require JS interop for full implementation
-        // For now, users can click to browse
-    }
-
-    private async Task UploadProfilePicture()
-    {
-        if (selectedFile == null || currentUser == null) return;
-
-        uploadError = "";
-        isUploading = true;
-
-        try
-        {
-            // Validate file type
-            var allowedTypes = new[] { "image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp" };
-            if (!allowedTypes.Contains(selectedFile.ContentType))
-            {
-                uploadError = "Please upload a valid image file (JPEG, PNG, GIF, or WebP).";
+                _formError = "Another account already uses that email.";
                 return;
             }
-
-            // Validate file size (5MB max)
-            const long maxFileSize = 5 * 1024 * 1024;
-            if (selectedFile.Size > maxFileSize)
-            {
-                uploadError = "File size must be less than 5MB.";
-                return;
-            }
-
-            // Delete old profile picture if exists
-            if (!string.IsNullOrEmpty(currentUser.ProfilePicturePath))
-            {
-                ProfileStorage.DeleteProfilePicture(currentUser.ProfilePicturePath);
-            }
-
-            // Save new profile picture
-            var extension = Path.GetExtension(selectedFile.Name);
-            using var stream = selectedFile.OpenReadStream(maxFileSize);
-            var fileName = await ProfileStorage.SaveProfilePictureAsync(stream, currentUser.UserId, extension);
-
-            // Update user record
-            currentUser.ProfilePicturePath = fileName;
-            currentUser.UpdatedAt = DateTime.UtcNow;
-            await Db.SaveChangesAsync();
-
-            await ShowToast("Profile picture updated successfully. Refreshing...");
-            ClosePictureModal();
-
-            // Wait a moment for the toast to show, then refresh session
-            await Task.Delay(500);
-            Navigation.NavigateTo("/account/refresh-session?returnUrl=/profile", forceLoad: true);
+            var u = await db.Users.FindAsync(_user.UserId);
+            if (u is null) return;
+            u.DisplayName = _displayName.Trim();
+            u.Email = email;
+            u.UpdatedAt = PhTime.Now;
+            await db.SaveChangesAsync();
+            RefreshSession();
         }
         catch (Exception ex)
         {
-            uploadError = "Failed to upload profile picture: " + ex.Message;
+            Log.LogError(ex, "Saving profile failed");
+            _formError = "Your changes couldn't be saved. Check your connection and try again.";
         }
-        finally
-        {
-            isUploading = false;
-        }
+        finally { _saving = false; }
     }
 
-    private async Task RemoveProfilePicture()
+    // ── Password ────────────────────────────────────────────────────────
+    private static bool StrongEnough(string p) => p.Length >= 8 && p.Any(char.IsLetter) && p.Any(char.IsDigit);
+
+    private void OpenPassword()
     {
-        if (currentUser == null) return;
+        _current = _new = _confirm = "";
+        _passwordError = null;
+        _showPasswords = false;
+        _passwordOpen = true;
+    }
 
-        isUploading = true;
+    private void ClosePassword()
+    {
+        if (_user?.RequirePasswordChange == true) return;   // must finish this first
+        _passwordOpen = false;
+    }
 
+    private async Task ChangePasswordAsync()
+    {
+        if (_user is null) return;
+        _passwordError = string.IsNullOrEmpty(_current) ? "Enter your current password."
+                       : !StrongEnough(_new) ? "The new password needs at least 8 characters, with letters and numbers."
+                       : _new != _confirm ? "The two new passwords don't match."
+                       : _new == _current ? "Choose a password different from the current one."
+                       : null;
+        if (_passwordError is not null) return;
+
+        _saving = true;
         try
         {
-            if (!string.IsNullOrEmpty(currentUser.ProfilePicturePath))
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var u = await db.Users.FindAsync(_user.UserId);
+            if (u is null) return;
+            if (!BCrypt.Net.BCrypt.Verify(_current, u.PasswordHash))
             {
-                ProfileStorage.DeleteProfilePicture(currentUser.ProfilePicturePath);
-                currentUser.ProfilePicturePath = null;
-                currentUser.UpdatedAt = DateTime.UtcNow;
-                await Db.SaveChangesAsync();
-            }
-
-            await ShowToast("Profile picture removed. Refreshing...", "danger");
-            ClosePictureModal();
-
-            // Wait a moment for the toast to show, then refresh session
-            await Task.Delay(500);
-            Navigation.NavigateTo("/account/refresh-session?returnUrl=/profile", forceLoad: true);
-        }
-        catch (Exception ex)
-        {
-            uploadError = "Failed to remove profile picture: " + ex.Message;
-        }
-        finally
-        {
-            isUploading = false;
-        }
-    }
-
-    private async Task ShowToast(string text, string type = "success")
-    {
-        await JS.InvokeVoidAsync("showToast", text, type);
-    }
-
-    private void ClosePasswordModal()
-    {
-        showPasswordModal = false;
-        currentPassword = "";
-        newPassword = "";
-        confirmPassword = "";
-        showCurrentPassword = false;
-        showNewPassword = false;
-        showConfirmPassword = false;
-        passwordError = "";
-    }
-
-    private async Task ChangePassword()
-    {
-        if (currentUser == null) return;
-
-        passwordError = "";
-
-        if (string.IsNullOrWhiteSpace(currentPassword))
-        {
-            passwordError = "Please enter your current password.";
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(newPassword))
-        {
-            passwordError = "Please enter a new password.";
-            return;
-        }
-
-        if (newPassword.Length < 8)
-        {
-            passwordError = "New password must be at least 8 characters long.";
-            return;
-        }
-
-        if (newPassword != confirmPassword)
-        {
-            passwordError = "New passwords do not match.";
-            return;
-        }
-
-        if (currentPassword == newPassword)
-        {
-            passwordError = "New password must be different from current password.";
-            return;
-        }
-
-        isChangingPassword = true;
-
-        try
-        {
-            // Verify current password
-            bool passwordValid = BCrypt.Net.BCrypt.Verify(currentPassword, currentUser.PasswordHash);
-
-            if (!passwordValid)
-            {
-                passwordError = "Current password is incorrect.";
+                _passwordError = "Your current password is incorrect.";
                 return;
             }
+            var wasRequired = u.RequirePasswordChange;
+            u.PasswordHash = BCrypt.Net.BCrypt.HashPassword(_new, 12);
+            u.RequirePasswordChange = false;
+            u.UpdatedAt = PhTime.Now;
+            db.UserActivities.Add(new UserActivity { UserId = u.UserId, ActivityType = "Update", Description = "Changed own password", CreatedAt = PhTime.Now });
+            await db.SaveChangesAsync();
 
-            // Update password
-            currentUser.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
-            currentUser.RequirePasswordChange = false; // Clear the flag after successful change
-            currentUser.UpdatedAt = DateTime.UtcNow;
-            await Db.SaveChangesAsync();
-
-            await ShowToast("Password changed successfully.");
-            ClosePasswordModal();
+            _passwordOpen = false;
+            if (wasRequired)
+                RefreshSession("/dashboard");   // clears the "must change" flag in the sign-in cookie
+            else
+                await JS.InvokeVoidAsync("showToast", "Password changed.", "success");
         }
         catch (Exception ex)
         {
-            passwordError = "Failed to change password: " + ex.Message;
+            Log.LogError(ex, "Password change failed");
+            _passwordError = "The password couldn't be changed. Check your connection and try again.";
         }
-        finally
+        finally { _saving = false; }
+    }
+
+    // ── Picture ─────────────────────────────────────────────────────────
+    private void OpenPicture() { _picture = null; _pictureError = null; _pictureOpen = true; }
+
+    private void OnPictureSelected(InputFileChangeEventArgs e)
+    {
+        _pictureError = null;
+        _picture = null;
+        if (!PictureTypes.Contains(e.File.ContentType)) _pictureError = "Choose a JPG, PNG, GIF or WebP image.";
+        else if (e.File.Size > MaxPictureBytes) _pictureError = "The image is larger than 5 MB.";
+        else _picture = e.File;
+    }
+
+    private async Task UploadPictureAsync()
+    {
+        if (_user is null || _picture is null) return;
+        _saving = true;
+        try
         {
-            isChangingPassword = false;
+            string fileName;
+            await using (var stream = _picture.OpenReadStream(MaxPictureBytes))
+                fileName = await Pictures.SaveProfilePictureAsync(stream, _user.UserId, Path.GetExtension(_picture.Name));
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var u = await db.Users.FindAsync(_user.UserId);
+            if (u is null) return;
+            var old = u.ProfilePicturePath;
+            u.ProfilePicturePath = fileName;
+            u.UpdatedAt = PhTime.Now;
+            await db.SaveChangesAsync();
+            Pictures.DeleteProfilePicture(old);   // only after the new one is saved
+            RefreshSession();
         }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Picture upload failed");
+            _pictureError = "The picture couldn't be saved. Try again.";
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task RemovePictureAsync()
+    {
+        if (_user is null) return;
+        _saving = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var u = await db.Users.FindAsync(_user.UserId);
+            if (u is null) return;
+            var old = u.ProfilePicturePath;
+            u.ProfilePicturePath = null;
+            u.UpdatedAt = PhTime.Now;
+            await db.SaveChangesAsync();
+            Pictures.DeleteProfilePicture(old);
+            RefreshSession();
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Removing picture failed");
+            _pictureError = "The picture couldn't be removed. Try again.";
+        }
+        finally { _saving = false; }
     }
 }

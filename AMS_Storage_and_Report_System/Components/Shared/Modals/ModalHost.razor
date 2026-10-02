@@ -1,0 +1,29 @@
+@* Place once in MainLayout.razor:  <ModalHost />
+   Supports stacking (e.g. an error alert on top of the RIS submit dialog). *@
+@implements IDisposable
+@inject ModalService Modals
+
+@{
+    var open = Modals.Open.ToArray();
+}
+@for (var i = 0; i < open.Length; i++)
+{
+    var instance = open[i];
+    <CascadingValue Value="instance" IsFixed="true">
+        <ReusableModal @key="instance.Id"
+                       Instance="instance"
+                       IsTopMost="@(i == open.Length - 1)"
+                       StackIndex="i" />
+    </CascadingValue>
+}
+
+@code {
+    protected override void OnInitialized() => Modals.Changed += OnChanged;
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Modals.Changed -= OnChanged;
+        Modals.CancelAll();   // never leave an awaiting caller hanging on circuit teardown
+    }
+}

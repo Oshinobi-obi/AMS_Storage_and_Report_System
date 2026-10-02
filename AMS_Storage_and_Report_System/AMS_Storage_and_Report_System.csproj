@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <UserSecretsId>ams-stockwatch-admin-7c1e2b9a</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

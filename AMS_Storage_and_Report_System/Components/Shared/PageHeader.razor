@@ -1,0 +1,24 @@
+@* Navy page header band with the gold title, same as the AMS Supplies portal.
+   <PageHeader Title="Employees" Subtitle="..."><Actions>buttons</Actions></PageHeader> *@
+
+<section class="page-head">
+    <div class="wrap page-head-inner">
+        <div>
+            <h1>@Title</h1>
+            @if (!string.IsNullOrWhiteSpace(Subtitle))
+            {
+                <p>@Subtitle</p>
+            }
+        </div>
+        @if (Actions is not null)
+        {
+            <div class="page-head-actions">@Actions</div>
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+}

@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using AMS_Storage_and_Report_System.Models;
 
 namespace AMS_Storage_and_Report_System.Data;
@@ -29,6 +29,7 @@ public class AppDbContext : DbContext
             entity.Property(u => u.ProfilePicturePath).HasColumnName("profile_picture_path");
             entity.Property(u => u.PasswordHash).HasColumnName("password_hash");
             entity.Property(u => u.Role).HasColumnName("role").HasConversion<string>();
+            entity.Property(u => u.OfficeId).HasColumnName("office_id");
             entity.Property(u => u.IsActive).HasColumnName("is_active");
             entity.Property(u => u.RequirePasswordChange).HasColumnName("require_password_change");
             entity.Property(u => u.FailedLoginAttempts).HasColumnName("failed_login_attempts");
@@ -38,6 +39,7 @@ public class AppDbContext : DbContext
             entity.Property(u => u.UpdatedAt).HasColumnName("updated_at");
 
             entity.HasIndex(u => u.Username).IsUnique();
+            entity.HasOne(u => u.Office).WithMany().HasForeignKey(u => u.OfficeId);
         });
 
         modelBuilder.Entity<Office>(entity =>

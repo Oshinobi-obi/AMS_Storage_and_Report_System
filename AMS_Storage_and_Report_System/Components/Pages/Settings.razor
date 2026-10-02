@@ -1,0 +1,17 @@
+@page "/settings"
+@layout AppLayout
+@attribute [Authorize]
+
+<PageTitle>Settings | AMS StockWatch</PageTitle>
+
+<PageHeader Title="Settings" Subtitle="System-wide values used on requisition slips and reports." />
+
+<div class="wrap page-body">
+    <ComingSoon Icon="bi-sliders" Heading="Settings are coming soon"
+                Description="These are changed in the database for now and will move here:"
+                Planned="@(new[] {
+                    "Entity Name and Fund Cluster printed on the RIS",
+                    "Default \"Approved by\" official",
+                    "Office details and responsibility center codes",
+                    "Reorder levels and catalog categories" })" />
+</div>

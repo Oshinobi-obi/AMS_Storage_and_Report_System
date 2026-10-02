@@ -1,0 +1,62 @@
+@* In-page dialog for forms (Add employee, Upload document, Reset password…).
+   Looks identical to the ModalService confirmations.
+   <Dialog Show="_open" Title="Add employee" OnClose="Close" Busy="_saving">
+       <ChildContent>fields</ChildContent>
+       <Footer>buttons</Footer>
+   </Dialog> *@
+
+@if (Show)
+{
+    <div class="am-backdrop" @onclick="OnBackdrop">
+        <div @ref="_el" class="am-dialog am-@Size am-@Variant" role="dialog" aria-modal="true"
+             aria-labelledby="@_titleId" tabindex="-1"
+             @onclick:stopPropagation="true" @onkeydown="OnKeyDown">
+            <header class="am-header">
+                @if (!string.IsNullOrEmpty(Icon))
+                {
+                    <span class="am-icon" aria-hidden="true"><i class="bi @Icon"></i></span>
+                }
+                <h2 class="am-title" id="@_titleId">@Title</h2>
+                <button type="button" class="am-close" aria-label="Close" @onclick="CloseAsync" disabled="@Busy">
+                    <i class="bi bi-x-lg" aria-hidden="true"></i>
+                </button>
+            </header>
+            <div class="am-body">@ChildContent</div>
+            @if (Footer is not null)
+            {
+                <footer class="am-footer">@Footer</footer>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Show { get; set; }
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string Size { get; set; } = "md";          // sm | md | lg | xl
+    [Parameter] public string Variant { get; set; } = "neutral";  // neutral | success | warning | danger
+    [Parameter] public string? Icon { get; set; }                 // e.g. "bi-person-plus"
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public bool DismissOnBackdrop { get; set; } = false;   // forms: don't lose typing on a stray click
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? Footer { get; set; }
+
+    private readonly string _titleId = "dlg-" + Guid.NewGuid().ToString("N")[..8];
+    private ElementReference _el;
+    private bool _wasShown;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Show && !_wasShown)
+        {
+            _wasShown = true;
+            try { await _el.FocusAsync(); } catch { /* element gone */ }
+        }
+        else if (!Show) _wasShown = false;
+    }
+
+    private Task CloseAsync() => Busy ? Task.CompletedTask : OnClose.InvokeAsync();
+    private Task OnBackdrop() => DismissOnBackdrop ? CloseAsync() : Task.CompletedTask;
+    private Task OnKeyDown(KeyboardEventArgs e) => e.Key == "Escape" ? CloseAsync() : Task.CompletedTask;
+}

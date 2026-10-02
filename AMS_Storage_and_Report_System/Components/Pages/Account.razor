@@ -1,745 +1,495 @@
 @page "/account"
 @layout AppLayout
-@rendermode InteractiveServer
 @attribute [Authorize(Roles = "SuperAdmin,Admin")]
-@using Microsoft.AspNetCore.Authorization
-@using Microsoft.AspNetCore.Components.Authorization
-@using Microsoft.EntityFrameworkCore
-@using AMS_Storage_and_Report_System.Data
-@using AMS_Storage_and_Report_System.Models
-@using AMS_Storage_and_Report_System.Services
-@using AMS_Storage_and_Report_System.Components.Shared
-@inject AppDbContext Db
+@inject IDbContextFactory<AppDbContext> DbFactory
 @inject AuthenticationStateProvider AuthStateProvider
+@inject ProfilePictureStorage Pictures
+@inject ModalService Modal
 @inject IJSRuntime JS
+@inject ILogger<Account> Log
 
-<PageTitle>Account Management — StockWatch</PageTitle>
+<PageTitle>Accounts | AMS StockWatch</PageTitle>
 
-<div class="account-header">
-    <h1 class="page-title">Account Management</h1>
-    @if (isSuperAdmin)
+<PageHeader Title="Accounts" Subtitle="Sign-in accounts for AMS staff and for the offices that use the AMS Supplies portal.">
+    <Actions>
+        @if (_isSuperAdmin)
+        {
+            <button type="button" class="btn btn-accent" @onclick="OpenAdd"><i class="bi bi-person-plus me-1" aria-hidden="true"></i> Add account</button>
+        }
+    </Actions>
+</PageHeader>
+
+<div class="wrap page-body">
+    @if (_loading)
     {
-        <button class="btn-primary" @onclick="OpenAddUserModal">Add User +</button>
+        <div class="panel"><div class="loading">Loading accounts…</div></div>
+    }
+    else if (!_isSuperAdmin)
+    {
+        <NoAccess Title="Only Super Admins can manage accounts" Message="Ask a Super Admin to add or reset an account for you." />
+    }
+    else
+    {
+        <div class="stat-grid">
+            <button type="button" class="stat @(_scope == "all" ? "is-active" : "")" @onclick='() => _scope = "all"'>
+                <span class="stat-icon"><i class="bi bi-people" aria-hidden="true"></i></span>
+                <span><span class="stat-value">@_users.Count</span><span class="stat-label">All accounts</span></span>
+            </button>
+            <button type="button" class="stat @(_scope == "staff" ? "is-active" : "")" @onclick='() => _scope = "staff"'>
+                <span class="stat-icon is-gold"><i class="bi bi-shield-check" aria-hidden="true"></i></span>
+                <span><span class="stat-value">@_users.Count(u => u.IsStaff)</span><span class="stat-label">AMS staff</span></span>
+            </button>
+            <button type="button" class="stat @(_scope == "office" ? "is-active" : "")" @onclick='() => _scope = "office"'>
+                <span class="stat-icon is-ok"><i class="bi bi-building" aria-hidden="true"></i></span>
+                <span><span class="stat-value">@_users.Count(u => u.Role == UserRole.Office)</span><span class="stat-label">Office accounts</span></span>
+            </button>
+            <div class="stat">
+                <span class="stat-icon is-warn"><i class="bi bi-activity" aria-hidden="true"></i></span>
+                <span><span class="stat-value">@_users.Count(RecentlyActive)</span><span class="stat-label">Signed in, last 30 minutes</span></span>
+            </div>
+        </div>
+
+        <section class="panel">
+            <header class="panel-head">
+                <div class="input-icon flex-grow-1" style="max-width: 420px">
+                    <i class="bi bi-search" aria-hidden="true"></i>
+                    <input type="search" class="form-control" placeholder="Search by name, username, email or office"
+                           aria-label="Search accounts" autocomplete="off" @bind="_search" @bind:event="oninput" />
+                </div>
+                <span class="meta">@Visible.Count() shown</span>
+            </header>
+
+            @if (!Visible.Any())
+            {
+                <div class="empty-state"><i class="bi bi-search" aria-hidden="true"></i><h2>No accounts match</h2><p>Try another word or show all accounts.</p></div>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead><tr><th>Account</th><th>Role</th><th>Status</th><th>Last sign-in</th><th class="text-end">Actions</th></tr></thead>
+                        <tbody>
+                            @foreach (var u in Visible)
+                            {
+                                <tr class="@(u.IsActive ? "" : "is-dim")" @key="u.UserId">
+                                    <td>
+                                        <div class="d-flex align-items-center gap-2">
+                                            <span class="avatar" style="width:36px;height:36px;font-size:.875rem">
+                                                @if (Pictures.GetProfilePictureUrl(u.ProfilePicturePath) is { } pic) { <img src="@pic" alt="" /> }
+                                                else { @Initial(u.Name) }
+                                            </span>
+                                            <span>
+                                                <span class="cell-strong">@u.Name @(u.UserId == _currentUserId ? "(you)" : "")</span>
+                                                <span class="cell-sub">@u.Username, @u.Email</span>
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="badge-pill @RoleBadge(u)">@RoleLabel(u)</span>
+                                    </td>
+                                    <td>
+                                        @if (!u.IsActive) { <span class="badge-pill badge-grey">Deactivated</span> }
+                                        else if (u.LockedUntil > PhTime.Now) { <span class="badge-pill badge-bad"><i class="bi bi-lock-fill" aria-hidden="true"></i>Locked</span> }
+                                        else if (u.RequirePasswordChange) { <span class="badge-pill badge-warn">Must change password</span> }
+                                        else { <span class="badge-pill badge-ok"><span class="dot"></span>Active</span> }
+                                    </td>
+                                    <td class="text-nowrap">
+                                        @if (u.LastLoginAt is { } last) { @last.ToString("MMM d, yyyy") <span class="cell-sub">@last.ToString("h:mm tt")</span> }
+                                        else { <span class="is-muted">Never</span> }
+                                    </td>
+                                    <td>
+                                        <div class="row-actions justify-content-end">
+                                            <button type="button" class="act" @onclick="() => ShowActivityAsync(u)"><i class="bi bi-clock-history" aria-hidden="true"></i>Activity</button>
+                                            <button type="button" class="act" @onclick="() => OpenReset(u)"><i class="bi bi-key" aria-hidden="true"></i>Reset password</button>
+                                            @if (u.UserId != _currentUserId)
+                                            {
+                                                @if (u.IsActive)
+                                                {
+                                                    <button type="button" class="act is-danger" @onclick="() => SetActiveAsync(u, false)"><i class="bi bi-person-slash" aria-hidden="true"></i>Deactivate</button>
+                                                }
+                                                else
+                                                {
+                                                    <button type="button" class="act is-ok" @onclick="() => SetActiveAsync(u, true)"><i class="bi bi-person-check" aria-hidden="true"></i>Re-enable</button>
+                                                }
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
     }
 </div>
 
-@if (!isSuperAdmin)
-{
-    <AccessDeniedModal Show="true"
-                       Message="You currently have no access to this page. Only Super Admins can manage user accounts."
-                       RedirectUrl="/dashboard" />
-}
-else
-{
-    <div class="stats-row">
-        <div class="stat-card">
-            <div class="stat-value">@totalUsers</div>
-            <div class="stat-label">Total Users</div>
+@* ── Add account ── *@
+<Dialog Show="_addOpen" Title="Add account" Icon="bi-person-plus" Busy="_saving" OnClose="() => _addOpen = false">
+    <ChildContent>
+        <div class="field">
+            <label class="form-label" for="a-role">Account type</label>
+            <select id="a-role" class="form-select" @bind="_nRole">
+                <option value="Admin">AMS Admin</option>
+                <option value="SuperAdmin">AMS Super Admin (can manage accounts)</option>
+                <option value="Office">Office (AMS Supplies portal)</option>
+            </select>
         </div>
-        <div class="stat-card">
-            <div class="stat-value">@onlineUsers</div>
-            <div class="stat-label">Online Now</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value">@superAdminCount</div>
-            <div class="stat-label">Super Admins</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value">@adminCount</div>
-            <div class="stat-label">Admins</div>
-        </div>
-    </div>
-
-    <div class="users-card">
-        <div class="users-table">
-            <div class="users-row users-header">
-                <div>User</div>
-                <div>Role</div>
-                <div>Status</div>
-                <div>Last Login</div>
-                <div>Created</div>
-                <div>Actions</div>
-            </div>
-            @foreach (var user in users)
-            {
-                <div class="users-row @(!user.IsActive ? "user-deactivated" : "")">
-                    <div class="user-cell">
-                        <div class="user-info">
-                            @if (!string.IsNullOrEmpty(user.ProfilePicturePath))
-                            {
-                                <img src="/api/profile-picture/@user.ProfilePicturePath" alt="Avatar" class="user-avatar" />
-                            }
-                            else
-                            {
-                                <div class="user-avatar-placeholder">
-                                    @GetInitial(user.DisplayName ?? user.FullName)
-                                </div>
-                            }
-                            <div>
-                                <div class="user-name">@(string.IsNullOrWhiteSpace(user.DisplayName) ? user.FullName : user.DisplayName)</div>
-                                <div class="user-email">@user.Email</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div>
-                        <span class="role-badge role-@user.Role.ToString().ToLower()">@user.Role</span>
-                    </div>
-                    <div>
-                        @if (IsUserOnline(user))
-                        {
-                            <span class="status-badge status-online">Online</span>
-                        }
-                        else if (user.IsActive)
-                        {
-                            <span class="status-badge status-offline">Offline</span>
-                        }
-                        else
-                        {
-                            <span class="status-badge status-inactive">Inactive</span>
-                        }
-                    </div>
-                    <div class="date-cell">
-                        @if (user.LastLoginAt.HasValue)
-                        {
-                            var localTime = user.LastLoginAt.Value.ToLocalTime();
-                            <div>@localTime.ToString("MMM dd, yyyy")</div>
-                            <div class="time-text">@localTime.ToString("hh:mm tt")</div>
-                        }
-                        else
-                        {
-                            <span class="text-muted">Never</span>
-                        }
-                    </div>
-                    <div class="date-cell">
-                        @{
-                            var createdLocal = user.CreatedAt.ToLocalTime();
-                        }
-                        <div>@createdLocal.ToString("MMM dd, yyyy")</div>
-                        <div class="time-text">@createdLocal.ToString("hh:mm tt")</div>
-                    </div>
-                    <div class="row-actions">
-                        <button class="action-link view-link" @onclick="() => ViewUserActivity(user.UserId)">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                <circle cx="12" cy="12" r="3"></circle>
-                            </svg>
-                            View Activity
-                        </button>
-                        <button class="action-link password-link" @onclick="() => OpenResetPasswordModal(user)">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                            </svg>
-                            Reset Password
-                        </button>
-                        @if (user.UserId != currentUserId)
-                        {
-                            @if (user.IsActive)
-                            {
-                                <button class="action-link danger-link" @onclick="() => OpenDeactivateModal(user)">
-                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                                    </svg>
-                                    <span>Deactivate</span>
-                                </button>
-                            }
-                            else
-                            {
-                                <button class="action-link success-link" @onclick="() => OpenReactivateModal(user)">
-                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                                        <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
-                                    </svg>
-                                    <span>Re-enable</span>
-                                </button>
-                            }
-                        }
-                    </div>
-                </div>
-            }
-        </div>
-    </div>
-
-    @if (showActivityModal && selectedUserActivities != null)
-    {
-        <div class="modal-backdrop" @onclick="CloseActivityModal">
-            <div class="modal-card activity-modal" @onclick:stopPropagation="true">
-                <h2 class="modal-title">User Activity</h2>
-                <div class="activity-user-info">
-                    <strong>@selectedUserName</strong>
-                </div>
-
-                <div class="activity-list">
-                    @if (selectedUserActivities.Count == 0)
+        @if (_nRole == "Office")
+        {
+            <div class="field">
+                <label class="form-label" for="a-office">Office</label>
+                <select id="a-office" class="form-select" @bind="_nOfficeId">
+                    <option value="0">Select an office</option>
+                    @foreach (var o in _offices)
                     {
-                        <p class="empty-state">No activities recorded yet.</p>
+                        <option value="@o.OfficeId">@o.OfficeAcronym, @o.OfficeName</option>
                     }
-                    else
-                    {
-                        @foreach (var activity in selectedUserActivities)
+                </select>
+            </div>
+        }
+        <div class="field">
+            <label class="form-label" for="a-name">@(_nRole == "Office" ? "Account name" : "Full name")</label>
+            <input id="a-name" class="form-control" autocomplete="off" maxlength="100" @bind="_nFullName"
+                   placeholder="@(_nRole == "Office" ? "Example: Learner Rights and Protection Office" : "Example: Juan P. Dela Cruz")" />
+        </div>
+        <div class="row g-3 mt-0">
+            <div class="col-sm-6">
+                <label class="form-label" for="a-user">Username</label>
+                <input id="a-user" class="form-control" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="50" @bind="_nUsername" />
+            </div>
+            <div class="col-sm-6">
+                <label class="form-label" for="a-email">Email</label>
+                <input id="a-email" type="email" class="form-control" autocomplete="off" maxlength="100" @bind="_nEmail" />
+            </div>
+        </div>
+        <div class="field mt-3">
+            <label class="form-label" for="a-pass">Temporary password</label>
+            <div class="password-group">
+                <input id="a-pass" class="form-control" type="@(_showNewPass ? "text" : "password")" autocomplete="off" @bind="_nPassword" />
+                <button type="button" class="btn-icon" @onclick="() => _showNewPass = !_showNewPass" aria-label="@(_showNewPass ? "Hide password" : "Show password")">
+                    <i class="bi @(_showNewPass ? "bi-eye-slash" : "bi-eye")" aria-hidden="true"></i>
+                </button>
+                <button type="button" class="btn btn-outline-primary" @onclick="() => { _nPassword = PasswordGenerator.GeneratePassword(14); _showNewPass = true; }">
+                    <i class="bi bi-magic me-1" aria-hidden="true"></i>Generate
+                </button>
+            </div>
+            <div class="form-text">At least 8 characters. They'll be asked to change it the first time they sign in.</div>
+        </div>
+        @if (_formError is not null)
+        {
+            <div class="form-error" role="alert"><i class="bi bi-exclamation-circle" aria-hidden="true"></i>@_formError</div>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-light" @onclick="() => _addOpen = false" disabled="@_saving">Cancel</button>
+        <button type="button" class="btn btn-primary" @onclick="CreateAsync" disabled="@_saving">
+            @if (_saving) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
+            Create account
+        </button>
+    </Footer>
+</Dialog>
+
+@* ── Reset password ── *@
+<Dialog Show="_resetUser is not null" Title="@($"Reset password for {_resetUser?.Name}")" Icon="bi-key" Variant="warning"
+        Busy="_saving" OnClose="() => _resetUser = null">
+    <ChildContent>
+        <div class="field">
+            <label class="form-label" for="r-pass">New password</label>
+            <div class="password-group">
+                <input id="r-pass" class="form-control" type="@(_showResetPass ? "text" : "password")" autocomplete="off" @bind="_resetPassword" />
+                <button type="button" class="btn-icon" @onclick="() => _showResetPass = !_showResetPass" aria-label="@(_showResetPass ? "Hide password" : "Show password")">
+                    <i class="bi @(_showResetPass ? "bi-eye-slash" : "bi-eye")" aria-hidden="true"></i>
+                </button>
+                <button type="button" class="btn btn-outline-primary" @onclick="() => { _resetPassword = PasswordGenerator.GeneratePassword(14); _showResetPass = true; }">
+                    <i class="bi bi-magic me-1" aria-hidden="true"></i>Generate
+                </button>
+            </div>
+            <div class="form-text">At least 8 characters.</div>
+        </div>
+        <div class="form-check mt-3">
+            <input class="form-check-input" type="checkbox" id="r-require" @bind="_resetRequireChange" />
+            <label class="form-check-label" for="r-require">Ask them to choose their own password at next sign-in</label>
+        </div>
+        @if (_formError is not null)
+        {
+            <div class="form-error" role="alert"><i class="bi bi-exclamation-circle" aria-hidden="true"></i>@_formError</div>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-light" @onclick="() => _resetUser = null" disabled="@_saving">Cancel</button>
+        <button type="button" class="btn btn-primary" @onclick="ResetAsync" disabled="@_saving">
+            @if (_saving) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
+            Reset password
+        </button>
+    </Footer>
+</Dialog>
+
+@* ── Show a new password once ── *@
+<Dialog Show="_issued is not null" Title="Password ready" Icon="bi-check-circle" Variant="success" OnClose="() => _issued = null">
+    <ChildContent>
+        <p class="am-message">Give this password to <strong>@_issued?.Name</strong> in person or through a private message. It won't be shown again.</p>
+        <div class="secret-box">
+            <code>@_issued?.Password</code>
+            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="CopyAsync"><i class="bi bi-clipboard me-1" aria-hidden="true"></i>@(_copied ? "Copied" : "Copy")</button>
+        </div>
+        <p class="small text-muted-2 mb-0">Username: <strong>@_issued?.Username</strong></p>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-primary" @onclick="() => _issued = null">Done</button>
+    </Footer>
+</Dialog>
+
+@* ── Activity ── *@
+<Dialog Show="_activityUser is not null" Title="@($"Activity of {_activityUser?.Name}")" Icon="bi-clock-history" Size="lg" DismissOnBackdrop="true" OnClose="() => _activityUser = null">
+    <ChildContent>
+        @if (_activities is null)
+        {
+            <div class="loading">Loading…</div>
+        }
+        else if (_activities.Count == 0)
+        {
+            <div class="empty-state"><i class="bi bi-clock" aria-hidden="true"></i><h2>No activity yet</h2><p>Sign-ins and changes will be listed here.</p></div>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead><tr><th>When</th><th>Activity</th><th>Details</th><th>IP address</th></tr></thead>
+                    <tbody>
+                        @foreach (var a in _activities)
                         {
-                            <div class="activity-item">
-                                <div class="activity-icon">
-                                    @switch (activity.ActivityType)
-                                    {
-                                        case "Login":
-                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
-                                                <polyline points="10 17 15 12 10 7"></polyline>
-                                                <line x1="15" y1="12" x2="3" y2="12"></line>
-                                            </svg>
-                                            break;
-                                        case "Create":
-                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                <line x1="12" y1="5" x2="12" y2="19"></line>
-                                                <line x1="5" y1="12" x2="19" y2="12"></line>
-                                            </svg>
-                                            break;
-                                        case "Update":
-                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                                                <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"></path>
-                                            </svg>
-                                            break;
-                                        case "Delete":
-                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                <polyline points="3 6 5 6 21 6"></polyline>
-                                                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
-                                            </svg>
-                                            break;
-                                        default:
-                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                <circle cx="12" cy="12" r="10"></circle>
-                                                <line x1="12" y1="8" x2="12" y2="12"></line>
-                                                <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                                            </svg>
-                                            break;
-                                    }
-                                </div>
-                                <div class="activity-content">
-                                    <div class="activity-type">@activity.ActivityType</div>
-                                    <div class="activity-desc">@activity.Description</div>
-                                    <div class="activity-meta">
-                                        @{
-                                            var activityLocalTime = activity.CreatedAt.ToLocalTime();
-                                        }
-                                        <span>@activityLocalTime.ToString("MMM dd, yyyy hh:mm tt")</span>
-                                        @if (!string.IsNullOrEmpty(activity.IpAddress))
-                                        {
-                                            <span> • IP: @activity.IpAddress</span>
-                                        }
-                                    </div>
-                                </div>
-                            </div>
+                            <tr>
+                                <td class="text-nowrap">@a.CreatedAt.ToString("MMM d, yyyy h:mm tt")</td>
+                                <td><span class="badge-pill badge-navy">@a.ActivityType</span></td>
+                                <td>@a.Description</td>
+                                <td class="is-muted">@a.IpAddress</td>
+                            </tr>
                         }
-                    }
-                </div>
-
-                <div class="modal-actions">
-                    <button class="btn-ghost" @onclick="CloseActivityModal">Close</button>
-                </div>
+                    </tbody>
+                </table>
             </div>
-        </div>
-    }
-
-    @if (showAddUserModal)
-    {
-        <div class="modal-backdrop" @onclick="CloseAddUserModal">
-            <div class="modal-card" @onclick:stopPropagation="true">
-                <h2 class="modal-title">Add New User</h2>
-
-                <div class="field">
-                    <label>Full Name:</label>
-                    <input type="text" @bind="newUserFullName" placeholder="Enter full name" />
-                </div>
-
-                <div class="field">
-                    <label>Email:</label>
-                    <input type="email" @bind="newUserEmail" placeholder="Enter email address" />
-                </div>
-
-                <div class="field">
-                    <label>Username:</label>
-                    <input type="text" @bind="newUserUsername" placeholder="Enter username" />
-                </div>
-
-                <div class="field">
-                    <label>Role:</label>
-                    <select @bind="newUserRole">
-                        <option value="Admin">Admin</option>
-                        <option value="SuperAdmin">SuperAdmin</option>
-                    </select>
-                </div>
-
-                <div class="field">
-                    <label>Password:</label>
-                    <div class="password-input-group">
-                        <input type="@(showPassword ? "text" : "password")"
-                               @bind="newUserPassword"
-                               placeholder="Enter password or generate one" />
-                        <button type="button" class="btn-icon" @onclick="TogglePasswordVisibility">
-                            @if (showPassword)
-                            {
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                                    <line x1="1" y1="1" x2="23" y2="23"></line>
-                                </svg>
-                            }
-                            else
-                            {
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                    <circle cx="12" cy="12" r="3"></circle>
-                                </svg>
-                            }
-                        </button>
-                        <button type="button" class="btn-generate" @onclick="GeneratePassword">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <polyline points="23 4 23 10 17 10"></polyline>
-                                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                            </svg>
-                            Generate
-                        </button>
-                    </div>
-                    <p class="field-hint">Minimum 8 characters with letters, numbers, and special characters.</p>
-                </div>
-
-                @if (!string.IsNullOrEmpty(formError))
-                {
-                    <div class="form-error">@formError</div>
-                }
-
-                <div class="modal-actions">
-                    <button class="btn-ghost" @onclick="CloseAddUserModal">Cancel</button>
-                    <button class="btn-primary" @onclick="CreateUser" disabled="@isSaving">
-                        @(isSaving ? "Creating..." : "Create User")
-                    </button>
-                </div>
-            </div>
-        </div>
-    }
-
-    @if (showDeactivateModal && userToToggle != null)
-    {
-        <div class="modal-backdrop" @onclick="CloseConfirmModal">
-            <div class="modal-card confirm-modal" @onclick:stopPropagation="true">
-                <div class="confirm-icon warning-icon">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                        <line x1="12" y1="9" x2="12" y2="13"></line>
-                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                    </svg>
-                </div>
-                <h2 class="modal-title">Deactivate Account</h2>
-                <p class="confirm-message">
-                    Are you sure you want to deactivate <strong>@userToToggle.FullName</strong>'s account?
-                </p>
-                <p class="confirm-hint">The user will no longer be able to log in until their account is re-enabled.</p>
-                <div class="modal-actions">
-                    <button class="btn-ghost" @onclick="CloseConfirmModal">Cancel</button>
-                    <button class="btn-danger" @onclick="ConfirmDeactivate">Deactivate</button>
-                </div>
-            </div>
-        </div>
-    }
-
-    @if (showReactivateModal && userToToggle != null)
-    {
-        <div class="modal-backdrop" @onclick="CloseConfirmModal">
-            <div class="modal-card confirm-modal" @onclick:stopPropagation="true">
-                <div class="confirm-icon success-icon">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                    </svg>
-                </div>
-                <h2 class="modal-title">Re-enable Account</h2>
-                <p class="confirm-message">
-                    Are you sure you want to re-enable <strong>@userToToggle.FullName</strong>'s account?
-                </p>
-                <p class="confirm-hint">The user will be able to log in again.</p>
-                <div class="modal-actions">
-                    <button class="btn-ghost" @onclick="CloseConfirmModal">Cancel</button>
-                    <button class="btn-primary" @onclick="ConfirmReactivate">Re-enable</button>
-                </div>
-            </div>
-        </div>
-    }
-
-    @if (showResetPasswordModal && userToReset != null)
-    {
-        <div class="modal-backdrop" @onclick="CloseResetPasswordModal">
-            <div class="modal-card" @onclick:stopPropagation="true">
-                <h2 class="modal-title">Reset Password for @userToReset.FullName</h2>
-
-                <div class="field">
-                    <label>New Password:</label>
-                    <div class="password-input-group">
-                        <input type="@(showResetPassword ? "text" : "password")"
-                               @bind="resetPassword"
-                               placeholder="Enter password or generate one" />
-                        <button type="button" class="btn-icon" @onclick="() => showResetPassword = !showResetPassword">
-                            @if (showResetPassword)
-                            {
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                                    <line x1="1" y1="1" x2="23" y2="23"></line>
-                                </svg>
-                            }
-                            else
-                            {
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                    <circle cx="12" cy="12" r="3"></circle>
-                                </svg>
-                            }
-                        </button>
-                        <button type="button" class="btn-generate" @onclick="GenerateResetPassword">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <polyline points="23 4 23 10 17 10"></polyline>
-                                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                            </svg>
-                            Generate
-                        </button>
-                    </div>
-                    <p class="field-hint">Minimum 8 characters. User will be required to change this password on next login.</p>
-                </div>
-
-                <div class="field checkbox-field">
-                    <label class="checkbox-label">
-                        <input type="checkbox" @bind="requirePasswordChangeOnReset" />
-                        Require password change on next login
-                    </label>
-                </div>
-
-                @if (!string.IsNullOrEmpty(resetPasswordError))
-                {
-                    <div class="form-error">@resetPasswordError</div>
-                }
-
-                <div class="modal-actions">
-                    <button class="btn-ghost" @onclick="CloseResetPasswordModal">Cancel</button>
-                    <button class="btn-primary" @onclick="ConfirmResetPassword" disabled="@isResettingPassword">
-                        @(isResettingPassword ? "Resetting..." : "Reset Password")
-                    </button>
-                </div>
-            </div>
-        </div>
-    }
-}
+            <p class="small text-muted-2 mt-2 mb-0">Latest 50 entries.</p>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-primary" @onclick="() => _activityUser = null">Close</button>
+    </Footer>
+</Dialog>
 
 @code {
-    private bool isSuperAdmin = false;
-    private uint currentUserId = 0;
-    private List<User> users = new();
-    private int totalUsers = 0;
-    private int onlineUsers = 0;
-    private int superAdminCount = 0;
-    private int adminCount = 0;
+    private sealed record IssuedPassword(string Name, string Username, string Password);
 
-    private bool showActivityModal = false;
-    private List<UserActivity>? selectedUserActivities;
-    private string selectedUserName = "";
+    private bool _loading = true, _isSuperAdmin;
+    private uint _currentUserId;
+    private List<User> _users = [];
+    private List<Office> _offices = [];
+    private string _scope = "all", _search = "";
 
-    private bool showAddUserModal = false;
-    private string newUserFullName = "";
-    private string newUserEmail = "";
-    private string newUserUsername = "";
-    private string newUserRole = "Admin";
-    private string newUserPassword = "";
-    private bool showPassword = false;
-    private string formError = "";
-    private bool isSaving = false;
+    private bool _saving, _addOpen, _showNewPass, _showResetPass, _resetRequireChange = true, _copied;
+    private string _nRole = "Admin", _nFullName = "", _nUsername = "", _nEmail = "", _nPassword = "";
+    private int _nOfficeId;
+    private string? _formError;
+    private User? _resetUser;
+    private string _resetPassword = "";
+    private IssuedPassword? _issued;
+    private User? _activityUser;
+    private List<UserActivity>? _activities;
 
-    private bool showDeactivateModal = false;
-    private bool showReactivateModal = false;
-    private User? userToToggle;
+    private IEnumerable<User> Visible
+    {
+        get
+        {
+            var term = _search.Trim();
+            return _users
+                .Where(u => _scope == "all" || (_scope == "staff" ? u.IsStaff : u.Role == UserRole.Office))
+                .Where(u => term.Length == 0
+                    || u.Name.Contains(term, StringComparison.OrdinalIgnoreCase)
+                    || u.Username.Contains(term, StringComparison.OrdinalIgnoreCase)
+                    || u.Email.Contains(term, StringComparison.OrdinalIgnoreCase)
+                    || (u.Office?.OfficeAcronym.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+    }
 
-    private bool showResetPasswordModal = false;
-    private User? userToReset;
-    private string resetPassword = "";
-    private bool showResetPassword = false;
-    private bool requirePasswordChangeOnReset = true;
-    private string resetPasswordError = "";
-    private bool isResettingPassword = false;
+    private static string Initial(string name) => string.IsNullOrWhiteSpace(name) ? "?" : name.Trim()[..1].ToUpperInvariant();
+
+    private static string RoleBadge(User u) => u.Role switch
+    {
+        UserRole.SuperAdmin => "badge-gold",
+        UserRole.Admin => "badge-navy",
+        _ => "badge-ok",
+    };
+
+    private static string RoleLabel(User u) => u.Role switch
+    {
+        UserRole.SuperAdmin => "Super Admin",
+        UserRole.Admin => "Admin",
+        _ => $"Office, {u.Office?.OfficeAcronym ?? "unassigned"}",
+    };
+
+    private static bool RecentlyActive(User u) => u.IsActive && u.LastLoginAt > PhTime.Now.AddMinutes(-30);
 
     protected override async Task OnInitializedAsync()
     {
-        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-        var role = authState.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
-        isSuperAdmin = role == "SuperAdmin";
-
-        if (isSuperAdmin)
-        {
-            var userIdClaim = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-            if (uint.TryParse(userIdClaim, out var userId))
-            {
-                currentUserId = userId;
-            }
-
-            await LoadUsers();
-        }
+        var user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        _isSuperAdmin = user.IsInRole("SuperAdmin");
+        uint.TryParse(user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out _currentUserId);
+        if (_isSuperAdmin) await LoadAsync();
+        _loading = false;
     }
 
-    private async Task LoadUsers()
+    private async Task LoadAsync()
     {
-        users = await Db.Users.OrderByDescending(u => u.CreatedAt).ToListAsync();
-        totalUsers = users.Count;
-        onlineUsers = users.Count(u => IsUserOnline(u));
-        superAdminCount = users.Count(u => u.Role == UserRole.SuperAdmin);
-        adminCount = users.Count(u => u.Role == UserRole.Admin);
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _users = await db.Users.AsNoTracking().Include(u => u.Office)
+            .OrderBy(u => u.Role).ThenBy(u => u.FullName).ToListAsync();
+        _offices = await db.Offices.AsNoTracking().OrderBy(o => o.OfficeAcronym).ToListAsync();
     }
 
-    private bool IsUserOnline(User user)
+    // ── Add ─────────────────────────────────────────────────────────────
+    private void OpenAdd()
     {
-        if (!user.LastLoginAt.HasValue) return false;
-        var threshold = DateTime.UtcNow.AddMinutes(-30);
-        return user.LastLoginAt.Value > threshold && user.IsActive;
+        _nRole = "Admin"; _nFullName = _nUsername = _nEmail = _nPassword = "";
+        _nOfficeId = 0; _showNewPass = false; _formError = null;
+        _addOpen = true;
     }
 
-    private string GetInitial(string name)
+    private async Task CreateAsync()
     {
-        return string.IsNullOrEmpty(name) ? "?" : name.Substring(0, 1).ToUpper();
-    }
+        _formError = null;
+        var role = Enum.Parse<UserRole>(_nRole);
+        var username = _nUsername.Trim();
+        var email = _nEmail.Trim();
 
-    private async Task ViewUserActivity(uint userId)
-    {
-        var user = users.FirstOrDefault(u => u.UserId == userId);
-        if (user == null) return;
+        if (string.IsNullOrWhiteSpace(_nFullName)) _formError = "Enter the name.";
+        else if (role == UserRole.Office && _nOfficeId == 0) _formError = "Select the office for this account.";
+        else if (username.Length < 3 || username.Any(char.IsWhiteSpace)) _formError = "The username needs at least 3 characters and no spaces.";
+        else if (!email.Contains('@') || !email.Contains('.')) _formError = "Enter a valid email address.";
+        else if (_nPassword.Length < 8) _formError = "The password needs at least 8 characters.";
+        if (_formError is not null) return;
 
-        selectedUserName = string.IsNullOrWhiteSpace(user.DisplayName) ? user.FullName : user.DisplayName;
-        selectedUserActivities = await Db.UserActivities
-            .Where(a => a.UserId == userId)
-            .OrderByDescending(a => a.CreatedAt)
-            .Take(50)
-            .ToListAsync();
-
-        showActivityModal = true;
-    }
-
-    private void CloseActivityModal()
-    {
-        showActivityModal = false;
-        selectedUserActivities = null;
-        selectedUserName = "";
-    }
-
-    private async Task ToggleUserStatus(User user)
-    {
-        user.IsActive = !user.IsActive;
-        user.UpdatedAt = DateTime.UtcNow;
-        await Db.SaveChangesAsync();
-        await LoadUsers();
-        await ShowToast($"User {(user.IsActive ? "activated" : "deactivated")} successfully.");
-    }
-
-    private void OpenDeactivateModal(User user)
-    {
-        userToToggle = user;
-        showDeactivateModal = true;
-    }
-
-    private void OpenReactivateModal(User user)
-    {
-        userToToggle = user;
-        showReactivateModal = true;
-    }
-
-    private void CloseConfirmModal()
-    {
-        showDeactivateModal = false;
-        showReactivateModal = false;
-        userToToggle = null;
-    }
-
-    private async Task ConfirmDeactivate()
-    {
-        if (userToToggle == null) return;
-
-        userToToggle.IsActive = false;
-        userToToggle.UpdatedAt = DateTime.UtcNow;
-        await Db.SaveChangesAsync();
-        await LoadUsers();
-        await ShowToast($"{userToToggle.FullName}'s account has been deactivated.", "danger");
-        CloseConfirmModal();
-    }
-
-    private async Task ConfirmReactivate()
-    {
-        if (userToToggle == null) return;
-
-        userToToggle.IsActive = true;
-        userToToggle.UpdatedAt = DateTime.UtcNow;
-        await Db.SaveChangesAsync();
-        await LoadUsers();
-        await ShowToast($"{userToToggle.FullName}'s account has been re-enabled.");
-        CloseConfirmModal();
-    }
-
-    private void OpenResetPasswordModal(User user)
-    {
-        userToReset = user;
-        resetPassword = "";
-        showResetPassword = false;
-        requirePasswordChangeOnReset = true;
-        resetPasswordError = "";
-        showResetPasswordModal = true;
-    }
-
-    private void CloseResetPasswordModal()
-    {
-        showResetPasswordModal = false;
-        userToReset = null;
-        resetPassword = "";
-        showResetPassword = false;
-        requirePasswordChangeOnReset = true;
-        resetPasswordError = "";
-    }
-
-    private void GenerateResetPassword()
-    {
-        resetPassword = PasswordGenerator.GeneratePassword(16);
-        showResetPassword = true;
-    }
-
-    private async Task ConfirmResetPassword()
-    {
-        if (userToReset == null) return;
-
-        resetPasswordError = "";
-
-        if (string.IsNullOrWhiteSpace(resetPassword))
-        {
-            resetPasswordError = "Please enter a password or generate one.";
-            return;
-        }
-
-        if (resetPassword.Length < 8)
-        {
-            resetPasswordError = "Password must be at least 8 characters long.";
-            return;
-        }
-
-        isResettingPassword = true;
-
+        _saving = true;
         try
         {
-            userToReset.PasswordHash = BCrypt.Net.BCrypt.HashPassword(resetPassword);
-            userToReset.RequirePasswordChange = requirePasswordChangeOnReset;
-            userToReset.UpdatedAt = DateTime.UtcNow;
-            await Db.SaveChangesAsync();
+            await using var db = await DbFactory.CreateDbContextAsync();
+            if (await db.Users.AnyAsync(u => u.Username == username)) { _formError = "That username is already taken."; return; }
+            if (await db.Users.AnyAsync(u => u.Email == email)) { _formError = "Another account already uses that email."; return; }
 
-            await ShowToast($"Password reset for {userToReset.FullName}. New password: {resetPassword}");
-            CloseResetPasswordModal();
+            var now = PhTime.Now;
+            db.Users.Add(new User
+            {
+                Username = username, Email = email,
+                FullName = _nFullName.Trim(), DisplayName = _nFullName.Trim(),
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(_nPassword, 12),
+                Role = role, OfficeId = role == UserRole.Office ? _nOfficeId : null,
+                IsActive = true, RequirePasswordChange = true,
+                CreatedAt = now, UpdatedAt = now,
+            });
+            await LogAsync(db, "Create", $"Created {role} account '{username}'");
+            await db.SaveChangesAsync();
+
+            _addOpen = false;
+            _issued = new IssuedPassword(_nFullName.Trim(), username, _nPassword);
+            _copied = false;
+            await LoadAsync();
         }
         catch (Exception ex)
         {
-            resetPasswordError = "Failed to reset password: " + ex.Message;
+            Log.LogError(ex, "Creating account failed");
+            _formError = "The account couldn't be created. Check your connection and try again.";
         }
-        finally
-        {
-            isResettingPassword = false;
-        }
+        finally { _saving = false; }
     }
 
-    private void OpenAddUserModal()
+    // ── Reset password ─────────────────────────────────────────────────
+    private void OpenReset(User u)
     {
-        newUserFullName = "";
-        newUserEmail = "";
-        newUserUsername = "";
-        newUserRole = "Admin";
-        newUserPassword = "";
-        showPassword = false;
-        formError = "";
-        showAddUserModal = true;
+        _resetUser = u; _resetPassword = ""; _showResetPass = false; _resetRequireChange = true; _formError = null;
     }
 
-    private void CloseAddUserModal()
+    private async Task ResetAsync()
     {
-        showAddUserModal = false;
-    }
+        if (_resetUser is null) return;
+        _formError = _resetPassword.Length < 8 ? "The password needs at least 8 characters." : null;
+        if (_formError is not null) return;
 
-    private void GeneratePassword()
-    {
-        newUserPassword = PasswordGenerator.GeneratePassword(16);
-        showPassword = true;
-    }
-
-    private void TogglePasswordVisibility()
-    {
-        showPassword = !showPassword;
-    }
-
-    private async Task CreateUser()
-    {
-        formError = "";
-
-        if (string.IsNullOrWhiteSpace(newUserFullName) ||
-            string.IsNullOrWhiteSpace(newUserEmail) ||
-            string.IsNullOrWhiteSpace(newUserUsername) ||
-            string.IsNullOrWhiteSpace(newUserPassword))
-        {
-            formError = "Please fill in all fields.";
-            return;
-        }
-
-        if (!newUserEmail.Contains("@") || !newUserEmail.Contains("."))
-        {
-            formError = "Please enter a valid email address.";
-            return;
-        }
-
-        if (newUserPassword.Length < 8)
-        {
-            formError = "Password must be at least 8 characters long.";
-            return;
-        }
-
-        var existingUser = await Db.Users.FirstOrDefaultAsync(u => u.Username == newUserUsername);
-        if (existingUser != null)
-        {
-            formError = "Username already exists. Please choose a different username.";
-            return;
-        }
-
-        isSaving = true;
-
+        _saving = true;
         try
         {
-            var newUser = new User
-            {
-                Username = newUserUsername.Trim(),
-                Email = newUserEmail.Trim(),
-                FullName = newUserFullName.Trim(),
-                DisplayName = newUserFullName.Trim(),
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(newUserPassword),
-                Role = Enum.Parse<UserRole>(newUserRole),
-                IsActive = true,
-                FailedLoginAttempts = 0,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var u = await db.Users.FindAsync(_resetUser.UserId);
+            if (u is null) { _formError = "This account no longer exists."; return; }
+            u.PasswordHash = BCrypt.Net.BCrypt.HashPassword(_resetPassword, 12);
+            u.RequirePasswordChange = _resetRequireChange;
+            u.FailedLoginAttempts = 0;
+            u.LockedUntil = null;   // a reset also unlocks the account
+            u.UpdatedAt = PhTime.Now;
+            await LogAsync(db, "Update", $"Reset the password of '{u.Username}'");
+            await db.SaveChangesAsync();
 
-            Db.Users.Add(newUser);
-            await Db.SaveChangesAsync();
-
-            await LoadUsers();
-            showAddUserModal = false;
-            await ShowToast($"User {newUserFullName} created successfully.");
+            _issued = new IssuedPassword(_resetUser.Name, _resetUser.Username, _resetPassword);
+            _copied = false;
+            _resetUser = null;
+            await LoadAsync();
         }
         catch (Exception ex)
         {
-            formError = "Failed to create user: " + ex.Message;
+            Log.LogError(ex, "Password reset failed");
+            _formError = "The password couldn't be reset. Check your connection and try again.";
         }
-        finally
+        finally { _saving = false; }
+    }
+
+    private async Task CopyAsync()
+    {
+        if (_issued is null) return;
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", _issued.Password); _copied = true; }
+        catch { /* clipboard blocked; the password is still on screen */ }
+    }
+
+    // ── Deactivate / re-enable ─────────────────────────────────────────
+    private async Task SetActiveAsync(User target, bool active)
+    {
+        var ok = active
+            ? await Modal.ConfirmAsync($"Re-enable {target.Name}?", "They'll be able to sign in again.", "Re-enable account", "Cancel", ModalVariant.Success)
+            : await Modal.ConfirmAsync($"Deactivate {target.Name}?",
+                "They won't be able to sign in until the account is re-enabled. Nothing they created is deleted.",
+                "Deactivate account", "Cancel", ModalVariant.Danger);
+        if (!ok) return;
+
+        try
         {
-            isSaving = false;
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var u = await db.Users.FindAsync(target.UserId);
+            if (u is null) return;
+            u.IsActive = active;
+            u.UpdatedAt = PhTime.Now;
+            await LogAsync(db, "Update", $"{(active ? "Re-enabled" : "Deactivated")} '{u.Username}'");
+            await db.SaveChangesAsync();
+            await LoadAsync();
+            await JS.InvokeVoidAsync("showToast", $"{target.Name} was {(active ? "re-enabled" : "deactivated")}.", active ? "success" : "danger");
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Changing account status failed");
+            await Modal.ErrorAsync("Couldn't change the account", "Check your connection and try again.");
         }
     }
 
-    private async Task ShowToast(string text, string type = "success")
+    // ── Activity ────────────────────────────────────────────────────────
+    private async Task ShowActivityAsync(User u)
     {
-        await JS.InvokeVoidAsync("showToast", text, type);
+        _activityUser = u;
+        _activities = null;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _activities = await db.UserActivities.AsNoTracking()
+            .Where(a => a.UserId == u.UserId)
+            .OrderByDescending(a => a.CreatedAt).Take(50).ToListAsync();
+    }
+
+    private Task LogAsync(AppDbContext db, string type, string description)
+    {
+        db.UserActivities.Add(new UserActivity { UserId = _currentUserId, ActivityType = type, Description = description, CreatedAt = PhTime.Now });
+        return Task.CompletedTask;
     }
 }

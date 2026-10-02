@@ -1,6 +1,6 @@
-﻿using Microsoft.EntityFrameworkCore;
 using AMS_Storage_and_Report_System.Data;
 using AMS_Storage_and_Report_System.Models;
+using Microsoft.EntityFrameworkCore;
 
 namespace AMS_Storage_and_Report_System.Services;
 
@@ -11,57 +11,80 @@ public class AuthResult
     public User? User { get; set; }
 }
 
-public class AuthService
+public class AuthService(IDbContextFactory<AppDbContext> dbFactory)
 {
-    private readonly AppDbContext _db;
-
     private const int MaxFailedAttempts = 5;
     private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
-    private const string GenericError = "Invalid username or password.";
+    private const int TargetBcryptCost = 12;
+    private const string GenericError = "Incorrect username or password.";
 
-    public AuthService(AppDbContext db)
+    public async Task<AuthResult> ValidateLoginAsync(string username, string password, string? ipAddress)
     {
-        _db = db;
-    }
+        username = username.Trim();
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var now = PhTime.Now;
 
-    public async Task<AuthResult> ValidateLoginAsync(string username, string password)
-    {
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == username);
-
-        if (user is null || !user.IsActive)
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Username == username);
+        if (user is null)
         {
+            await LogAttemptAsync(db, username, ipAddress, false);
             return Fail();
         }
 
-        if (user.LockedUntil is not null && user.LockedUntil > DateTime.UtcNow)
+        if (user.LockedUntil is { } until && until > now)
         {
-            var minutesLeft = (int)Math.Ceiling((user.LockedUntil.Value - DateTime.UtcNow).TotalMinutes);
-            return Fail($"Account locked. Try again in {minutesLeft} minute(s).");
+            var minutesLeft = (int)Math.Ceiling((until - now).TotalMinutes);
+            return Fail($"Too many failed attempts. Try again in {minutesLeft} minute{(minutesLeft == 1 ? "" : "s")}.");
         }
 
-        bool passwordOk = BCrypt.Net.BCrypt.Verify(password, user.PasswordHash);
+        bool passwordOk;
+        try { passwordOk = BCrypt.Net.BCrypt.Verify(password, user.PasswordHash); }
+        catch (BCrypt.Net.SaltParseException) { passwordOk = false; }
 
         if (!passwordOk)
         {
-            user.FailedLoginAttempts++;
-
-            if (user.FailedLoginAttempts >= MaxFailedAttempts)
+            if (++user.FailedLoginAttempts >= MaxFailedAttempts)
             {
-                user.LockedUntil = DateTime.UtcNow.Add(LockoutDuration);
+                user.LockedUntil = now.Add(LockoutDuration);
                 user.FailedLoginAttempts = 0;
             }
-
-            await _db.SaveChangesAsync();
+            await db.SaveChangesAsync();
+            await LogAttemptAsync(db, username, ipAddress, false);
             return Fail();
+        }
+
+        // Correct password, but this site is for AMS staff only.
+        if (!user.IsStaff)
+        {
+            await LogAttemptAsync(db, username, ipAddress, false);
+            return Fail("This sign-in is for AMS staff. Office accounts use the AMS Supplies portal.");
+        }
+        if (!user.IsActive)
+        {
+            await LogAttemptAsync(db, username, ipAddress, false);
+            return Fail("This account is deactivated. Ask a Super Admin to re-enable it.");
         }
 
         user.FailedLoginAttempts = 0;
         user.LockedUntil = null;
-        user.LastLoginAt = DateTime.UtcNow;
-        await _db.SaveChangesAsync();
+        user.LastLoginAt = now;
+        if (BCrypt.Net.BCrypt.PasswordNeedsRehash(user.PasswordHash, TargetBcryptCost))
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(password, TargetBcryptCost);
+
+        db.UserActivities.Add(new UserActivity
+        {
+            UserId = user.UserId, ActivityType = "Login",
+            Description = "Signed in to AMS StockWatch", IpAddress = ipAddress, CreatedAt = now,
+        });
+        await db.SaveChangesAsync();
+        await LogAttemptAsync(db, username, ipAddress, true);
 
         return new AuthResult { Succeeded = true, User = user };
     }
+
+    private static Task LogAttemptAsync(AppDbContext db, string username, string? ip, bool ok) =>
+        db.Database.ExecuteSqlInterpolatedAsync(
+            $"INSERT INTO login_attempts (username, ip_address, was_successful) VALUES ({username}, {ip}, {ok})");
 
     private static AuthResult Fail(string? message = null) =>
         new() { Succeeded = false, ErrorMessage = message ?? GenericError };

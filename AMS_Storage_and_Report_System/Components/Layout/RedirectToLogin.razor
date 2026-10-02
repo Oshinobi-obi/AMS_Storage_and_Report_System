@@ -1,10 +1,10 @@
-﻿@inject NavigationManager NavigationManager
+@inject NavigationManager NavigationManager
 
 @code {
     protected override void OnInitialized()
     {
-        NavigationManager.NavigateTo(
-            $"/login?returnUrl={Uri.EscapeDataString(NavigationManager.Uri)}",
-            forceLoad: true);
+        // Relative path only, so the sign-in endpoint can safely send the user back.
+        var returnUrl = "/" + NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+        NavigationManager.NavigateTo($"/login?returnUrl={Uri.EscapeDataString(returnUrl)}", forceLoad: true);
     }
 }
