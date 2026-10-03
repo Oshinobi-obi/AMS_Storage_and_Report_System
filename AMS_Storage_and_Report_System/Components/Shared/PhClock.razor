@@ -1,0 +1,14 @@
+@* Live date and time in Philippine time (UTC+8). The browser updates it every second,
+   so it costs nothing on the server. *@
+
+<span class="ph-clock @Class" data-ph-clock role="timer" aria-live="off">
+    <i class="bi bi-clock" aria-hidden="true"></i>
+    <span class="ph-clock-text">
+        <span class="ph-clock-time" data-time></span>
+        <span class="ph-clock-date" data-date></span>
+    </span>
+</span>
+
+@code {
+    [Parameter] public string? Class { get; set; }
+}

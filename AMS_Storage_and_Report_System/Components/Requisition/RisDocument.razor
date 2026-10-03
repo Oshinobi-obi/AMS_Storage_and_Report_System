@@ -1,0 +1,107 @@
+@* RisDocument.razor — Appendix 63 Requisition and Issue Slip.
+   Same component for: cart split-view preview (IsDraft), admin review, and the
+   print route /ris/{id}/print (which is also what a headless browser turns into the PDF).
+   Styles: wwwroot/css/ris.css (global, not scoped, so the print route can use it too). *@
+
+<article class="ris-sheet @(IsDraft ? "is-draft" : "")" aria-label="Requisition and Issue Slip">
+    @if (IsDraft)
+    {
+        <div class="ris-watermark" aria-hidden="true">Preview</div>
+    }
+
+    <div class="ris-appendix">Appendix 63</div>
+    <h1 class="ris-title">REQUISITION AND ISSUE SLIP</h1>
+
+    <div class="ris-topline">
+        <div>Entity Name: <span class="ris-fill">@Model.EntityName</span></div>
+        <div>Fund Cluster: <span class="ris-fill ris-fill-sm">@Model.FundCluster</span></div>
+    </div>
+
+    <table class="ris-grid">
+        <colgroup>
+            <col class="c-stock" /><col class="c-unit" /><col class="c-desc" /><col class="c-qty" />
+            <col class="c-yn" /><col class="c-yn" /><col class="c-qty" /><col class="c-remarks" />
+        </colgroup>
+        <thead>
+            <tr class="ris-meta">
+                <td colspan="4">Division: <strong>@Model.Division</strong></td>
+                <td colspan="4">Responsibility Center Code: <strong>@Model.ResponsibilityCenterCode</strong></td>
+            </tr>
+            <tr class="ris-meta">
+                <td colspan="4">Office: <strong>@Model.Office</strong></td>
+                <td colspan="4">RIS No.: <strong>@(Model.RisNo ?? "Assigned when submitted")</strong></td>
+            </tr>
+            <tr class="ris-band">
+                <th colspan="4"><em>Requisition</em></th>
+                <th colspan="2"><em>Stock Available?</em></th>
+                <th colspan="2"><em>Issue</em></th>
+            </tr>
+            <tr class="ris-cols">
+                <th>Stock No.</th><th>Unit</th><th>Description</th><th>Quantity</th>
+                <th>Yes</th><th>No</th><th>Quantity</th><th>Remarks</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var line in Model.Lines)
+            {
+                <tr class="@(line.ItemId == HighlightItemId ? "is-highlight" : "")" @key="line.ItemId">
+                    <td class="t-center">@line.StockNo</td>
+                    <td class="t-center">@line.Unit</td>
+                    <td>@line.Description</td>
+                    <td class="t-center">@line.RequestedQty</td>
+                    <td class="t-center">@(line.StockAvailable == true ? "✓" : "")</td>
+                    <td class="t-center">@(line.StockAvailable == false ? "✓" : "")</td>
+                    <td class="t-center">@line.IssuedQty</td>
+                    <td>@line.Remarks</td>
+                </tr>
+            }
+            @for (var i = Model.Lines.Count; i < MinRows; i++)
+            {
+                <tr class="ris-blank" aria-hidden="true"><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+            }
+        </tbody>
+    </table>
+
+    <div class="ris-purpose">
+        <span>Purpose:</span>
+        <span class="ris-purpose-text">@Model.Purpose</span>
+    </div>
+
+    <table class="ris-sign">
+        <colgroup><col class="c-label" /><col /><col /><col /><col /></colgroup>
+        <thead>
+            <tr>
+                <th></th>
+                <th>Requested by:</th><th>Approved by:</th><th>Issued by:</th><th>Received by:</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr class="ris-sign-line">
+                <th scope="row">Signature :</th><td></td><td></td><td></td><td></td>
+            </tr>
+            <tr>
+                <th scope="row">Printed Name :</th>
+                @foreach (var s in Signatories) { <td class="t-strong">@s?.PrintedName</td> }
+            </tr>
+            <tr>
+                <th scope="row">Designation :</th>
+                @foreach (var s in Signatories) { <td>@s?.Designation</td> }
+            </tr>
+            <tr>
+                <th scope="row">Date :</th>
+                @foreach (var s in Signatories) { <td>@s?.Date?.ToString("MM/dd/yyyy")</td> }
+            </tr>
+        </tbody>
+    </table>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public RisDocumentModel Model { get; set; } = default!;
+    [Parameter] public bool IsDraft { get; set; }
+    /// Cart row hover → matching RIS row lights up in the split view.
+    [Parameter] public int? HighlightItemId { get; set; }
+    /// Official forms show ruled empty rows; keeps the slip looking like the paper version.
+    [Parameter] public int MinRows { get; set; } = 10;
+
+    private RisSignatory?[] Signatories => [Model.RequestedBy, Model.ApprovedBy, Model.IssuedBy, Model.ReceivedBy];
+}

@@ -1,0 +1,256 @@
+@page "/app-cse"
+@layout AppLayout
+@attribute [Authorize]
+@inject AppCseService AppCseSvc
+@inject SettingsService Settings
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ModalService Modal
+@inject IJSRuntime JS
+
+<PageTitle>APP-CSE | AMS StockWatch</PageTitle>
+
+<PageHeader Title="APP-CSE" Subtitle="Each office's Annual Procurement Plan for Common-Use Supplies. Offices can only request what's in their APP-CSE.">
+    <Actions>
+        <a class="btn btn-accent" href="@($"/exports/app-cse-template?year={_year}")"><i class="bi bi-file-earmark-excel me-1" aria-hidden="true"></i> Download Excel for @_year</a>
+    </Actions>
+</PageHeader>
+
+<div class="wrap page-body">
+    <section class="panel">
+        <header class="panel-head">
+            <h2>Upload APP-CSE</h2>
+            <div style="min-width: 180px"><Picker TValue="int" Id="ap-year" Options="YearOptions" @bind-Value="_year" @bind-Value:after="YearChangedAsync" /></div>
+        </header>
+        <div class="panel-body">
+            <ol class="small text-muted-2 ps-3 mb-3">
+                <li><strong>Download the Excel file</strong> above. It already has every office and item, with the current figures.</li>
+                <li>Fill in Q1–Q4 (or only Total) from each office's approved APP-CSE. Leave a row blank if the office doesn't need that item.</li>
+                <li>Upload it here. Every row is checked first, and <strong>nothing is saved</strong> until you press Import.</li>
+            </ol>
+            <InputFile class="form-control" OnChange="OnFileSelected" accept=".xlsx" disabled="@_busy" />
+            @if (_busy)
+            {
+                <p class="small text-muted-2 mt-2 mb-0"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Checking the file…</p>
+            }
+        </div>
+    </section>
+
+    @if (_preview is not null)
+    {
+        <section class="panel">
+            <header class="panel-head">
+                <h2>Check before importing: @_preview.FileName</h2>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-light" @onclick="() => _preview = null">Discard</button>
+                    <button type="button" class="btn btn-primary" @onclick="ImportAsync" disabled="@(!_preview.CanImport)">
+                        <i class="bi bi-cloud-arrow-up me-1" aria-hidden="true"></i> Import into FY @_preview.FiscalYear
+                    </button>
+                </div>
+            </header>
+            <div class="panel-body">
+                @if (_preview.FileError is not null)
+                {
+                    <div class="callout is-bad mb-0"><i class="bi bi-x-octagon" aria-hidden="true"></i><p>@_preview.FileError</p></div>
+                }
+                else
+                {
+                    <div class="d-flex flex-wrap gap-2 mb-3">
+                        <span class="badge-pill badge-ok">@_preview.Rows.Count(r => r.Change == "New") new</span>
+                        <span class="badge-pill badge-navy">@_preview.Rows.Count(r => r.Change == "Changed") changed</span>
+                        <span class="badge-pill badge-grey">@_preview.Rows.Count(r => r.Change == "Unchanged") unchanged</span>
+                        <span class="badge-pill @(_preview.Errors > 0 ? "badge-bad" : "badge-grey")">@_preview.Errors with errors</span>
+                        <span class="badge-pill badge-warn">@_preview.Rows.Count(r => r.Warning is not null) warnings</span>
+                    </div>
+                    @if (_preview.Errors > 0)
+                    {
+                        <div class="callout is-bad"><i class="bi bi-exclamation-octagon" aria-hidden="true"></i><p>Fix the rows marked <strong>Error</strong> in Excel, then upload the file again. Rows with errors are listed first.</p></div>
+                    }
+                    else if (!_preview.CanImport)
+                    {
+                        <div class="callout"><i class="bi bi-info-circle" aria-hidden="true"></i><p>Everything in this file is already saved. There's nothing new to import.</p></div>
+                    }
+                }
+            </div>
+            @if (_preview.Rows.Count > 0)
+            {
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead><tr><th>Row</th><th>Office</th><th>Item</th><th class="t-num">Q1</th><th class="t-num">Q2</th><th class="t-num">Q3</th><th class="t-num">Q4</th><th class="t-num">New total</th><th class="t-num">Was</th><th>Result</th></tr></thead>
+                        <tbody>
+                            @foreach (var r in _preview.Rows.OrderBy(r => r.Error is null).ThenBy(r => r.Change == "Unchanged").ThenBy(r => r.RowNumber).Take(500))
+                            {
+                                <tr>
+                                    <td class="is-muted">@r.RowNumber</td>
+                                    <td class="cell-strong">@r.OfficeAcronym</td>
+                                    <td><span>@(r.ItemName ?? r.StockNo)</span><span class="cell-sub">@r.StockNo</span></td>
+                                    <td class="t-num">@r.Q1</td><td class="t-num">@r.Q2</td><td class="t-num">@r.Q3</td><td class="t-num">@r.Q4</td>
+                                    <td class="t-num"><strong>@r.Total</strong></td>
+                                    <td class="t-num is-muted">@r.CurrentTotal</td>
+                                    <td>
+                                        <span class="badge-pill @ChangeBadge(r.Change)">@r.Change</span>
+                                        @if (r.Error is not null) { <span class="cell-sub text-danger">@r.Error</span> }
+                                        else if (r.Warning is not null) { <span class="cell-sub" style="color: var(--warn)">@r.Warning</span> }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (_preview.Rows.Count > 500)
+                {
+                    <p class="small text-muted-2 px-3 py-2 mb-0">Showing the first 500 rows. All @_preview.Rows.Count rows will be imported.</p>
+                }
+            }
+        </section>
+    }
+
+    <section class="panel">
+        <header class="panel-head">
+            <h2>Current APP-CSE, FY @_year</h2>
+            <div style="min-width: 260px"><Picker TValue="int" Id="ap-office" Options="OfficeOptions" @bind-Value="_officeId" @bind-Value:after="LoadAllocationsAsync" /></div>
+        </header>
+        @if (_allocations is null)
+        {
+            <div class="loading">Loading…</div>
+        }
+        else if (_allocations.Count == 0)
+        {
+            <div class="empty-state"><i class="bi bi-clipboard-x" aria-hidden="true"></i><h2>Nothing loaded for FY @_year</h2><p>Download the Excel file, fill it in and upload it above.</p></div>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead><tr><th>Office</th><th>Item</th><th class="t-num">Q1</th><th class="t-num">Q2</th><th class="t-num">Q3</th><th class="t-num">Q4</th><th class="t-num">Total</th><th class="t-num">Issued</th></tr></thead>
+                    <tbody>
+                        @foreach (var a in _allocations.Take(400))
+                        {
+                            <tr>
+                                <td class="cell-strong">@a.Office?.OfficeAcronym</td>
+                                <td><span>@a.Item?.ItemName</span><span class="cell-sub">@a.Item?.StockNo</span></td>
+                                <td class="t-num">@a.Q1Qty</td><td class="t-num">@a.Q2Qty</td><td class="t-num">@a.Q3Qty</td><td class="t-num">@a.Q4Qty</td>
+                                <td class="t-num"><strong>@a.AllocatedQty</strong></td>
+                                <td class="t-num">@a.IssuedQty</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @if (_allocations.Count > 400)
+            {
+                <p class="small text-muted-2 px-3 py-2 mb-0">Showing 400 of @_allocations.Count rows. Choose an office to see all of its items.</p>
+            }
+        }
+    </section>
+
+    @if (_uploads.Count > 0)
+    {
+        <section class="panel">
+            <header class="panel-head"><h2>Recent uploads, FY @_year</h2></header>
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead><tr><th>When</th><th>File</th><th>Result</th></tr></thead>
+                    <tbody>
+                        @foreach (var u in _uploads)
+                        {
+                            <tr><td class="text-nowrap">@u.UploadedAt.ToString("MMM d, yyyy h:mm tt")</td><td>@u.OriginalFileName</td><td class="is-muted">@u.Notes</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    private int _year = PhTime.Now.Year;
+    private int _officeId;
+    private uint _userId;
+    private bool _busy;
+    private AppCsePreview? _preview;
+    private List<AppCseAllocation>? _allocations;
+    private List<AppCseUpload> _uploads = [];
+    private List<Office> _offices = [];
+
+    private IReadOnlyList<PickOption<int>> YearOptions
+    {
+        get
+        {
+            var now = PhTime.Now.Year;
+            return [new(now - 1, $"FY {now - 1}"), new(now, $"FY {now}", "Current year"), new(now + 1, $"FY {now + 1}", "Next year")];
+        }
+    }
+
+    private IReadOnlyList<PickOption<int>> OfficeOptions =>
+        [new(0, "All offices"), .. _offices.Where(o => o.CanRequisition).Select(o => new PickOption<int>(o.OfficeId, o.OfficeAcronym, o.OfficeName))];
+
+    private static string ChangeBadge(string change) => change switch
+    {
+        "New" => "badge-ok", "Changed" => "badge-navy", "Error" => "badge-bad", _ => "badge-grey",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        uint.TryParse(user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out _userId);
+        _offices = await Settings.OfficesAsync();
+        await YearChangedAsync();
+    }
+
+    private async Task YearChangedAsync()
+    {
+        _preview = null;
+        await LoadAllocationsAsync();
+        _uploads = await AppCseSvc.UploadsAsync(_year);
+    }
+
+    private async Task LoadAllocationsAsync()
+    {
+        _allocations = null;
+        _allocations = await AppCseSvc.AllocationsAsync(_year, _officeId);
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _preview = null;
+        if (!e.File.Name.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+        {
+            _preview = new AppCsePreview { FileName = e.File.Name, FiscalYear = _year, FileError = "Upload an Excel workbook (.xlsx). If you have an .xls or .csv file, open it in Excel and save it as .xlsx." };
+            return;
+        }
+        if (e.File.Size > AppCseService.MaxFileBytes)
+        {
+            _preview = new AppCsePreview { FileName = e.File.Name, FiscalYear = _year, FileError = "The file is larger than 5 MB." };
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await using var stream = e.File.OpenReadStream(AppCseService.MaxFileBytes);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            ms.Position = 0;
+            _preview = await AppCseSvc.PreviewAsync(ms, e.File.Name, _year);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ImportAsync()
+    {
+        if (_preview is null) return;
+        var p = _preview;
+        var ok = await Modal.ConfirmAsync($"Import APP-CSE for FY {p.FiscalYear}?",
+            $"{p.Rows.Count(r => r.Change == "New")} new and {p.Rows.Count(r => r.Change == "Changed")} changed allocations will be saved. Offices see the new figures right away.",
+            "Import", "Go back", ModalVariant.Success,
+            onConfirmAsync: async _ =>
+            {
+                var r = await AppCseSvc.ImportAsync(p, _userId);
+                return r.Ok ? null : r.Message;
+            });
+        if (!ok) return;
+        _preview = null;
+        await YearChangedAsync();
+        await JS.InvokeVoidAsync("showToast", $"APP-CSE for FY {p.FiscalYear} saved.", "success");
+    }
+}

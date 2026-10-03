@@ -1,0 +1,482 @@
+@page "/requisitions/{RisId:int}"
+@layout AppLayout
+@attribute [Authorize]
+@inject RequisitionAdminService Requisitions
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ModalService Modal
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject LiveRefresh Live
+@implements IDisposable
+
+<PageTitle>@(_ris?.RisNo ?? "Requisition") | AMS StockWatch</PageTitle>
+
+<PageHeader Title="@(_ris is null ? "Requisition" : $"RIS {_ris.RisNo}")"
+            Subtitle="@(_ris is null ? null : $"{_ris.OfficeName}, submitted {_ris.RequestedAt:MMMM d, yyyy 'at' h:mm tt}")">
+    <Actions>
+        <a class="btn btn-light" href="/requisitions"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i> Back to queue</a>
+        @if (_ris?.Status == RisStatus.Approved)
+        {
+            <a class="btn btn-outline-primary" href="/requisitions/@RisId/print" target="_blank" rel="noopener"><i class="bi bi-printer me-1" aria-hidden="true"></i> Print a copy</a>
+        }
+        @if (_ris?.Status == RisStatus.Issued && _signed is not null)
+        {
+            <a class="btn btn-accent" href="/requisitions/@RisId/signed" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf me-1" aria-hidden="true"></i> Signed RIS</a>
+        }
+    </Actions>
+</PageHeader>
+
+<div class="wrap page-body">
+    @if (_loading)
+    {
+        <div class="panel"><div class="loading">Loading requisition…</div></div>
+    }
+    else if (_ris is null)
+    {
+        <div class="empty-state">
+            <i class="bi bi-question-circle" aria-hidden="true"></i>
+            <h2>Requisition not found</h2>
+            <p>It may have been removed. Go back to the queue.</p>
+            <a class="btn btn-primary" href="/requisitions">Back to queue</a>
+        </div>
+    }
+    else
+    {
+        @* Status banner *@
+        @switch (_ris.Status)
+        {
+            case RisStatus.Pending:
+                <div class="callout"><i class="bi bi-hourglass-split" aria-hidden="true"></i>
+                    <p><strong>Waiting for your review.</strong> Check each quantity against the warehouse stock, adjust what you can issue, then approve or reject.</p></div>
+                break;
+            case RisStatus.Approved:
+                <div class="callout"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
+                    <p><strong>Approved @_ris.ApprovedAt?.ToString("MMMM d, yyyy"), waiting for pickup.</strong> The office prints the RIS from the portal, signs it and brings it here. When they arrive, sign it, hand over the items, scan the signed slip to PDF and mark it as issued.</p></div>
+                break;
+            case RisStatus.Issued:
+                <div class="callout" style="background:var(--ok-tint);border-color:#b7e0c6"><i class="bi bi-check2-circle" style="color:var(--ok)" aria-hidden="true"></i>
+                    <p><strong>Issued @_ris.IssuedAt?.ToString("MMMM d, yyyy")</strong> to @(_ris.ReceivedByPersonnel?.FullName ?? "the office").</p></div>
+                break;
+            case RisStatus.Rejected:
+                <div class="callout is-bad"><i class="bi bi-x-octagon" aria-hidden="true"></i>
+                    <p><strong>Rejected @_ris.RejectedAt?.ToString("MMMM d, yyyy").</strong> Reason given: “@_ris.RejectionReason”</p></div>
+                break;
+            case RisStatus.Cancelled:
+                <div class="callout"><i class="bi bi-slash-circle" aria-hidden="true"></i><p><strong>Cancelled by the office.</strong> Nothing was deducted.</p></div>
+                break;
+        }
+
+        <div class="row g-3">
+            <div class="col-xxl-9">
+                <section class="panel">
+                    <header class="panel-head">
+                        <h2>Items</h2>
+                        <span class="meta">@_ris.Items.Count @(_ris.Items.Count == 1 ? "line" : "lines")</span>
+                    </header>
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th style="min-width: 240px">Item</th>
+                                    <th class="t-num">Requested</th>
+                                    @if (IsPending)
+                                    {
+                                        <th class="t-num">On hand</th>
+                                        <th class="t-num">APP-CSE left</th>
+                                    }
+                                    <th class="t-num">@(IsPending ? "Issue" : "Issued")</th>
+                                    <th>Remarks</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var line in _ris.Items)
+                                {
+                                    var ctx = _context.GetValueOrDefault(line.ItemId);
+                                    var d = _decisions.GetValueOrDefault(line.RisItemId);
+                                    <tr @key="line.RisItemId">
+                                        <td>
+                                            <span class="cell-strong">@line.ItemDescription</span>
+                                            <span class="cell-sub">@line.StockNo, ₱@line.UnitCost.ToString("N2") per @line.UnitOfMeasure</span>
+                                        </td>
+                                        <td class="t-num text-nowrap">@line.RequestedQty @line.UnitOfMeasure</td>
+                                        @if (IsPending && ctx is not null)
+                                        {
+                                            <td class="t-num">
+                                                <span class="@(ctx.StockOnHand < line.RequestedQty ? "text-danger fw-bold" : "")">@ctx.StockOnHand.ToString("N0")</span>
+                                            </td>
+                                            <td class="t-num">
+                                                @if (ctx.RemainingIncludingThis(line.RequestedQty) is int left)
+                                                {
+                                                    <span class="@(left < 0 ? "text-danger fw-bold" : "")">@left</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge-pill badge-bad">Not in APP</span>
+                                                }
+                                            </td>
+                                        }
+                                        <td class="t-num" style="width: 92px">
+                                            @if (IsPending && d is not null)
+                                            {
+                                                <input type="number" class="form-control form-control-sm text-end" style="width: 76px" min="0" max="@line.RequestedQty"
+                                                       aria-label="@($"Quantity to issue for {line.StockNo}")" autocomplete="off"
+                                                       value="@d.IssueQty" @onchange="e => SetQty(line, e)" />
+                                            }
+                                            else
+                                            {
+                                                <strong>@(line.IssuedQty?.ToString() ?? "–")</strong>
+                                            }
+                                        </td>
+                                        <td style="min-width: 130px; width: 22%">
+                                            @if (IsPending && d is not null)
+                                            {
+                                                <input class="form-control form-control-sm" maxlength="255" autocomplete="off"
+                                                       placeholder="@(d.IssueQty == 0 ? "Not available" : d.IssueQty < line.RequestedQty ? "Partial issue" : "Optional")"
+                                                       aria-label="@($"Remarks for {line.StockNo}")"
+                                                       value="@d.Remarks" @onchange="e => SetRemarks(line, e)" />
+                                            }
+                                            else
+                                            {
+                                                <span class="is-muted">@line.Remarks</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="panel-body d-flex flex-wrap justify-content-between gap-2 border-top">
+                        <span class="text-muted-2">
+                            @if (IsPending && PartialCount > 0)
+                            {
+                                <span><i class="bi bi-info-circle me-1" aria-hidden="true"></i>@PartialCount line(s) will be issued partially or not at all. The rest goes back to the office's APP-CSE balance.</span>
+                            }
+                        </span>
+                        <strong>Amount: ₱@IssueAmount.ToString("N2")</strong>
+                    </div>
+                </section>
+
+                <section class="panel">
+                    <header class="panel-head"><h2>History</h2></header>
+                    <div class="panel-body">
+                        <ol class="list-unstyled mb-0">
+                            @foreach (var h in _ris.History)
+                            {
+                                <li class="d-flex gap-3 mb-3">
+                                    <span class="badge-pill @RisStatus.Badge(h.ToStatus) align-self-start">@RisStatus.Label(h.ToStatus)</span>
+                                    <div>
+                                        <div class="small text-muted-2">@h.ChangedAt.ToString("MMM d, yyyy h:mm tt"), by @(h.ChangedByUser?.Name ?? "unknown")</div>
+                                        @if (!string.IsNullOrWhiteSpace(h.Note)) { <div>@h.Note</div> }
+                                    </div>
+                                </li>
+                            }
+                        </ol>
+                    </div>
+                </section>
+            </div>
+
+            <div class="col-xxl-3">
+                <section class="panel">
+                    <header class="panel-head"><h2>Request</h2></header>
+                    <div class="panel-body">
+                        <dl class="mb-0 small">
+                            <dt class="text-muted-2 fw-normal">Office</dt><dd class="fw-semibold">@_ris.OfficeName (@_ris.Office?.OfficeAcronym)</dd>
+                            <dt class="text-muted-2 fw-normal">Division</dt><dd>@_ris.DivisionName</dd>
+                            <dt class="text-muted-2 fw-normal">Purpose</dt><dd>@_ris.Purpose</dd>
+                            <dt class="text-muted-2 fw-normal">Requested by</dt><dd>@(_ris.RequestedByPersonnel is { } rp ? $"{rp.FullName}, {rp.Position}" : "To be signed on the slip")</dd>
+                            <dt class="text-muted-2 fw-normal">Fiscal year</dt><dd class="mb-0">@_ris.FiscalYear</dd>
+                        </dl>
+                    </div>
+                </section>
+
+                @if (IsPending)
+                {
+                    <section class="panel">
+                        <header class="panel-head"><h2>Decision</h2></header>
+                        <div class="panel-body">
+                            <div class="field">
+                                <label class="form-label" for="approved-by">Approved by</label>
+                                <Picker TValue="int" Id="approved-by" Options="@(PeopleOptions(_signatories, "Leave blank"))" @bind-Value="_approvedById" />
+                            </div>
+                            <div class="field">
+                                <label class="form-label" for="issued-by">Issued by</label>
+                                <Picker TValue="int" Id="issued-by" Options="@(PeopleOptions(_signatories, "Fill in when released"))" @bind-Value="_issuedById" />
+                            </div>
+                            <div class="d-grid gap-2 mt-4">
+                                <button type="button" class="btn btn-primary btn-lg" @onclick="ApproveAsync" disabled="@(IssueTotal == 0)">
+                                    <i class="bi bi-check2-circle me-1" aria-hidden="true"></i> Approve
+                                </button>
+                                <button type="button" class="btn btn-outline-danger" @onclick="RejectAsync">
+                                    <i class="bi bi-x-circle me-1" aria-hidden="true"></i> Reject
+                                </button>
+                            </div>
+                            @if (IssueTotal == 0)
+                            {
+                                <p class="small text-muted-2 mt-2 mb-0">Every quantity is 0. Reject it instead, with a reason.</p>
+                            }
+                        </div>
+                    </section>
+                }
+                else if (_ris.Status == RisStatus.Approved)
+                {
+                    <section class="panel">
+                        <header class="panel-head"><h2>Release items</h2></header>
+                        <div class="panel-body">
+                            <div class="field">
+                                <label class="form-label" for="received-by">Received by (@_ris.Office?.OfficeAcronym)</label>
+                                @if (_ris.ReceivedByPersonnelId is not null)
+                                {
+                                    <div class="form-text mt-0 mb-1">Chosen by the office. Change it only if someone else picked up the items.</div>
+                                }
+                                <Picker TValue="int" Id="received-by" Options="@(PeopleOptions(_officePeople, _officePeople.Count == 0 ? "No personnel listed for this office" : "Select who received the items"))"
+                                        Disabled="@(_officePeople.Count == 0)" @bind-Value="_receivedById" />
+                                @if (_officePeople.Count == 0)
+                                {
+                                    <div class="form-text">Add the office's personnel on the <a href="/employees">Employees</a> page first.</div>
+                                }
+                            </div>
+                            <div class="field">
+                                <label class="form-label" for="issued-by-2">Issued by</label>
+                                <Picker TValue="int" Id="issued-by-2" Options="@(PeopleOptions(_signatories, "Select AMS staff"))" @bind-Value="_issuedById" />
+                            </div>
+                            <div class="field">
+                                <label class="form-label" for="issued-on">Date released</label>
+                                <input id="issued-on" type="date" class="form-control" autocomplete="off" @bind="_issuedOn" max="@(PhTime.Now.ToString("yyyy-MM-dd"))" />
+                            </div>
+                            <div class="field">
+                                <label class="form-label" for="signed-pdf">Signed RIS (PDF)</label>
+                                <InputFile id="signed-pdf" class="form-control" OnChange="OnSignedSelected" accept=".pdf,application/pdf" />
+                                <div class="form-text">Scan the slip after all four signatures are on it. PDF only, up to 20 MB.</div>
+                                @if (_fileError is not null)
+                                {
+                                    <div class="form-error" role="alert"><i class="bi bi-exclamation-circle" aria-hidden="true"></i>@_fileError</div>
+                                }
+                            </div>
+                            <button type="button" class="btn btn-primary btn-lg w-100 mt-4" @onclick="MarkIssuedAsync" disabled="@(_receivedById == 0 || _signedFile is null)">
+                                <i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i> Mark as issued
+                            </button>
+                            @if (_receivedById == 0 || _signedFile is null)
+                            {
+                                <p class="small text-muted-2 mt-2 mb-0">Choose who received the items and attach the signed PDF first.</p>
+                            }
+                        </div>
+                    </section>
+                }
+
+                @if (_ris.Status == RisStatus.Issued)
+                {
+                    <section class="panel">
+                        <header class="panel-head"><h2>Signed RIS</h2></header>
+                        <div class="panel-body">
+                            @if (_signed is { } sc)
+                            {
+                                <p class="mb-1 fw-semibold text-truncate" title="@sc.FileName"><i class="bi bi-file-earmark-pdf text-danger me-1" aria-hidden="true"></i>@sc.FileName</p>
+                                <p class="small text-muted-2">@((sc.Size / 1024.0 / 1024.0).ToString("0.0")) MB, uploaded @sc.UploadedAt.ToString("MMM d, yyyy h:mm tt")</p>
+                                <div class="d-flex gap-2">
+                                    <a class="btn btn-outline-primary btn-sm flex-grow-1" href="/requisitions/@RisId/signed" target="_blank" rel="noopener"><i class="bi bi-eye me-1" aria-hidden="true"></i>View</a>
+                                    <a class="btn btn-outline-primary btn-sm flex-grow-1" href="/requisitions/@RisId/signed?download=true"><i class="bi bi-download me-1" aria-hidden="true"></i>Download</a>
+                                </div>
+                            }
+                            else
+                            {
+                                <p class="small text-muted-2 mb-0">No signed copy was uploaded for this requisition.</p>
+                            }
+                        </div>
+                    </section>
+                }
+
+                <section class="panel">
+                    <header class="panel-head"><h2>Signatories</h2></header>
+                    <div class="panel-body small">
+                        <dl class="mb-0">
+                            <dt class="text-muted-2 fw-normal">Approved by</dt><dd>@(_ris.ApprovedByPersonnel?.FullName ?? "Not set")</dd>
+                            <dt class="text-muted-2 fw-normal">Issued by</dt><dd>@(_ris.IssuedByPersonnel?.FullName ?? "Not set")</dd>
+                            <dt class="text-muted-2 fw-normal">Received by</dt><dd class="mb-0">@(_ris.ReceivedByPersonnel?.FullName ?? "Not yet")</dd>
+                        </dl>
+                    </div>
+                </section>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public int RisId { get; set; }
+
+    private sealed class Decision
+    {
+        public int IssueQty { get; set; }
+        public string? Remarks { get; set; }
+    }
+
+    private RisTransaction? _ris;
+    private bool _loading = true;
+    private uint _userId;
+    private Dictionary<int, LineContext> _context = new();
+    private Dictionary<int, Decision> _decisions = new();
+    private List<RoPersonnel> _signatories = [];
+    private List<RoPersonnel> _officePeople = [];
+    private int _approvedById, _issuedById, _receivedById;
+    private DateTime _issuedOn = PhTime.Now.Date;
+    private IBrowserFile? _signedFile;
+    private string? _fileError;
+    private (string FileName, int Size, DateTime UploadedAt)? _signed;
+
+    private bool IsPending => _ris?.Status == RisStatus.Pending;
+    private int IssueTotal => _decisions.Values.Sum(d => d.IssueQty);
+    private int PartialCount => _ris?.Items.Count(i => _decisions.TryGetValue(i.RisItemId, out var d) && d.IssueQty < i.RequestedQty) ?? 0;
+    private decimal IssueAmount => _ris?.Items.Sum(i => i.UnitCost * (IsPending ? _decisions.GetValueOrDefault(i.RisItemId)?.IssueQty ?? 0 : i.IssuedQty ?? 0)) ?? 0;
+
+    private static IReadOnlyList<PickOption<int>> PeopleOptions(List<RoPersonnel> people, string first) =>
+        [new(0, first), .. people.Select(p => new PickOption<int>(p.PersonnelId, p.FullName, p.Position))];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        uint.TryParse(user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out _userId);
+        await LoadAsync();
+        _loading = false;
+    }
+
+    private async Task LoadAsync()
+    {
+        _ris = await Requisitions.GetAsync(RisId);
+        if (_ris is null) return;
+
+        _signatories = await Requisitions.AmsPersonnelAsync();
+        _officePeople = await Requisitions.PersonnelOfOfficeAsync(_ris.OfficeId);
+        _approvedById = _ris.ApprovedByPersonnelId ?? 0;
+        _issuedById = _ris.IssuedByPersonnelId ?? 0;
+        _receivedById = _ris.ReceivedByPersonnelId ?? 0;
+        _signed = _ris.Status == RisStatus.Issued ? await Requisitions.SignedCopyInfoAsync(RisId) : null;
+
+        if (_ris.Status == RisStatus.Pending)
+        {
+            _context = await Requisitions.LineContextAsync(_ris);
+            // Default: issue what was asked for, limited by what's in the warehouse.
+            _decisions = _ris.Items.ToDictionary(i => i.RisItemId, i => new Decision
+            {
+                IssueQty = Math.Clamp(_context.GetValueOrDefault(i.ItemId)?.StockOnHand ?? 0, 0, i.RequestedQty),
+            });
+        }
+    }
+
+    protected override void OnInitialized() => Live.Changed += OnLiveAsync;
+
+    private async Task OnLiveAsync(IReadOnlyList<RisEvent> events)
+    {
+        if (_ris is null || !events.Any(e => e.RisId == RisId)) return;
+        var before = _ris.Status;
+        await LoadAsync();
+        if (_ris is not null && _ris.Status != before && _ris.Status == RisStatus.Cancelled)
+            await JS.InvokeVoidAsync("showToast", "The office cancelled this requisition.", "danger");
+        StateHasChanged();
+    }
+
+    public void Dispose() => Live.Changed -= OnLiveAsync;
+
+    private void SetQty(RisItem line, ChangeEventArgs e)
+    {
+        if (!_decisions.TryGetValue(line.RisItemId, out var d)) return;
+        d.IssueQty = int.TryParse(e.Value?.ToString(), out var q) ? Math.Clamp(q, 0, line.RequestedQty) : d.IssueQty;
+    }
+
+    private void SetRemarks(RisItem line, ChangeEventArgs e)
+    {
+        if (_decisions.TryGetValue(line.RisItemId, out var d)) d.Remarks = e.Value?.ToString();
+    }
+
+    private async Task ApproveAsync()
+    {
+        if (_ris is null) return;
+        var full = _ris.Items.Count - PartialCount;
+        var message = PartialCount == 0
+            ? $"All {_ris.Items.Count} line(s) will be issued in full. Warehouse stock and {_ris.Office?.OfficeAcronym}'s APP-CSE will be deducted now."
+            : $"{full} line(s) in full and {PartialCount} partially or not at all. Warehouse stock and {_ris.Office?.OfficeAcronym}'s APP-CSE will be deducted now.";
+
+        var decisions = _decisions.ToDictionary(kv => kv.Key, kv => new LineDecision(kv.Value.IssueQty, kv.Value.Remarks));
+        var ok = await Modal.ConfirmAsync($"Approve {_ris.RisNo}?", message, "Approve requisition", "Cancel", ModalVariant.Success,
+            onConfirmAsync: async _ =>
+            {
+                var r = await Requisitions.ApproveAsync(_userId, RisId, decisions,
+                    _approvedById == 0 ? null : _approvedById, _issuedById == 0 ? null : _issuedById);
+                return r.Ok ? null : r.FullMessage;
+            });
+        if (!ok) { await LoadAsync(); return; }
+
+        await LoadAsync();
+        await JS.InvokeVoidAsync("showToast", $"{_ris?.RisNo} approved. Release the items, then mark it as issued.", "success");
+    }
+
+    private async Task RejectAsync()
+    {
+        if (_ris is null) return;
+        string? error = null;
+        var reason = await Modal.PromptAsync($"Reject {_ris.RisNo}?",
+            $"{_ris.Office?.OfficeAcronym} will see your reason and can submit a corrected request. Nothing is deducted.",
+            "Reason for the office", "Reject requisition", minLength: 10,
+            placeholder: "Example: Bond paper is out of stock until the next delivery. Please request it again next month.",
+            onConfirmAsync: async text =>
+            {
+                var r = await Requisitions.RejectAsync(_userId, RisId, text ?? "");
+                error = r.Ok ? null : r.Message;
+                return error;
+            });
+        if (reason is null) return;
+
+        await LoadAsync();
+        await JS.InvokeVoidAsync("showToast", $"{_ris?.RisNo} was rejected.", "danger");
+    }
+
+    private void OnSignedSelected(InputFileChangeEventArgs e)
+    {
+        _fileError = null;
+        _signedFile = null;
+        if (!e.File.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+            _fileError = "Only PDF files can be attached. Scan the signed RIS as a PDF.";
+        else if (e.File.Size > RequisitionAdminService.MaxSignedCopyBytes)
+            _fileError = $"This file is {e.File.Size / 1024.0 / 1024.0:F1} MB. The limit is 20 MB.";
+        else
+            _signedFile = e.File;
+    }
+
+    private async Task MarkIssuedAsync()
+    {
+        if (_ris is null || _receivedById == 0 || _signedFile is null) return;
+        var receiver = _officePeople.FirstOrDefault(p => p.PersonnelId == _receivedById);
+        var file = _signedFile;
+        var ok = await Modal.ConfirmAsync($"Mark {_ris.RisNo} as issued?",
+            $"Record that {receiver?.FullName} of {_ris.Office?.OfficeAcronym} received the items on {_issuedOn:MMMM d, yyyy}, and save \"{file.Name}\" as the signed RIS. The office will see this PDF.",
+            "Mark as issued", "Cancel", ModalVariant.Success,
+            onConfirmAsync: async _ =>
+            {
+                byte[] pdf;
+                try
+                {
+                    await using var stream = file.OpenReadStream(RequisitionAdminService.MaxSignedCopyBytes);
+                    using var ms = new MemoryStream();
+                    await stream.CopyToAsync(ms);
+                    pdf = ms.ToArray();
+                }
+                catch (Exception)
+                {
+                    return "The PDF couldn't be read. Choose the file again and retry.";
+                }
+                try
+                {
+                    var r = await Requisitions.MarkIssuedAsync(_userId, RisId, _receivedById, _issuedById == 0 ? null : _issuedById,
+                                                               _issuedOn, pdf, file.Name);
+                    return r.Ok ? null : r.Message;
+                }
+                catch (Exception ex)
+                {
+                    return StorageErrors.Explain(ex, "The signed PDF") + " Nothing was changed.";
+                }
+            });
+        if (!ok) return;
+
+        _signedFile = null;
+        await LoadAsync();
+        await JS.InvokeVoidAsync("showToast", $"{_ris?.RisNo} is issued. The signed RIS is saved for both AMS and the office.", "success");
+    }
+}

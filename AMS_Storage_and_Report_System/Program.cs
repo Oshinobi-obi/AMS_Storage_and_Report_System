@@ -5,6 +5,9 @@ using AMS_Storage_and_Report_System.Components.Shared.Modals;
 using AMS_Storage_and_Report_System.Data;
 using AMS_Storage_and_Report_System.Models;
 using AMS_Storage_and_Report_System.Services;
+using AMS_Storage_and_Report_System.Services.Security;
+using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -24,8 +27,10 @@ if (string.IsNullOrWhiteSpace(connectionString))
 var dataProtection = builder.Services.AddDataProtection()
     .SetApplicationName("AMS_StockWatch")
     .AddKeyManagementOptions(o => o.XmlRepository = new MySqlXmlRepository(connectionString));
-if (OperatingSystem.IsWindows())
-    dataProtection.ProtectKeysWithDpapi(protectToLocalMachine: true);   // keys are no longer stored in plain text
+// Encrypt the stored keys with Windows DPAPI on your own PC/server. Shared hosts often
+// don't allow it, so it can be switched off with "DataProtection:UseDpapi": false.
+if (OperatingSystem.IsWindows() && builder.Configuration.GetValue("DataProtection:UseDpapi", true))
+    dataProtection.ProtectKeysWithDpapi(protectToLocalMachine: true);
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents(o => o.DetailedErrors = builder.Environment.IsDevelopment())
@@ -38,6 +43,16 @@ builder.Services.AddDbContextFactory<AppDbContext>(o => o.UseMySql(connectionStr
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<ModalService>();
+builder.Services.AddScoped<RequisitionAdminService>();
+builder.Services.AddScoped<CatalogAdminService>();
+builder.Services.AddScoped<StockService>();
+builder.Services.AddScoped<AppCseService>();
+builder.Services.AddScoped<ReportService>();
+builder.Services.AddScoped<SettingsService>();
+// Live updates: one database watcher for the server, one relay per browser tab
+builder.Services.AddSingleton<AMS_Storage_and_Report_System.Services.Live.RisEventFeed>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<AMS_Storage_and_Report_System.Services.Live.RisEventFeed>());
+builder.Services.AddScoped<AMS_Storage_and_Report_System.Services.Live.LiveRefresh>();
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
@@ -46,15 +61,43 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.AccessDeniedPath = "/dashboard";
         options.Cookie.Name = "ams_stockwatch_auth";
         options.Cookie.HttpOnly = true;
-        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+        // Secure-only cookies need HTTPS. "Auth:AllowHttpCookies": true is a TEMPORARY switch for a
+        // server without an SSL certificate yet. Set it back to false once the site has HTTPS.
+        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment() || builder.Configuration.GetValue("Auth:AllowHttpCookies", false)
             ? CookieSecurePolicy.SameAsRequest
             : CookieSecurePolicy.Always;
         options.Cookie.SameSite = SameSiteMode.Lax;   // Strict drops the cookie when the site is opened from a link
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
         options.SlidingExpiration = true;
+        // Re-check the account every 5 minutes: deactivated / reset / changed password = signed out
+        options.Events.OnValidatePrincipal = SessionGuard.ValidatePrincipalAsync;
     });
 builder.Services.AddAuthorization();
 builder.Services.AddCascadingAuthenticationState();
+// Open pages re-check the account every 5 minutes too
+builder.Services.AddScoped<AuthenticationStateProvider, RevalidatingAuthStateProvider>();
+
+// ── Sign-in rate limit per computer (IP address) ────────────────────────────
+// 40 attempts per 5 minutes: plenty for a whole office behind one internet connection,
+// far too few for automated password guessing. Each account also locks after 5 wrong tries.
+builder.Services.AddRateLimiter(o =>
+{
+    o.AddPolicy("login", http => System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+        http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 40,
+            Window = TimeSpan.FromMinutes(5),
+            QueueLimit = 0,
+        }));
+    o.OnRejected = (ctx, _) =>
+    {
+        ctx.HttpContext.Response.StatusCode = StatusCodes.Status303SeeOther;
+        ctx.HttpContext.Response.Headers.Location = "/login?error=" + Uri.EscapeDataString("Too many sign-in attempts from this computer. Wait 5 minutes, then try again.");
+        return ValueTask.CompletedTask;
+    };
+});
+
 
 builder.Services.AddSingleton<PropertyDocumentStorage>();
 builder.Services.AddSingleton<ProfilePictureStorage>();
@@ -67,8 +110,10 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
-app.UseHttpsRedirection();
+if (!app.Configuration.GetValue("Auth:AllowHttpCookies", false))
+    app.UseHttpsRedirection();
 
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -78,6 +123,19 @@ app.Use(async (context, next) =>
     context.Response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate";
     context.Response.Headers["Pragma"] = "no-cache";
     context.Response.Headers["Expires"] = "0";
+    await next();
+});
+
+// ── Security headers on every response ──────────────────────────────────────
+app.Use(async (context, next) =>
+{
+    var h = context.Response.Headers;
+    h["X-Content-Type-Options"] = "nosniff";                         // browsers must not guess file types
+    h["X-Frame-Options"] = "SAMEORIGIN";                             // other websites can't show this site in a frame
+    h["Content-Security-Policy"] = "frame-ancestors 'self'";
+    h["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    h["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()";
+    h["Cross-Origin-Opener-Policy"] = "same-origin";
     await next();
 });
 
@@ -100,6 +158,7 @@ static List<Claim> BuildClaims(User user) =>
     new("DisplayName", user.DisplayName ?? ""),
     new("ProfilePicture", user.ProfilePicturePath ?? ""),
     new("MustChangePassword", user.RequirePasswordChange ? "1" : "0"),
+    new(SessionGuard.StampClaim, SessionGuard.PasswordStamp(user.PasswordHash)),
 ];
 
 app.MapPost("/account/login", async (HttpContext http, AuthService authService, IAntiforgery antiforgery) =>
@@ -124,13 +183,13 @@ app.MapPost("/account/login", async (HttpContext http, AuthService authService, 
     await http.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, new AuthenticationProperties
     {
         IsPersistent = rememberMe,
-        ExpiresUtc = rememberMe ? DateTimeOffset.UtcNow.AddDays(30) : DateTimeOffset.UtcNow.AddHours(8),
+        ExpiresUtc = rememberMe ? DateTimeOffset.UtcNow.AddDays(7) : DateTimeOffset.UtcNow.AddHours(8),
     });
 
     return result.User.RequirePasswordChange
         ? Results.LocalRedirect("/profile?requirePasswordChange=true")
         : Results.LocalRedirect(SafeLocal(returnUrl));
-});
+}).RequireRateLimiting("login");
 
 app.MapPost("/account/logout", async (HttpContext http) =>
 {
@@ -159,7 +218,7 @@ app.MapGet("/account/refresh-session", async (HttpContext http, IDbContextFactor
         new AuthenticationProperties
         {
             IsPersistent = isPersistent,
-            ExpiresUtc = isPersistent ? DateTimeOffset.UtcNow.AddDays(30) : DateTimeOffset.UtcNow.AddHours(8),
+            ExpiresUtc = isPersistent ? DateTimeOffset.UtcNow.AddDays(7) : DateTimeOffset.UtcNow.AddHours(8),
         });
 
     return Results.LocalRedirect(string.IsNullOrEmpty(returnUrl) ? "/profile" : SafeLocal(returnUrl));
@@ -224,6 +283,50 @@ app.MapGet("/documents/download-bulk", async (string? ids, IDbContextFactory<App
     memoryStream.Position = 0;
     return Results.File(memoryStream, "application/zip", $"property-documents-{PhTime.Now:yyyyMMdd}.zip");
 }).RequireAuthorization();
+
+// ── Signed RIS (PDF uploaded at issuance) ───────────────────────────────────
+app.MapGet("/requisitions/{id:int}/signed", async (int id, bool? download, IDbContextFactory<AppDbContext> dbFactory) =>
+{
+    await using var db = await dbFactory.CreateDbContextAsync();
+    var copy = await db.RisSignedCopies.AsNoTracking().FirstOrDefaultAsync(c => c.RisId == id);
+    if (copy is null) return Results.NotFound();
+    var risNo = await db.RisTransactions.Where(r => r.RisId == id).Select(r => r.RisNo).FirstOrDefaultAsync() ?? id.ToString();
+    return download == true
+        ? Results.File(copy.Content, "application/pdf", $"RIS-{risNo}-signed.pdf")
+        : Results.File(copy.Content, "application/pdf");
+}).RequireAuthorization();
+
+// ── Catalog photos (admin preview) ──────────────────────────────────────────
+app.MapGet("/catalog/image/{id:int}", async (int id, IDbContextFactory<AppDbContext> dbFactory) =>
+{
+    await using var db = await dbFactory.CreateDbContextAsync();
+    var img = await db.ItemImages.AsNoTracking().FirstOrDefaultAsync(i => i.ItemId == id);
+    return img is null ? Results.NotFound() : Results.File(img.Content, img.ContentType);
+}).RequireAuthorization();
+
+// ── Excel downloads ─────────────────────────────────────────────────────────
+const string Xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+app.MapGet("/exports/app-cse-template", async (int year, AppCseService svc) =>
+    Results.File(await svc.TemplateAsync(year), Xlsx, $"APP-CSE-{year}.xlsx")).RequireAuthorization();
+
+app.MapGet("/exports/rsmi", async (int year, int month, ReportService reports, SettingsService settings) =>
+{
+    if (month is < 1 or > 12 || year is < 2000 or > 2100) return Results.BadRequest();
+    var entity = (await settings.LoadAsync()).EntityName;
+    return Results.File(await reports.RsmiExcelAsync(year, month, entity), Xlsx, $"RSMI-{year}-{month:00}.xlsx");
+}).RequireAuthorization();
+
+app.MapGet("/exports/utilization", async (int year, int? office, ReportService reports) =>
+    Results.File(await reports.UtilizationExcelAsync(year, office ?? 0), Xlsx, $"APP-CSE-utilization-{year}.xlsx")).RequireAuthorization();
+
+app.MapGet("/exports/reorder", async (bool? all, ReportService reports) =>
+    Results.File(await reports.ReorderExcelAsync(all != true), Xlsx, $"reorder-list-{PhTime.Now:yyyyMMdd}.xlsx")).RequireAuthorization();
+
+app.MapGet("/exports/stock-card/{id:int}", async (int id, ReportService reports) =>
+    await reports.StockCardExcelAsync(id) is { } file
+        ? Results.File(file, Xlsx, $"stock-card-{id}.xlsx")
+        : Results.NotFound()).RequireAuthorization();
 
 // ── Profile pictures ────────────────────────────────────────────────────────
 app.MapGet("/api/profile-picture/{fileName}", (string fileName) =>

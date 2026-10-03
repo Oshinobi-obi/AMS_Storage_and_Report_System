@@ -3,6 +3,8 @@
 @attribute [Authorize]
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject ILogger<Dashboard> Log
+@inject LiveRefresh Live
+@implements IDisposable
 
 <PageTitle>Dashboard | AMS StockWatch</PageTitle>
 
@@ -64,7 +66,7 @@
                                     @foreach (var r in _pending)
                                     {
                                         <tr>
-                                            <td class="cell-strong text-nowrap">@r.RisNo</td>
+                                            <td class="cell-strong text-nowrap"><a href="/requisitions/@r.RisId">@r.RisNo</a></td>
                                             <td>@r.OfficeAcronym</td>
                                             <td class="t-num">@r.ItemCount</td>
                                             <td class="text-nowrap">@r.RequestedAt.ToString("MMM d, h:mm tt")</td>
@@ -126,6 +128,7 @@
 
     public sealed class PendingRow
     {
+        public long RisId { get; set; }
         public string RisNo { get; set; } = "";
         public string OfficeAcronym { get; set; } = "";
         public DateTime RequestedAt { get; set; }
@@ -166,6 +169,21 @@
             _name = !string.IsNullOrWhiteSpace(dn) ? dn : u.FindFirst("FullName")?.Value ?? "";
         }
 
+        Live.Changed += OnLiveAsync;
+        await LoadFiguresAsync();
+        _loading = false;
+    }
+
+    private async Task OnLiveAsync(IReadOnlyList<RisEvent> _)
+    {
+        await LoadFiguresAsync();
+        StateHasChanged();
+    }
+
+    public void Dispose() => Live.Changed -= OnLiveAsync;
+
+    private async Task LoadFiguresAsync()
+    {
         await using var db = await DbFactory.CreateDbContextAsync();
 
         // Records that exist in every version of the database
@@ -181,7 +199,7 @@
             _outOfStock = await Count(db, $"SELECT COUNT(*) AS Value FROM supply_items WHERE is_active = 1 AND stock_on_hand <= 0");
 
             _pending = await db.Database.SqlQuery<PendingRow>($@"
-                SELECT r.ris_no AS RisNo, o.office_acronym AS OfficeAcronym, r.requested_at AS RequestedAt,
+                SELECT CAST(r.ris_id AS SIGNED) AS RisId, r.ris_no AS RisNo, o.office_acronym AS OfficeAcronym, r.requested_at AS RequestedAt,
                        (SELECT COUNT(*) FROM ris_items i WHERE i.ris_id = r.ris_id) AS ItemCount
                   FROM ris_transactions r JOIN offices o ON o.office_id = r.office_id
                  WHERE r.status = 'PendingApproval'
@@ -204,8 +222,6 @@
         {
             Log.LogError(ex, "Dashboard supply figures failed");
         }
-
-        _loading = false;
     }
 
     private static Task<long> Count(AppDbContext db, FormattableString sql) =>

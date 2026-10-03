@@ -1,0 +1,152 @@
+@page "/suggestions"
+@layout AppLayout
+@attribute [Authorize]
+@inject CatalogAdminService CatalogSvc
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JS
+
+<PageTitle>Suggestions | AMS StockWatch</PageTitle>
+
+<PageHeader Title="Supply suggestions" Subtitle="Items that offices asked AMS to carry, from the “Suggest a supply” button in AMS Supplies." />
+
+<div class="wrap page-body">
+    <div class="stat-grid">
+        @foreach (var f in Filters)
+        {
+            <button type="button" class="stat @(_filter == f.Key ? "is-active" : "")" @onclick="() => _filter = f.Key">
+                <span class="stat-icon @f.Tone"><i class="bi @f.Icon" aria-hidden="true"></i></span>
+                <span><span class="stat-value">@Count(f.Key)</span><span class="stat-label">@f.Label</span></span>
+            </button>
+        }
+    </div>
+
+    <section class="panel">
+        @if (_items is null)
+        {
+            <div class="loading">Loading suggestions…</div>
+        }
+        else if (!Visible.Any())
+        {
+            <div class="empty-state"><i class="bi bi-lightbulb" aria-hidden="true"></i><h2>No suggestions here</h2><p>New suggestions from offices will appear here.</p></div>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead><tr><th>Item suggested</th><th>From</th><th class="t-num">Per year</th><th>Received</th><th>Status</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var s in Visible)
+                        {
+                            <tr @key="s.SuggestionId">
+                                <td><span class="cell-strong">@s.ItemName</span>@if (!string.IsNullOrWhiteSpace(s.Description)) {<span class="cell-sub">@s.Description</span>}</td>
+                                <td>@(s.Office?.OfficeAcronym ?? s.SubmitterName ?? "Guest")</td>
+                                <td class="t-num">@s.EstimatedAnnualQty</td>
+                                <td class="text-nowrap">@s.CreatedAt.ToString("MMM d, yyyy")</td>
+                                <td><span class="badge-pill @CatalogAdminService.SuggestionBadge(s.Status)">@CatalogAdminService.SuggestionLabel(s.Status)</span></td>
+                                <td class="text-end"><button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => Open(s)">Review</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+</div>
+
+<Dialog Show="_open is not null" Title="@($"Suggestion: {_open?.ItemName}")" Icon="bi-lightbulb" Size="lg" Busy="_saving" OnClose="() => _open = null">
+    <ChildContent>
+        @if (_open is { } s)
+        {
+            <dl class="row small mb-3">
+                <dt class="col-sm-4 text-muted-2 fw-normal">From</dt><dd class="col-sm-8">@(s.Office is { } o ? $"{o.OfficeAcronym}, {o.OfficeName}" : $"{s.SubmitterName ?? "Guest"} {(string.IsNullOrEmpty(s.SubmitterEmail) ? "" : $"({s.SubmitterEmail})")}")</dd>
+                <dt class="col-sm-4 text-muted-2 fw-normal">Received</dt><dd class="col-sm-8">@s.CreatedAt.ToString("MMMM d, yyyy h:mm tt")</dd>
+                <dt class="col-sm-4 text-muted-2 fw-normal">Description</dt><dd class="col-sm-8">@(s.Description ?? "None given")</dd>
+                <dt class="col-sm-4 text-muted-2 fw-normal">Why they need it</dt><dd class="col-sm-8">@(s.Justification ?? "None given")</dd>
+                <dt class="col-sm-4 text-muted-2 fw-normal">Estimated per year</dt><dd class="col-sm-8">@(s.EstimatedAnnualQty?.ToString() ?? "Not given")</dd>
+            </dl>
+            <div class="field">
+                <label class="form-label" for="sg-status">Decision</label>
+                <Picker TValue="string" Id="sg-status" Options="StatusOptions" @bind-Value="_status" />
+            </div>
+            <div class="field">
+                <label class="form-label" for="sg-reply">Note @(_status == "Declined" ? "(required)" : "(optional)")</label>
+                <textarea id="sg-reply" class="form-control" rows="3" maxlength="1000" autocomplete="off" @bind="_reply"
+                          placeholder="Example: Added as SN-0601. You can request it after your APP-CSE is updated."></textarea>
+            </div>
+            @if (_error is not null)
+            {
+                <div class="form-error" role="alert"><i class="bi bi-exclamation-circle" aria-hidden="true"></i>@_error</div>
+            }
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-light" @onclick="() => _open = null" disabled="@_saving">Cancel</button>
+        @if (_status == "AddedToCatalog")
+        {
+            <a class="btn btn-outline-primary" href="/catalog">Open catalog</a>
+        }
+        <button type="button" class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">Save</button>
+    </Footer>
+</Dialog>
+
+@code {
+    private sealed record Filter(string Key, string Label, string Icon, string Tone);
+    private static readonly Filter[] Filters =
+    [
+        new("open", "New or under review", "bi-inbox", "is-gold"),
+        new("AddedToCatalog", "Added to catalog", "bi-check2-circle", "is-ok"),
+        new("ForNextAPP", "For next APP", "bi-calendar-event", ""),
+        new("Declined", "Declined", "bi-x-circle", "is-bad"),
+    ];
+
+    private static readonly IReadOnlyList<PickOption<string>> StatusOptions =
+    [
+        new("New", "New"),
+        new("UnderReview", "Under review", "AMS is looking into it"),
+        new("AddedToCatalog", "Added to catalog", "Offices can now find it"),
+        new("ForNextAPP", "For next APP", "To be included in next year's APP-CSE"),
+        new("Declined", "Declined", "Write the reason in the note"),
+    ];
+
+    private List<SupplySuggestion>? _items;
+    private string _filter = "open";
+    private SupplySuggestion? _open;
+    private string _status = "UnderReview";
+    private string? _reply, _error;
+    private bool _saving;
+    private uint _userId;
+
+    private bool Matches(SupplySuggestion s, string key) => key == "open" ? s.Status is "New" or "UnderReview" : s.Status == key;
+    private int Count(string key) => _items?.Count(s => Matches(s, key)) ?? 0;
+    private IEnumerable<SupplySuggestion> Visible => (_items ?? new List<SupplySuggestion>()).Where(s => Matches(s, _filter));
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        uint.TryParse(user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out _userId);
+        _items = await CatalogSvc.SuggestionsAsync();
+    }
+
+    private void Open(SupplySuggestion s)
+    {
+        _open = s;
+        _status = s.Status == "New" ? "UnderReview" : s.Status;
+        _reply = s.AdminResponse;
+        _error = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_open is null) return;
+        _saving = true;
+        try
+        {
+            var r = await CatalogSvc.AnswerSuggestionAsync(_open.SuggestionId, _status, _reply, _userId);
+            if (!r.Ok) { _error = r.Message; return; }
+            _open = null;
+            _items = await CatalogSvc.SuggestionsAsync();
+            await JS.InvokeVoidAsync("showToast", r.Message, "success");
+        }
+        finally { _saving = false; }
+    }
+}

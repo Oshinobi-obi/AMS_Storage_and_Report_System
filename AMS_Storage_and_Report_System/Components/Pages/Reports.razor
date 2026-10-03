@@ -1,17 +1,219 @@
 @page "/reports"
 @layout AppLayout
 @attribute [Authorize]
+@inject ReportService ReportSvc
+@inject SettingsService Settings
+@inject IJSRuntime JS
 
 <PageTitle>Reports | AMS StockWatch</PageTitle>
 
-<PageHeader Title="Reports" Subtitle="Summaries built from requisitions, issuances and stock movements." />
+<PageHeader Title="Reports" Subtitle="Built from issued requisitions, deliveries and each office's APP-CSE. Download any report as Excel or print it." />
 
 <div class="wrap page-body">
-    <ComingSoon Icon="bi-file-earmark-bar-graph" Heading="Reports are coming soon"
-                Description="Planned reports:"
-                Planned="@(new[] {
-                    "Report of Supplies and Materials Issued (RSMI), monthly",
-                    "Stock card and supplies ledger per item",
-                    "APP-CSE utilization per office",
-                    "Low and out-of-stock list for reordering" })" />
+    <div class="chip-tabs no-print" role="tablist" aria-label="Reports">
+        @foreach (var t in Tabs)
+        {
+            <button type="button" role="tab" class="chip-tab" aria-selected="@(_tab == t.Key ? "true" : "false")" @onclick="() => SelectAsync(t.Key)">
+                <i class="bi @t.Icon" aria-hidden="true"></i>@t.Label
+            </button>
+        }
+    </div>
+
+    @switch (_tab)
+    {
+        case "rsmi":
+            <section class="panel">
+                <header class="panel-head">
+                    <div>
+                        <h2>Report of Supplies and Materials Issued</h2>
+                        <span class="meta">Every item issued through an RIS in the month, with the recapitulation by stock number.</span>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 align-items-end no-print">
+                        <div><label class="form-label" for="rs-month">Month</label><input id="rs-month" type="month" class="form-control" autocomplete="off" @bind="_month" @bind:after="LoadAsync" /></div>
+                        <a class="btn btn-outline-primary" href="@($"/exports/rsmi?year={_month.Year}&month={_month.Month}")"><i class="bi bi-file-earmark-excel me-1" aria-hidden="true"></i>Excel</a>
+                        <button type="button" class="btn btn-accent" @onclick="PrintAsync"><i class="bi bi-printer me-1" aria-hidden="true"></i>Print</button>
+                    </div>
+                </header>
+                <div class="print-only panel-body">
+                    <strong>REPORT OF SUPPLIES AND MATERIALS ISSUED</strong><br />Entity Name: @_entity<br />Period: @_month.ToString("MMMM yyyy")
+                </div>
+                @if (_rsmi is null) { <div class="loading">Loading…</div> }
+                else if (_rsmi.Count == 0)
+                {
+                    <div class="empty-state"><i class="bi bi-inbox" aria-hidden="true"></i><h2>Nothing issued in @_month.ToString("MMMM yyyy")</h2><p>Only requisitions marked as issued in that month are included.</p></div>
+                }
+                else
+                {
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <thead><tr><th>Date</th><th>RIS No.</th><th>Resp. Center</th><th>Office</th><th>Stock No.</th><th>Item</th><th>Unit</th><th class="t-num">Qty</th><th class="t-num">Unit cost</th><th class="t-num">Amount</th></tr></thead>
+                            <tbody>
+                                @foreach (var l in _rsmi)
+                                {
+                                    <tr><td class="text-nowrap">@l.IssuedAt.ToString("MMM d")</td><td class="text-nowrap">@l.RisNo</td><td>@l.ResponsibilityCenterCode</td><td>@l.OfficeAcronym</td><td class="text-nowrap">@l.StockNo</td><td>@l.Item</td><td>@l.Unit</td><td class="t-num">@l.Quantity</td><td class="t-num">@l.UnitCost.ToString("N2")</td><td class="t-num">@l.Amount.ToString("N2")</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="panel-body border-top d-flex justify-content-end"><strong>Total: ₱@_rsmi.Sum(l => l.Amount).ToString("N2")</strong></div>
+                    <header class="panel-head border-top"><h2>Recapitulation</h2></header>
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <thead><tr><th>Stock No.</th><th>Item</th><th>Unit</th><th class="t-num">Quantity</th><th class="t-num">Unit cost</th><th class="t-num">Total cost</th></tr></thead>
+                            <tbody>
+                                @foreach (var r in ReportService.Recap(_rsmi))
+                                {
+                                    <tr><td class="text-nowrap">@r.StockNo</td><td>@r.Item</td><td>@r.Unit</td><td class="t-num">@r.Quantity</td><td class="t-num">@r.UnitCost.ToString("N2")</td><td class="t-num">@r.TotalCost.ToString("N2")</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+            break;
+
+        case "utilization":
+            <section class="panel">
+                <header class="panel-head">
+                    <div>
+                        <h2>APP-CSE utilization</h2>
+                        <span class="meta">How much of each office's APP-CSE has been issued or is pending.</span>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 align-items-end no-print">
+                        <div style="min-width: 130px"><label class="form-label" for="u-year">Year</label><Picker TValue="int" Id="u-year" Options="YearOptions" @bind-Value="_year" @bind-Value:after="LoadAsync" /></div>
+                        <div style="min-width: 230px"><label class="form-label" for="u-office">Office</label><Picker TValue="int" Id="u-office" Options="OfficeOptions" @bind-Value="_officeId" @bind-Value:after="LoadAsync" /></div>
+                        <a class="btn btn-outline-primary" href="@($"/exports/utilization?year={_year}&office={_officeId}")"><i class="bi bi-file-earmark-excel me-1" aria-hidden="true"></i>Excel</a>
+                        <button type="button" class="btn btn-accent" @onclick="PrintAsync"><i class="bi bi-printer me-1" aria-hidden="true"></i>Print</button>
+                    </div>
+                </header>
+                @if (_util is null) { <div class="loading">Loading…</div> }
+                else if (_util.Count == 0)
+                {
+                    <div class="empty-state"><i class="bi bi-clipboard-x" aria-hidden="true"></i><h2>No APP-CSE for FY @_year</h2><p>Upload it on the APP-CSE page first.</p></div>
+                }
+                else
+                {
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <thead><tr><th>Office</th><th>Item</th><th class="t-num">APP-CSE</th><th class="t-num">Issued</th><th class="t-num">Pending</th><th class="t-num">Remaining</th><th style="width: 160px">Used</th></tr></thead>
+                            <tbody>
+                                @foreach (var u in _util)
+                                {
+                                    <tr>
+                                        <td class="cell-strong">@u.OfficeAcronym</td>
+                                        <td><span>@u.Item</span><span class="cell-sub">@u.StockNo, @u.Unit</span></td>
+                                        <td class="t-num">@u.Allocated</td><td class="t-num">@u.Issued</td><td class="t-num">@u.Pending</td>
+                                        <td class="t-num"><strong>@u.Remaining</strong></td>
+                                        <td><div class="meter"><span style="width:@(Math.Min(100, u.UsedPercent).ToString(System.Globalization.CultureInfo.InvariantCulture))%"></span></div><span class="cell-sub">@u.UsedPercent.ToString("0.#")%</span></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+            break;
+
+        default:
+            <section class="panel">
+                <header class="panel-head">
+                    <div>
+                        <h2>Reorder list</h2>
+                        <span class="meta">Suggested order = issued in the last 90 days + low-stock level − on hand. A starting point for the next purchase request, not a rule.</span>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 align-items-end no-print">
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" role="switch" id="ro-all" @bind="_showAll" @bind:after="LoadAsync" />
+                            <label class="form-check-label" for="ro-all">Show all items</label>
+                        </div>
+                        <a class="btn btn-outline-primary" href="@($"/exports/reorder?all={(_showAll ? "true" : "false")}")"><i class="bi bi-file-earmark-excel me-1" aria-hidden="true"></i>Excel</a>
+                        <button type="button" class="btn btn-accent" @onclick="PrintAsync"><i class="bi bi-printer me-1" aria-hidden="true"></i>Print</button>
+                    </div>
+                </header>
+                @if (_reorder is null) { <div class="loading">Loading…</div> }
+                else if (_reorder.Count == 0)
+                {
+                    <div class="empty-state"><i class="bi bi-check2-circle" aria-hidden="true"></i><h2>Nothing to reorder</h2><p>No item is at or below its low-stock level.</p></div>
+                }
+                else
+                {
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <thead><tr><th>Stock No.</th><th>Item</th><th class="t-num">On hand</th><th class="t-num">Low at</th><th class="t-num">Issued, 90 days</th><th class="t-num">Suggested order</th><th class="t-num">Est. cost</th></tr></thead>
+                            <tbody>
+                                @foreach (var r in _reorder)
+                                {
+                                    <tr>
+                                        <td class="text-nowrap">@r.StockNo</td>
+                                        <td><span>@r.Item</span><span class="cell-sub">@r.Unit</span></td>
+                                        <td class="t-num"><span class="@(r.OnHand <= 0 ? "text-danger fw-bold" : "")">@r.OnHand</span></td>
+                                        <td class="t-num">@r.ReorderLevel</td>
+                                        <td class="t-num">@r.IssuedLast90Days</td>
+                                        <td class="t-num"><strong>@r.SuggestedOrder</strong></td>
+                                        <td class="t-num">₱@((r.SuggestedOrder * r.UnitPrice).ToString("N2"))</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="panel-body border-top d-flex justify-content-end"><strong>Estimated total: ₱@_reorder.Sum(r => r.SuggestedOrder * r.UnitPrice).ToString("N2")</strong></div>
+                }
+            </section>
+            break;
+    }
+
+    <p class="small text-muted-2 no-print"><i class="bi bi-journal-text me-1" aria-hidden="true"></i>For an item's full history, open its <a href="/inventory">stock card from Inventory</a>.</p>
 </div>
+
+@code {
+    private sealed record Tab(string Key, string Label, string Icon);
+    private static readonly Tab[] Tabs =
+    [
+        new("rsmi", "RSMI", "bi-file-earmark-text"),
+        new("utilization", "APP-CSE utilization", "bi-pie-chart"),
+        new("reorder", "Reorder list", "bi-cart-plus"),
+    ];
+
+    private string _tab = "rsmi";
+    private DateTime _month = new(PhTime.Now.Year, PhTime.Now.Month, 1);
+    private int _year = PhTime.Now.Year, _officeId;
+    private bool _showAll;
+    private string _entity = "";
+    private List<Office> _offices = [];
+    private List<RsmiLine>? _rsmi;
+    private List<UtilizationRow>? _util;
+    private List<ReorderRow>? _reorder;
+
+    private IReadOnlyList<PickOption<int>> YearOptions
+    {
+        get { var y = PhTime.Now.Year; return [new(y - 1, $"FY {y - 1}"), new(y, $"FY {y}"), new(y + 1, $"FY {y + 1}")]; }
+    }
+
+    private IReadOnlyList<PickOption<int>> OfficeOptions =>
+        [new(0, "All offices"), .. _offices.Where(o => o.CanRequisition).Select(o => new PickOption<int>(o.OfficeId, o.OfficeAcronym, o.OfficeName))];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _offices = await Settings.OfficesAsync();
+        _entity = (await Settings.LoadAsync()).EntityName;
+        await LoadAsync();
+    }
+
+    private Task SelectAsync(string tab)
+    {
+        _tab = tab;
+        return LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        switch (_tab)
+        {
+            case "rsmi": _rsmi = null; _rsmi = await ReportSvc.RsmiAsync(_month.Year, _month.Month); break;
+            case "utilization": _util = null; _util = await ReportSvc.UtilizationAsync(_year, _officeId); break;
+            default: _reorder = null; _reorder = await ReportSvc.ReorderAsync(!_showAll); break;
+        }
+    }
+
+    private async Task PrintAsync() => await JS.InvokeVoidAsync("print");
+}

@@ -1,0 +1,106 @@
+@page "/inventory/{ItemId:int}"
+@layout AppLayout
+@attribute [Authorize]
+@inject StockService Stock
+@inject IJSRuntime JS
+
+<PageTitle>Stock card | AMS StockWatch</PageTitle>
+
+<PageHeader Title="@(_item is null ? "Stock card" : $"Stock card: {_item.ItemName}")"
+            Subtitle="@(_item is null ? null : $"{_item.StockNo}, {_item.UnitOfMeasure}. Every delivery, issue and adjustment, with the running balance.")">
+    <Actions>
+        <a class="btn btn-light no-print" href="/inventory"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i> Inventory</a>
+        @if (_item is not null)
+        {
+            <a class="btn btn-outline-primary no-print" href="/exports/stock-card/@ItemId"><i class="bi bi-file-earmark-excel me-1" aria-hidden="true"></i> Excel</a>
+            <button type="button" class="btn btn-accent no-print" @onclick="PrintAsync"><i class="bi bi-printer me-1" aria-hidden="true"></i> Print</button>
+        }
+    </Actions>
+</PageHeader>
+
+<div class="wrap page-body">
+    @if (!_loaded)
+    {
+        <div class="panel"><div class="loading">Loading…</div></div>
+    }
+    else if (_item is null)
+    {
+        <div class="empty-state"><i class="bi bi-question-circle" aria-hidden="true"></i><h2>Item not found</h2><p>It may have been removed.</p><a class="btn btn-primary" href="/inventory">Back to inventory</a></div>
+    }
+    else
+    {
+        <div class="stat-grid">
+            <div class="stat"><span class="stat-icon"><i class="bi bi-box-seam" aria-hidden="true"></i></span>
+                <span><span class="stat-value">@_item.StockOnHand.ToString("N0")</span><span class="stat-label">On hand now (@_item.UnitOfMeasure)</span></span></div>
+            <div class="stat"><span class="stat-icon is-ok"><i class="bi bi-truck" aria-hidden="true"></i></span>
+                <span><span class="stat-value">@_rows.Sum(r => r.Receipt).ToString("N0")</span><span class="stat-label">Received in this period</span></span></div>
+            <div class="stat"><span class="stat-icon is-gold"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></span>
+                <span><span class="stat-value">@_rows.Sum(r => r.Issue).ToString("N0")</span><span class="stat-label">Issued or removed</span></span></div>
+        </div>
+
+        <section class="panel">
+            <header class="panel-head no-print">
+                <div class="d-flex flex-wrap align-items-end gap-3">
+                    <div><label class="form-label" for="sc-from">From</label><input id="sc-from" type="date" class="form-control" autocomplete="off" @bind="_from" @bind:after="LoadAsync" /></div>
+                    <div><label class="form-label" for="sc-to">To</label><input id="sc-to" type="date" class="form-control" autocomplete="off" @bind="_to" @bind:after="LoadAsync" /></div>
+                    @if (_from is not null || _to is not null)
+                    {
+                        <button type="button" class="btn btn-light btn-sm mb-1" @onclick="ClearAsync">Show all dates</button>
+                    }
+                </div>
+            </header>
+            @if (_rows.Count == 0)
+            {
+                <div class="empty-state"><i class="bi bi-journal" aria-hidden="true"></i><h2>No movements</h2><p>Nothing was received, issued or adjusted in this period.</p></div>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead><tr><th>Date</th><th>Reference</th><th>Type</th><th class="t-num">Receipt</th><th class="t-num">Issue</th><th>Office</th><th class="t-num">Balance</th><th>Remarks</th></tr></thead>
+                        <tbody>
+                            @foreach (var r in _rows)
+                            {
+                                <tr>
+                                    <td class="text-nowrap">@r.Date.ToString("MMM d, yyyy")</td>
+                                    <td class="text-nowrap">@r.Reference</td>
+                                    <td>@r.Type</td>
+                                    <td class="t-num">@(r.Receipt == 0 ? "" : r.Receipt.ToString("N0"))</td>
+                                    <td class="t-num">@(r.Issue == 0 ? "" : r.Issue.ToString("N0"))</td>
+                                    <td>@r.Office</td>
+                                    <td class="t-num"><strong>@r.Balance.ToString("N0")</strong></td>
+                                    <td class="is-muted">@r.Remarks</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter] public int ItemId { get; set; }
+
+    private SupplyItem? _item;
+    private List<StockCardRow> _rows = [];
+    private DateTime? _from, _to;
+    private bool _loaded;
+
+    protected override async Task OnParametersSetAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        (_item, _rows) = await Stock.StockCardAsync(ItemId, _from, _to);
+        _loaded = true;
+    }
+
+    private Task ClearAsync()
+    {
+        _from = _to = null;
+        return LoadAsync();
+    }
+
+    private async Task PrintAsync() => await JS.InvokeVoidAsync("print");
+}

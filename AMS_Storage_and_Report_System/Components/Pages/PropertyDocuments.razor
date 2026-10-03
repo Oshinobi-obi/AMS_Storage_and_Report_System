@@ -34,43 +34,24 @@
             <div class="filters">
                 <div>
                     <label class="form-label" for="f-office">Office</label>
-                    <select id="f-office" class="form-select" @bind="_fOfficeId" @bind:after="OnFilterOfficeChangedAsync">
-                        <option value="0">All offices</option>
-                        @foreach (var o in _offices)
-                        {
-                            <option value="@o.OfficeId">@o.OfficeAcronym, @o.OfficeName</option>
-                        }
-                    </select>
+                    <Picker TValue="int" Id="f-office" Options="@(OfficeOptions("All offices"))"
+                            @bind-Value="_fOfficeId" @bind-Value:after="OnFilterOfficeChangedAsync" />
                 </div>
                 <div>
                     <label class="form-label" for="f-type">Document</label>
-                    <select id="f-type" class="form-select" @bind="_fType" @bind:after="RunFilterAsync">
-                        <option value="">All documents</option>
-                        @foreach (var t in DocTypes)
-                        {
-                            <option value="@t.Code">@t.Label</option>
-                        }
-                    </select>
+                    <Picker TValue="string" Id="f-type" Options="@(DocTypeOptions("All documents"))"
+                            @bind-Value="_fType" @bind-Value:after="RunFilterAsync" />
                 </div>
                 <div>
                     <label class="form-label" for="f-ptype">Type of property</label>
-                    <select id="f-ptype" class="form-select" @bind="_fPropertyTypeId" @bind:after="RunFilterAsync">
-                        <option value="0">All types</option>
-                        @foreach (var t in _propertyTypes)
-                        {
-                            <option value="@t.PropertyTypeId">@t.TypeName</option>
-                        }
-                    </select>
+                    <Picker TValue="int" Id="f-ptype" Options="@(PropertyTypeOptions("All types"))"
+                            @bind-Value="_fPropertyTypeId" @bind-Value:after="RunFilterAsync" />
                 </div>
                 <div>
                     <label class="form-label" for="f-person">RO personnel</label>
-                    <select id="f-person" class="form-select" @bind="_fPersonnelId" @bind:after="RunFilterAsync" disabled="@(_fOfficeId == 0)">
-                        <option value="0">@(_fOfficeId == 0 ? "Choose an office first" : "Everyone in this office")</option>
-                        @foreach (var p in _fPersonnel)
-                        {
-                            <option value="@p.PersonnelId">@p.FullName, @p.Position</option>
-                        }
-                    </select>
+                    <Picker TValue="int" Id="f-person" Disabled="@(_fOfficeId == 0)"
+                            Options="@(PersonnelOptions(_fPersonnel, _fOfficeId == 0 ? "Choose an office first" : "Everyone in this office"))"
+                            @bind-Value="_fPersonnelId" @bind-Value:after="RunFilterAsync" />
                 </div>
             </div>
             @if (HasFilters)
@@ -159,43 +140,25 @@
     <ChildContent>
         <div class="field">
             <label class="form-label" for="u-office">Office</label>
-            <select id="u-office" class="form-select" @bind="_uOfficeId" @bind:after="OnUploadOfficeChangedAsync">
-                <option value="0">Select an office</option>
-                @foreach (var o in _offices)
-                {
-                    <option value="@o.OfficeId">@o.OfficeAcronym, @o.OfficeName</option>
-                }
-            </select>
+            <Picker TValue="int" Id="u-office" Options="@(OfficeOptions("Select an office"))"
+                    @bind-Value="_uOfficeId" @bind-Value:after="OnUploadOfficeChangedAsync" />
         </div>
         <div class="field">
             <label class="form-label" for="u-person">RO personnel</label>
-            <select id="u-person" class="form-select" @bind="_uPersonnelId" disabled="@(_uOfficeId == 0)">
-                <option value="0">@(_uOfficeId == 0 ? "Choose an office first" : _uPersonnel.Count == 0 ? "No personnel in this office yet" : "Select a person")</option>
-                @foreach (var p in _uPersonnel)
-                {
-                    <option value="@p.PersonnelId">@p.FullName, @p.Position</option>
-                }
-            </select>
+            <Picker TValue="int" Id="u-person" Disabled="@(_uOfficeId == 0 || _uPersonnel.Count == 0)"
+                    Options="@(PersonnelOptions(_uPersonnel, _uOfficeId == 0 ? "Choose an office first" : _uPersonnel.Count == 0 ? "No personnel in this office yet" : "Select a person"))"
+                    @bind-Value="_uPersonnelId" />
         </div>
         <div class="field">
             <label class="form-label" for="u-type">Document</label>
-            <select id="u-type" class="form-select" @bind="_uType" @bind:after="OnUploadTypeChanged">
-                <option value="">Select a document</option>
-                @foreach (var t in DocTypes)
-                {
-                    <option value="@t.Code">@t.Label</option>
-                }
-            </select>
+            <Picker TValue="string" Id="u-type" Options="@(DocTypeOptions("Select a document"))"
+                    @bind-Value="_uType" @bind-Value:after="OnUploadTypeChanged" />
         </div>
         <div class="field">
             <label class="form-label" for="u-ptype">Type of property</label>
-            <select id="u-ptype" class="form-select" @bind="_uPropertyTypeId" disabled="@(_uType != "Return Slip")">
-                <option value="0">@(_uType == "" ? "Select the document first" : "Select a type")</option>
-                @foreach (var t in _propertyTypes)
-                {
-                    <option value="@t.PropertyTypeId">@t.TypeName</option>
-                }
-            </select>
+            <Picker TValue="int" Id="u-ptype" Disabled="@(_uType != "Return Slip")"
+                    Options="@(PropertyTypeOptions(_uType == "" ? "Select the document first" : "Select a type"))"
+                    @bind-Value="_uPropertyTypeId" />
             <div class="form-text">
                 @(_uType switch
                 {
@@ -253,6 +216,19 @@
     private List<RoPersonnel> _uPersonnel = [];
     private IBrowserFile? _file;
     private string? _uploadError;
+
+    // Choices for the <Picker> dropdowns (first entry is the "all"/"select" choice)
+    private IReadOnlyList<PickOption<int>> OfficeOptions(string first) =>
+        [new(0, first), .. _offices.Select(o => new PickOption<int>(o.OfficeId, o.OfficeAcronym, o.OfficeName))];
+
+    private static IReadOnlyList<PickOption<string>> DocTypeOptions(string first) =>
+        [new("", first), .. DocTypes.Select(t => new PickOption<string>(t.Code, t.Label))];
+
+    private IReadOnlyList<PickOption<int>> PropertyTypeOptions(string first) =>
+        [new(0, first), .. _propertyTypes.Select(t => new PickOption<int>(t.PropertyTypeId, t.TypeName))];
+
+    private static IReadOnlyList<PickOption<int>> PersonnelOptions(List<RoPersonnel> people, string first) =>
+        [new(0, first), .. people.Select(p => new PickOption<int>(p.PersonnelId, p.FullName, p.Position))];
 
     private bool HasFilters => _fOfficeId != 0 || _fType != "" || _fPropertyTypeId != 0 || _fPersonnelId != 0;
     private string BulkDownloadUrl => "/documents/download-bulk?ids=" + string.Join(",", _selected);

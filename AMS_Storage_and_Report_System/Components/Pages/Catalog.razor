@@ -1,0 +1,378 @@
+@page "/catalog"
+@layout AppLayout
+@attribute [Authorize]
+@inject CatalogAdminService CatalogSvc
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ModalService Modal
+@inject IJSRuntime JS
+@inject ILogger<Catalog> Log
+
+<PageTitle>Catalog | AMS StockWatch</PageTitle>
+
+<PageHeader Title="Catalog" Subtitle="The supplies offices can request in AMS Supplies: names, prices, photos and low-stock levels.">
+    <Actions>
+        <button type="button" class="btn btn-light" @onclick="() => _listsOpen = true"><i class="bi bi-tags me-1" aria-hidden="true"></i> Categories and suppliers</button>
+        <button type="button" class="btn btn-accent" @onclick="OpenAdd"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i> Add item</button>
+    </Actions>
+</PageHeader>
+
+<div class="wrap page-body">
+    <section class="panel">
+        <header class="panel-head">
+            <div class="filters flex-grow-1">
+                <div>
+                    <label class="form-label" for="c-search">Search</label>
+                    <div class="input-icon">
+                        <i class="bi bi-search" aria-hidden="true"></i>
+                        <input id="c-search" type="search" class="form-control" placeholder="Item, specification or stock no." autocomplete="off" @bind="_search" @bind:event="oninput" />
+                    </div>
+                </div>
+                <div>
+                    <label class="form-label" for="c-cat">Category</label>
+                    <Picker TValue="int" Id="c-cat" Options="@(CategoryOptions("All categories"))" @bind-Value="_categoryFilter" />
+                </div>
+                <div>
+                    <label class="form-label" for="c-status">Show</label>
+                    <Picker TValue="string" Id="c-status" Options="StatusOptions" @bind-Value="_statusFilter" />
+                </div>
+            </div>
+        </header>
+
+        @if (_items is null)
+        {
+            <div class="loading">Loading the catalog…</div>
+        }
+        else if (!Visible.Any())
+        {
+            <div class="empty-state"><i class="bi bi-box-seam" aria-hidden="true"></i><h2>No items match</h2><p>Try another word or filter, or add a new item.</p></div>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead><tr><th style="width:64px"></th><th>Item</th><th>Category</th><th class="t-num">Unit price</th><th class="t-num">On hand</th><th class="t-num">Low at</th><th>Status</th><th class="text-end">Actions</th></tr></thead>
+                    <tbody>
+                        @foreach (var i in Visible)
+                        {
+                            <tr class="@(i.IsActive ? "" : "is-dim")" @key="i.ItemId">
+                                <td>
+                                    <span class="thumb">
+                                        @if (!string.IsNullOrEmpty(i.ImagePath)) { <img src="@($"/catalog/image/{i.ItemId}?v={i.ImagePath.GetHashCode()}")" alt="" loading="lazy" /> }
+                                        else { <i class="bi @(i.Category?.Icon ?? "bi-box-seam")" aria-hidden="true"></i> }
+                                    </span>
+                                </td>
+                                <td><span class="cell-strong">@i.ItemName</span><span class="cell-sub">@(i.StockNo + (string.IsNullOrWhiteSpace(i.Specifications) ? "" : ", " + i.Specifications))</span></td>
+                                <td class="is-muted">@(i.Category?.CategoryName ?? "None")</td>
+                                <td class="t-num text-nowrap">₱@i.UnitPrice.ToString("N2") <span class="cell-sub d-inline">/ @i.UnitOfMeasure</span></td>
+                                <td class="t-num">@i.StockOnHand.ToString("N0")</td>
+                                <td class="t-num">@i.ReorderLevel</td>
+                                <td><span class="badge-pill @(i.IsActive ? "badge-ok" : "badge-grey")">@(i.IsActive ? "Listed" : "Hidden")</span></td>
+                                <td>
+                                    <div class="row-actions justify-content-end">
+                                        <button type="button" class="act" @onclick="() => OpenEdit(i)"><i class="bi bi-pencil" aria-hidden="true"></i>Edit</button>
+                                        <a class="act" href="/inventory/@i.ItemId"><i class="bi bi-journal-text" aria-hidden="true"></i>Stock card</a>
+                                        @if (i.IsActive)
+                                        {
+                                            <button type="button" class="act is-danger" @onclick="() => SetActiveAsync(i, false)"><i class="bi bi-eye-slash" aria-hidden="true"></i>Hide</button>
+                                        }
+                                        else
+                                        {
+                                            <button type="button" class="act is-ok" @onclick="() => SetActiveAsync(i, true)"><i class="bi bi-eye" aria-hidden="true"></i>List again</button>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+</div>
+
+@* ── Add / edit item ── *@
+<Dialog Show="_formOpen" Title="@(_form.ItemId == 0 ? "Add item" : "Edit item")" Icon="bi-box-seam" Size="lg" Busy="_saving" OnClose="() => _formOpen = false">
+    <ChildContent>
+        <div class="row g-3">
+            <div class="col-sm-4">
+                <label class="form-label" for="i-stock">Stock no.</label>
+                <input id="i-stock" class="form-control" maxlength="30" autocomplete="off" @bind="_form.StockNo" placeholder="SN-0601" />
+            </div>
+            <div class="col-sm-8">
+                <label class="form-label" for="i-name">Item name</label>
+                <input id="i-name" class="form-control" maxlength="200" autocomplete="off" @bind="_form.ItemName" placeholder="Ballpen, black" />
+            </div>
+            <div class="col-12">
+                <label class="form-label" for="i-spec">Specifications</label>
+                <textarea id="i-spec" class="form-control" rows="2" maxlength="2000" autocomplete="off" @bind="_form.Specifications" placeholder="0.5 mm, retractable"></textarea>
+            </div>
+            <div class="col-sm-4">
+                <label class="form-label" for="i-unit">Unit</label>
+                <input id="i-unit" class="form-control" maxlength="30" autocomplete="off" @bind="_form.UnitOfMeasure" placeholder="pc, ream, box" />
+            </div>
+            <div class="col-sm-4">
+                <label class="form-label" for="i-price">Unit price (₱)</label>
+                <input id="i-price" type="number" min="0" step="0.01" class="form-control text-end" autocomplete="off" @bind="_form.UnitPrice" />
+            </div>
+            <div class="col-sm-4">
+                <label class="form-label" for="i-reorder">Low-stock level</label>
+                <input id="i-reorder" type="number" min="0" class="form-control text-end" autocomplete="off" @bind="_form.ReorderLevel" />
+            </div>
+            <div class="col-sm-6">
+                <label class="form-label" for="i-cat">Category</label>
+                <Picker TValue="int" Id="i-cat" Options="@(CategoryOptions("No category"))" @bind-Value="_form.CategoryId" />
+            </div>
+            <div class="col-sm-6">
+                <label class="form-label" for="i-sup">Supplier</label>
+                <Picker TValue="int" Id="i-sup" Options="SupplierOptions" @bind-Value="_form.SupplierId" />
+            </div>
+            @if (_form.ItemId != 0)
+            {
+                <div class="col-12">
+                    <label class="form-label" for="i-photo">Photo</label>
+                    <div class="d-flex align-items-center gap-3">
+                        <span class="thumb thumb-lg">
+                            @if (_hasPhoto) { <img src="@($"/catalog/image/{_form.ItemId}?v={_photoVersion}")" alt="Current photo" /> }
+                            else { <i class="bi bi-image" aria-hidden="true"></i> }
+                        </span>
+                        <div class="flex-grow-1">
+                            <InputFile id="i-photo" class="form-control" OnChange="OnPhotoSelected" accept=".jpg,.jpeg,.png,.webp" />
+                            <div class="form-text">JPG, PNG or WebP, under 2 MB. A square photo on a plain background looks best.</div>
+                            @if (_hasPhoto)
+                            {
+                                <button type="button" class="btn btn-link text-danger px-0 small" @onclick="RemovePhotoAsync">Remove photo</button>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="col-12"><p class="form-text mb-0"><i class="bi bi-info-circle me-1" aria-hidden="true"></i>You can add a photo after saving the item. Stock starts at 0; record deliveries in Inventory.</p></div>
+            }
+        </div>
+        @if (_formError is not null)
+        {
+            <div class="form-error" role="alert"><i class="bi bi-exclamation-circle" aria-hidden="true"></i>@_formError</div>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-light" @onclick="() => _formOpen = false" disabled="@_saving">Cancel</button>
+        <button type="button" class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">
+            @if (_saving) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
+            @(_form.ItemId == 0 ? "Add item" : "Save changes")
+        </button>
+    </Footer>
+</Dialog>
+
+@* ── Categories and suppliers ── *@
+<Dialog Show="_listsOpen" Title="Categories and suppliers" Icon="bi-tags" Size="lg" DismissOnBackdrop="true" OnClose="() => _listsOpen = false">
+    <ChildContent>
+        <div class="row g-4">
+            <div class="col-md-6">
+                <h3 class="h6 fw-bold">Categories</h3>
+                <ul class="list-unstyled mb-2">
+                    @foreach (var c in _categories)
+                    {
+                        <li class="d-flex align-items-center gap-2 py-1 border-bottom">
+                            <i class="bi @(c.Icon ?? "bi-box-seam") text-primary" aria-hidden="true"></i>
+                            <span class="flex-grow-1">@c.CategoryName</span>
+                            <button type="button" class="act" @onclick="() => RenameCategoryAsync(c)">Rename</button>
+                        </li>
+                    }
+                </ul>
+                <div class="d-flex gap-2">
+                    <input class="form-control form-control-sm" placeholder="New category" maxlength="100" autocomplete="off" @bind="_newCategory" aria-label="New category name" />
+                    <button type="button" class="btn btn-sm btn-primary" @onclick="AddCategoryAsync">Add</button>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <h3 class="h6 fw-bold">Suppliers</h3>
+                <ul class="list-unstyled mb-2">
+                    @foreach (var s in _suppliers)
+                    {
+                        <li class="d-flex align-items-center gap-2 py-1 border-bottom">
+                            <span class="flex-grow-1">@s.SupplierName</span>
+                            <button type="button" class="act" @onclick="() => RenameSupplierAsync(s)">Rename</button>
+                        </li>
+                    }
+                </ul>
+                <div class="d-flex gap-2">
+                    <input class="form-control form-control-sm" placeholder="New supplier" maxlength="200" autocomplete="off" @bind="_newSupplier" aria-label="New supplier name" />
+                    <button type="button" class="btn btn-sm btn-primary" @onclick="AddSupplierAsync">Add</button>
+                </div>
+            </div>
+        </div>
+    </ChildContent>
+    <Footer><button type="button" class="btn btn-primary" @onclick="() => _listsOpen = false">Done</button></Footer>
+</Dialog>
+
+@code {
+    private static readonly IReadOnlyList<PickOption<string>> StatusOptions =
+        [new("listed", "Listed items"), new("hidden", "Hidden items"), new("all", "All items")];
+
+    private List<SupplyItem>? _items;
+    private List<ItemCategory> _categories = [];
+    private List<Supplier> _suppliers = [];
+    private string _search = "", _statusFilter = "listed";
+    private int _categoryFilter;
+    private uint _userId;
+
+    private bool _formOpen, _saving, _listsOpen, _hasPhoto;
+    private long _photoVersion;
+    private ItemForm _form = new();
+    private string? _formError;
+    private string _newCategory = "", _newSupplier = "";
+
+    private IReadOnlyList<PickOption<int>> CategoryOptions(string first) =>
+        [new(0, first), .. _categories.Select(c => new PickOption<int>(c.CategoryId, c.CategoryName))];
+
+    private IReadOnlyList<PickOption<int>> SupplierOptions =>
+        [new(0, "No supplier"), .. _suppliers.Select(s => new PickOption<int>(s.SupplierId, s.SupplierName))];
+
+    private IEnumerable<SupplyItem> Visible
+    {
+        get
+        {
+            var t = _search.Trim();
+            return (_items ?? new List<SupplyItem>())
+                .Where(i => _statusFilter == "all" || (_statusFilter == "listed") == i.IsActive)
+                .Where(i => _categoryFilter == 0 || i.CategoryId == _categoryFilter)
+                .Where(i => t.Length == 0 || i.ItemName.Contains(t, StringComparison.OrdinalIgnoreCase)
+                         || i.StockNo.Contains(t, StringComparison.OrdinalIgnoreCase)
+                         || (i.Specifications?.Contains(t, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        uint.TryParse(user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out _userId);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _categories = await CatalogSvc.CategoriesAsync();
+        _suppliers = await CatalogSvc.SuppliersAsync();
+        _items = await CatalogSvc.ItemsAsync();
+    }
+
+    private void OpenAdd()
+    {
+        _form = new ItemForm { CategoryId = _categoryFilter };
+        _formError = null;
+        _formOpen = true;
+    }
+
+    private void OpenEdit(SupplyItem i)
+    {
+        _form = new ItemForm
+        {
+            ItemId = i.ItemId, StockNo = i.StockNo, ItemName = i.ItemName, Specifications = i.Specifications,
+            UnitOfMeasure = i.UnitOfMeasure, CategoryId = i.CategoryId ?? 0, SupplierId = i.SupplierId ?? 0,
+            UnitPrice = i.UnitPrice, ReorderLevel = i.ReorderLevel,
+        };
+        _hasPhoto = !string.IsNullOrEmpty(i.ImagePath);
+        _photoVersion = DateTime.UtcNow.Ticks;
+        _formError = null;
+        _formOpen = true;
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        try
+        {
+            var wasNew = _form.ItemId == 0;
+            var r = await CatalogSvc.SaveItemAsync(_form, _userId);
+            if (!r.Ok) { _formError = r.Message; return; }
+            await LoadAsync();
+            await JS.InvokeVoidAsync("showToast", r.Message, "success");
+            if (wasNew && r.Id is int id && _items?.FirstOrDefault(x => x.ItemId == id) is { } created)
+                OpenEdit(created);   // stay open so a photo can be added right away
+            else
+                _formOpen = false;
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task OnPhotoSelected(InputFileChangeEventArgs e)
+    {
+        _formError = null;
+        if (!CatalogAdminService.ImageTypes.Contains(e.File.ContentType)) { _formError = "Use a JPG, PNG or WebP image."; return; }
+        if (e.File.Size > CatalogAdminService.MaxImageBytes) { _formError = "The photo must be smaller than 2 MB."; return; }
+
+        _saving = true;
+        try
+        {
+            await using var stream = e.File.OpenReadStream(CatalogAdminService.MaxImageBytes);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            var r = await CatalogSvc.SetImageAsync(_form.ItemId, ms.ToArray(), e.File.ContentType);
+            if (!r.Ok) { _formError = r.Message; return; }
+            _hasPhoto = true;
+            _photoVersion = DateTime.UtcNow.Ticks;
+            await LoadAsync();
+            await JS.InvokeVoidAsync("showToast", "Photo saved. It shows in AMS Supplies right away.", "success");
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Saving the photo of item {ItemId} failed", _form.ItemId);
+            _formError = StorageErrors.Explain(ex, "The photo");
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task RemovePhotoAsync()
+    {
+        await CatalogSvc.RemoveImageAsync(_form.ItemId);
+        _hasPhoto = false;
+        await LoadAsync();
+    }
+
+    private async Task SetActiveAsync(SupplyItem i, bool active)
+    {
+        var ok = active
+            ? await Modal.ConfirmAsync($"List {i.ItemName} again?", "Offices will see it in the catalog and can request it.", "List again", "Cancel", ModalVariant.Success)
+            : await Modal.ConfirmAsync($"Hide {i.ItemName}?", "Offices won't see it in the catalog anymore. Past requisitions and its stock card stay as they are.", "Hide item", "Cancel", ModalVariant.Danger);
+        if (!ok) return;
+        var r = await CatalogSvc.SetActiveAsync(i.ItemId, active, _userId);
+        await LoadAsync();
+        await JS.InvokeVoidAsync("showToast", r.Message, active ? "success" : "danger");
+    }
+
+    private async Task AddCategoryAsync()
+    {
+        var r = await CatalogSvc.SaveCategoryAsync(0, _newCategory, null);
+        if (!r.Ok) { await Modal.WarningAsync("Couldn't add the category", r.Message); return; }
+        _newCategory = "";
+        await LoadAsync();
+    }
+
+    private async Task RenameCategoryAsync(ItemCategory c)
+    {
+        var name = await Modal.PromptAsync($"Rename {c.CategoryName}", "Offices see this name as a filter in the catalog.", "New name", "Rename", minLength: 2, variant: ModalVariant.Info);
+        if (name is null) return;
+        var r = await CatalogSvc.SaveCategoryAsync(c.CategoryId, name, c.Icon);
+        if (!r.Ok) await Modal.WarningAsync("Couldn't rename", r.Message);
+        await LoadAsync();
+    }
+
+    private async Task AddSupplierAsync()
+    {
+        var r = await CatalogSvc.SaveSupplierAsync(0, _newSupplier, null, null);
+        if (!r.Ok) { await Modal.WarningAsync("Couldn't add the supplier", r.Message); return; }
+        _newSupplier = "";
+        await LoadAsync();
+    }
+
+    private async Task RenameSupplierAsync(Supplier s)
+    {
+        var name = await Modal.PromptAsync($"Rename {s.SupplierName}", "This name appears on item details in the catalog.", "New name", "Rename", minLength: 2, variant: ModalVariant.Info);
+        if (name is null) return;
+        var r = await CatalogSvc.SaveSupplierAsync(s.SupplierId, name, s.ContactPerson, s.ContactNo);
+        if (!r.Ok) await Modal.WarningAsync("Couldn't rename", r.Message);
+        await LoadAsync();
+    }
+}

@@ -1,10 +1,13 @@
-﻿namespace AMS_Storage_and_Report_System.Models;
+namespace AMS_Storage_and_Report_System.Models;
 
 public class Office
 {
     public int OfficeId { get; set; }
     public string OfficeName { get; set; } = string.Empty;
     public string OfficeAcronym { get; set; } = string.Empty;
+    public string? ResponsibilityCenterCode { get; set; }
+    public bool CanRequisition { get; set; } = true;   // new offices can request supplies
+    public bool IsActive { get; set; } = true;
 }
 
 public class RoPersonnel

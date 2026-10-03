@@ -39,13 +39,7 @@
                 <div class="filters flex-grow-1">
                     <div>
                         <label class="form-label" for="f-office">Office</label>
-                        <select id="f-office" class="form-select" @bind="_filterOfficeId">
-                            <option value="0">All offices</option>
-                            @foreach (var o in _offices)
-                            {
-                                <option value="@o.OfficeId">@o.OfficeAcronym, @o.OfficeName</option>
-                            }
-                        </select>
+                        <Picker TValue="int" Id="f-office" Options="@(OfficeOptions("All offices"))" @bind-Value="_filterOfficeId" />
                     </div>
                     <div>
                         <label class="form-label" for="f-search">Search</label>
@@ -78,12 +72,12 @@
                         <tbody>
                             @foreach (var g in VisibleGroups)
                             {
-                                <tr class="group-row" @key="g.Office.OfficeId">
+                                <tr class="group-row" @key="@($"office-{g.Office.OfficeId}")">
                                     <td colspan="3">@g.Office.OfficeName <span class="cell-sub">@g.Office.OfficeAcronym, @g.Personnel.Count @(g.Personnel.Count == 1 ? "person" : "people")</span></td>
                                 </tr>
                                 @foreach (var p in g.Personnel)
                                 {
-                                    <tr @key="p.PersonnelId">
+                                    <tr @key="@($"person-{p.PersonnelId}")">
                                         <td class="cell-strong">@p.FullName</td>
                                         <td>@p.Position</td>
                                         <td>
@@ -110,13 +104,7 @@
         {
             <div class="field">
                 <label class="form-label" for="e-office">Office</label>
-                <select id="e-office" class="form-select" @bind="_officeId">
-                    <option value="0">Select an office</option>
-                    @foreach (var o in _offices)
-                    {
-                        <option value="@o.OfficeId">@o.OfficeAcronym, @o.OfficeName</option>
-                    }
-                </select>
+                <Picker TValue="int" Id="e-office" Options="@(OfficeOptions("Select an office"))" @bind-Value="_officeId" />
                 <button type="button" class="btn btn-link px-0 small" @onclick="StartNewOffice">
                     Office not in the list? Add a new office
                 </button>
@@ -176,6 +164,9 @@
     private int _officeId;
     private string _officeName = "", _officeAcronym = "", _fullName = "", _position = "";
     private string? _formError;
+
+    private IReadOnlyList<PickOption<int>> OfficeOptions(string first) =>
+        [new(0, first), .. _offices.Select(o => new PickOption<int>(o.OfficeId, o.OfficeAcronym, o.OfficeName))];
 
     private IEnumerable<OfficeGroup> VisibleGroups
     {

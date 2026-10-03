@@ -4,6 +4,8 @@
 @inject NavigationManager Nav
 @inject ModalService Modal
 @inject IJSRuntime JS
+@inject RequisitionAdminService Requisitions
+@inject LiveRefresh Live
 
 <div class="shell">
     @* Phone / tablet top bar *@
@@ -13,17 +15,19 @@
             <i class="bi bi-list" aria-hidden="true"></i>
         </button>
         <span class="brand-pill"><img src="images/one-ncr-stronger-together.png" alt="DepEd NCR" width="88" height="28" /></span>
+        <ThemeToggle Class="ms-auto theme-on-navy" />
     </header>
 
     <aside id="app-sidebar" class="sidebar @(_menuOpen ? "open" : "")" aria-label="Main menu">
         <div class="sidebar-brand">
-            <a href="/dashboard" class="brand-pill" aria-label="AMS StockWatch dashboard">
-                <img src="images/one-ncr-stronger-together.png" alt="DepEd NCR, One NCR Stronger Together" width="106" height="34" />
+            <a href="/dashboard" class="brand-pill brand-pill-wide" aria-label="Go to the dashboard">
+                <img src="images/one-ncr-stronger-together.png" alt="DepEd NCR, One NCR Stronger Together" width="150" height="48" />
             </a>
             <p class="sidebar-app">
-                <strong>AMS StockWatch</strong>
+                <strong>DepEd NCR</strong>
                 <span>Asset Management Section</span>
             </p>
+            <PhClock Class="sidebar-clock" />
         </div>
 
         <nav class="sidebar-nav">
@@ -33,9 +37,18 @@
 
             <div class="nav-group">
                 <div class="nav-group-label">Supplies</div>
-                <NavLink class="nav-item" href="requisitions"><i class="bi bi-inbox" aria-hidden="true"></i>Requisitions<span class="nav-soon">Next</span></NavLink>
+                <NavLink class="nav-item" href="requisitions">
+                    <i class="bi bi-inbox" aria-hidden="true"></i>Requisitions
+                    @if (_pending > 0)
+                    {
+                        <span class="nav-count" title="@($"{_pending} waiting for approval")">@_pending</span>
+                    }
+                </NavLink>
                 <NavLink class="nav-item" href="inventory"><i class="bi bi-box-seam" aria-hidden="true"></i>Inventory</NavLink>
-                <NavLink class="nav-item" href="reports"><i class="bi bi-file-earmark-bar-graph" aria-hidden="true"></i>Reports<span class="nav-soon">Soon</span></NavLink>
+                <NavLink class="nav-item" href="catalog"><i class="bi bi-grid" aria-hidden="true"></i>Catalog</NavLink>
+                <NavLink class="nav-item" href="app-cse"><i class="bi bi-clipboard-data" aria-hidden="true"></i>APP-CSE</NavLink>
+                <NavLink class="nav-item" href="suggestions"><i class="bi bi-lightbulb" aria-hidden="true"></i>Suggestions</NavLink>
+                <NavLink class="nav-item" href="reports"><i class="bi bi-file-earmark-bar-graph" aria-hidden="true"></i>Reports</NavLink>
             </div>
 
             <div class="nav-group">
@@ -50,7 +63,7 @@
                     <NavLink class="nav-item" href="account"><i class="bi bi-person-gear" aria-hidden="true"></i>Accounts</NavLink>
                 </AuthorizeView>
                 <NavLink class="nav-item" href="profile"><i class="bi bi-person-circle" aria-hidden="true"></i>My profile</NavLink>
-                <NavLink class="nav-item" href="settings"><i class="bi bi-sliders" aria-hidden="true"></i>Settings<span class="nav-soon">Soon</span></NavLink>
+                <NavLink class="nav-item" href="settings"><i class="bi bi-sliders" aria-hidden="true"></i>Settings</NavLink>
             </div>
         </nav>
 
@@ -73,12 +86,15 @@
                             <span>@RoleLabel(context)</span>
                         </span>
                     </a>
-                    <form method="post" action="/account/logout" class="m-0" @ref="_logoutForm" autocomplete="off">
-                        <AntiforgeryToken />
-                        <button type="button" class="btn-logout" @onclick="ConfirmLogoutAsync">
-                            <i class="bi bi-box-arrow-right" aria-hidden="true"></i> Log out
-                        </button>
-                    </form>
+                    <div class="sidebar-foot-actions">
+                        <ThemeToggle Class="theme-on-navy" />
+                        <form method="post" action="/account/logout" class="m-0 flex-grow-1" @ref="_logoutForm" autocomplete="off">
+                            <AntiforgeryToken />
+                            <button type="button" class="btn-logout" @onclick="ConfirmLogoutAsync">
+                                <i class="bi bi-box-arrow-right" aria-hidden="true"></i> Log out
+                            </button>
+                        </form>
+                    </div>
                 </div>
             </Authorized>
         </AuthorizeView>
@@ -90,6 +106,7 @@
     }
 
     <main class="shell-main">
+        <LiveNotifier />
         @Body
     </main>
 
@@ -102,7 +119,21 @@
     private bool _menuOpen;
     private ElementReference _logoutForm;
 
-    protected override void OnInitialized() => Nav.LocationChanged += OnLocationChanged;
+    private int _pending;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+        Live.Changed += OnLiveAsync;
+        await RefreshPendingAsync();
+    }
+
+    // Badge on "Requisitions": how many RIS are waiting for AMS.
+    private async Task RefreshPendingAsync()
+    {
+        try { _pending = await Requisitions.CountPendingAsync(); }
+        catch { _pending = 0; }   // supply tables not created yet
+    }
 
     // A user flagged "must change password" can only use their profile page.
     protected override async Task OnParametersSetAsync()
@@ -119,9 +150,12 @@
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
-        if (!_menuOpen) return;
         _menuOpen = false;
-        _ = InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(async () =>
+        {
+            await RefreshPendingAsync();
+            StateHasChanged();
+        });
     }
 
     private async Task ConfirmLogoutAsync()
@@ -150,5 +184,15 @@
             var r => r ?? "",
         };
 
-    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+    private async Task OnLiveAsync(IReadOnlyList<RisEvent> _)
+    {
+        await RefreshPendingAsync();
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+        Live.Changed -= OnLiveAsync;
+    }
 }

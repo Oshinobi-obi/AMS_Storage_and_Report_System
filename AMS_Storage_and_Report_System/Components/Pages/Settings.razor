@@ -1,17 +1,152 @@
 @page "/settings"
 @layout AppLayout
 @attribute [Authorize]
+@inject SettingsService SettingsSvc
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ModalService Modal
+@inject IJSRuntime JS
 
 <PageTitle>Settings | AMS StockWatch</PageTitle>
 
-<PageHeader Title="Settings" Subtitle="System-wide values used on requisition slips and reports." />
+<PageHeader Title="Settings" Subtitle="Values printed on every Requisition and Issue Slip, and office details used by AMS Supplies." />
 
 <div class="wrap page-body">
-    <ComingSoon Icon="bi-sliders" Heading="Settings are coming soon"
-                Description="These are changed in the database for now and will move here:"
-                Planned="@(new[] {
-                    "Entity Name and Fund Cluster printed on the RIS",
-                    "Default \"Approved by\" official",
-                    "Office details and responsibility center codes",
-                    "Reorder levels and catalog categories" })" />
+    @if (_form is null)
+    {
+        <div class="panel"><div class="loading">Loading settings…</div></div>
+    }
+    else
+    {
+        <section class="panel">
+            <header class="panel-head"><h2>Requisition and Issue Slip</h2></header>
+            <div class="panel-body">
+                <div class="row g-3">
+                    <div class="col-md-8">
+                        <label class="form-label" for="s-entity">Entity Name</label>
+                        <input id="s-entity" class="form-control" maxlength="200" autocomplete="off" @bind="_form.EntityName" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label" for="s-fund">Fund Cluster</label>
+                        <input id="s-fund" class="form-control" maxlength="10" autocomplete="off" @bind="_form.FundCluster" placeholder="Leave blank to write by hand" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="s-approver">Approved by (default)</label>
+                        <Picker TValue="int" Id="s-approver" Options="@(PeopleOptions("Nobody, fill in by hand"))" @bind-Value="_form.ApprovedById" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="s-issuer">Issued by (default)</label>
+                        <Picker TValue="int" Id="s-issuer" Options="@(PeopleOptions("Nobody, choose at approval"))" @bind-Value="_form.IssuedById" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label" for="s-reorder">Default low-stock level</label>
+                        <input id="s-reorder" type="number" min="0" class="form-control text-end" autocomplete="off" @bind="_form.DefaultReorderLevel" />
+                        <div class="form-text">Used for new catalog items.</div>
+                    </div>
+                </div>
+                <div class="d-flex justify-content-end mt-3">
+                    <button type="button" class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">
+                        @if (_saving) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
+                        Save settings
+                    </button>
+                </div>
+                <p class="small text-muted-2 mb-0 mt-2">Changes apply to requisitions submitted from now on. Slips already submitted keep their values.</p>
+            </div>
+        </section>
+
+        <section class="panel">
+            <header class="panel-head">
+                <h2>Offices</h2>
+                <span class="meta">Responsibility center codes are printed on the RIS and the RSMI.</span>
+            </header>
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead><tr><th>Office</th><th style="width: 220px">Responsibility center code</th><th>Can request supplies</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var o in _offices)
+                        {
+                            var row = _officeEdits[o.OfficeId];
+                            <tr @key="o.OfficeId">
+                                <td><span class="cell-strong">@o.OfficeAcronym</span><span class="cell-sub">@o.OfficeName</span></td>
+                                <td><input class="form-control form-control-sm" maxlength="30" autocomplete="off" aria-label="@($"Responsibility center code of {o.OfficeAcronym}")" @bind="row.Rc" /></td>
+                                <td>
+                                    <div class="form-check form-switch m-0">
+                                        <input class="form-check-input" type="checkbox" role="switch" id="@($"can-{o.OfficeId}")" @bind="row.Can" />
+                                        <label class="form-check-label small" for="@($"can-{o.OfficeId}")">@(row.Can ? "Yes" : "No")</label>
+                                    </div>
+                                </td>
+                                <td class="text-end">
+                                    @if (row.Rc != (o.ResponsibilityCenterCode ?? "") || row.Can != o.CanRequisition)
+                                    {
+                                        <button type="button" class="btn btn-sm btn-primary" @onclick="() => SaveOfficeAsync(o, row)">Save</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
 </div>
+
+@code {
+    private sealed class OfficeEdit { public string Rc { get; set; } = ""; public bool Can { get; set; } }
+
+    private SettingsForm? _form;
+    private List<Office> _offices = [];
+    private Dictionary<int, OfficeEdit> _officeEdits = new();
+    private List<RoPersonnel> _people = [];
+    private bool _saving;
+    private uint _userId;
+
+    private IReadOnlyList<PickOption<int>> PeopleOptions(string first) =>
+        [new(0, first), .. _people.Select(p => new PickOption<int>(p.PersonnelId, p.FullName, p.Position))];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        uint.TryParse(user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out _userId);
+        await using (var db = await DbFactory.CreateDbContextAsync())
+            _people = await db.RoPersonnel.AsNoTracking().OrderBy(p => p.FullName).ToListAsync();
+        await LoadOfficesAsync();
+        _form = await SettingsSvc.LoadAsync();
+    }
+
+    private async Task LoadOfficesAsync()
+    {
+        _offices = await SettingsSvc.OfficesAsync();
+        _officeEdits = _offices.ToDictionary(o => o.OfficeId, o => new OfficeEdit { Rc = o.ResponsibilityCenterCode ?? "", Can = o.CanRequisition });
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_form is null) return;
+        var ok = await Modal.ConfirmAsync("Save these settings?",
+            "New requisitions will use this Entity Name, Fund Cluster and these default signatories.",
+            "Save settings", "Cancel", ModalVariant.Info);
+        if (!ok) return;
+        _saving = true;
+        try
+        {
+            var r = await SettingsSvc.SaveAsync(_form, _userId);
+            if (!r.Ok) { await Modal.WarningAsync("Couldn't save", r.Message); return; }
+            await JS.InvokeVoidAsync("showToast", r.Message, "success");
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task SaveOfficeAsync(Office o, OfficeEdit row)
+    {
+        if (!row.Can && o.CanRequisition)
+        {
+            var ok = await Modal.ConfirmAsync($"Stop {o.OfficeAcronym} from requesting supplies?",
+                "Its account can still log in, but it won't be able to submit requisitions.", "Save", "Cancel", ModalVariant.Warning);
+            if (!ok) return;
+        }
+        var r = await SettingsSvc.SaveOfficeAsync(o.OfficeId, row.Rc, row.Can, _userId);
+        if (!r.Ok) { await Modal.WarningAsync("Couldn't save", r.Message); return; }
+        await LoadOfficesAsync();
+        await JS.InvokeVoidAsync("showToast", r.Message, "success");
+    }
+}

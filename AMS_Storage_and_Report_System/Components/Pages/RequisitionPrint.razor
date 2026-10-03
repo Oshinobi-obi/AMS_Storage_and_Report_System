@@ -1,0 +1,63 @@
+@page "/requisitions/{RisId:int}/print"
+@layout EmptyLayout
+@attribute [Authorize]
+@inject RequisitionAdminService Requisitions
+@inject IJSRuntime JS
+
+<PageTitle>@(_ris is null ? "RIS" : $"RIS {_ris.RisNo}")</PageTitle>
+
+<div class="print-toolbar no-print">
+    <a class="btn btn-light" href="/requisitions/@RisId"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i> Back</a>
+    <span class="flex-grow-1"></span>
+    <span class="small text-muted-2 d-none d-sm-inline">Use A4 or long bond paper. Turn off headers and footers in the print settings.</span>
+    <button type="button" class="btn btn-primary" @onclick="PrintAsync" disabled="@(_ris is null)">
+        <i class="bi bi-printer me-1" aria-hidden="true"></i> Print
+    </button>
+</div>
+
+<div class="print-page">
+    @if (_ris is null)
+    {
+        <p class="text-center text-muted-2 py-5">@(_loaded ? "Requisition not found." : "Loading…")</p>
+    }
+    else
+    {
+        <RisDocument Model="Model" IsDraft="@(_ris.Status == RisStatus.Pending)" MinRows="10" />
+    }
+</div>
+
+@code {
+    [Parameter] public int RisId { get; set; }
+
+    private RisTransaction? _ris;
+    private bool _loaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _ris = await Requisitions.GetAsync(RisId);
+        _loaded = true;
+    }
+
+    private RisDocumentModel Model => new()
+    {
+        EntityName = _ris!.EntityName,
+        FundCluster = _ris.FundCluster,
+        Division = _ris.DivisionName,
+        Office = _ris.OfficeName,
+        ResponsibilityCenterCode = _ris.ResponsibilityCenterCode,
+        RisNo = _ris.RisNo,
+        Purpose = _ris.Purpose,
+        Status = _ris.Status,
+        Lines = _ris.Items.Select(i => new RisLine(i.ItemId, i.StockNo, i.UnitOfMeasure, i.ItemDescription, i.RequestedQty,
+                                                   i.StockAvailable, i.IssuedQty, i.Remarks)).ToList(),
+        RequestedBy = Signatory(_ris.RequestedByPersonnel, _ris.RequestedAt),
+        ApprovedBy = Signatory(_ris.ApprovedByPersonnel, _ris.ApprovedAt),
+        IssuedBy = Signatory(_ris.IssuedByPersonnel, _ris.IssuedAt),
+        ReceivedBy = Signatory(_ris.ReceivedByPersonnel, _ris.IssuedAt),
+    };
+
+    private static RisSignatory? Signatory(RoPersonnel? p, DateTime? date) =>
+        p is null && date is null ? null : new RisSignatory(p?.FullName, p?.Position, date);
+
+    private async Task PrintAsync() => await JS.InvokeVoidAsync("print");
+}

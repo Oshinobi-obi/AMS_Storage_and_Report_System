@@ -3,6 +3,50 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
+## =====================================================================
+## AMS StockWatch (admin site) — project-specific rules. Keep these at the top.
+## =====================================================================
+
+# Secrets: connection strings and passwords never go to GitHub.
+# (Local development uses User Secrets, which live outside the project.)
+appsettings.Production.json
+appsettings.Staging.json
+appsettings.*.local.json
+**/appsettings.Production.json
+*.env
+.env
+
+# Files the running site creates: profile pictures, property-document PDFs,
+# sign-in keys and anything else under App_Data
+**/App_Data/
+
+# Server start-up logs (stdout logging in web.config)
+**/logs/
+*.log
+
+# Database dumps and backups (they contain account data and personal records).
+# The numbered update scripts in the repo (add_*.sql, 0xx_*.sql) are still tracked.
+*_backup*.sql
+*-backup*.sql
+backup*.sql
+*_dump*.sql
+*-dump*.sql
+pre_*.sql
+ams_stockwatch*.sql
+db64557*.sql
+*.sql.gz
+*.sql.zip
+
+# Excel exports downloaded while testing (RSMI, APP-CSE, stock cards)
+RSMI-*.xlsx
+APP-CSE-*.xlsx
+stock-card-*.xlsx
+reorder-list-*.xlsx
+
+# Visual Studio leftovers
+*.csproj.Backup.tmp
+
+
 # User-specific files
 *.rsuser
 *.suo

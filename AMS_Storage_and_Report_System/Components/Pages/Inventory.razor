@@ -1,44 +1,46 @@
 @page "/inventory"
 @layout AppLayout
 @attribute [Authorize]
-@inject IDbContextFactory<AppDbContext> DbFactory
-@inject ILogger<Inventory> Log
+@inject CatalogAdminService CatalogSvc
+@inject StockService Stock
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ModalService Modal
+@inject IJSRuntime JS
+@inject LiveRefresh Live
+@implements IDisposable
 
 <PageTitle>Inventory | AMS StockWatch</PageTitle>
 
-<PageHeader Title="Inventory" Subtitle="Warehouse stock of every supply in the AMS Supplies catalog." />
+<PageHeader Title="Inventory" Subtitle="Warehouse stock of every listed supply. Record deliveries and corrections here; issues come from approved requisitions.">
+    <Actions>
+        <button type="button" class="btn btn-light" @onclick="OpenAdjust"><i class="bi bi-sliders2 me-1" aria-hidden="true"></i> Adjust stock</button>
+        <button type="button" class="btn btn-accent" @onclick="OpenReceive"><i class="bi bi-truck me-1" aria-hidden="true"></i> Receive delivery</button>
+    </Actions>
+</PageHeader>
 
 <div class="wrap page-body">
-    @if (_items is null && !_missing)
+    @if (_items is null)
     {
         <div class="panel"><div class="loading">Loading inventory…</div></div>
-    }
-    else if (_missing)
-    {
-        <div class="empty-state">
-            <i class="bi bi-database-exclamation" aria-hidden="true"></i>
-            <h2>No supply catalog yet</h2>
-            <p>Run the AMS Supplies database update (<code>001_requisition_portal.sql</code>) to create the catalog tables.</p>
-        </div>
     }
     else
     {
         <div class="stat-grid">
             <button type="button" class="stat @(_stock == "" ? "is-active" : "")" @onclick='() => _stock = ""'>
                 <span class="stat-icon"><i class="bi bi-box-seam" aria-hidden="true"></i></span>
-                <span><span class="stat-value">@_items!.Count</span><span class="stat-label">Items in catalog</span></span>
+                <span><span class="stat-value">@Listed.Count()</span><span class="stat-label">Listed items</span></span>
             </button>
             <button type="button" class="stat @(_stock == "in" ? "is-active" : "")" @onclick='() => _stock = "in"'>
                 <span class="stat-icon is-ok"><i class="bi bi-check-circle" aria-hidden="true"></i></span>
-                <span><span class="stat-value">@_items.Count(i => i.Level == "in")</span><span class="stat-label">In stock</span></span>
+                <span><span class="stat-value">@Listed.Count(i => Level(i) == "in")</span><span class="stat-label">In stock</span></span>
             </button>
             <button type="button" class="stat @(_stock == "low" ? "is-active" : "")" @onclick='() => _stock = "low"'>
                 <span class="stat-icon is-warn"><i class="bi bi-exclamation-circle" aria-hidden="true"></i></span>
-                <span><span class="stat-value">@_items.Count(i => i.Level == "low")</span><span class="stat-label">Low stock</span></span>
+                <span><span class="stat-value">@Listed.Count(i => Level(i) == "low")</span><span class="stat-label">Low stock</span></span>
             </button>
             <button type="button" class="stat @(_stock == "out" ? "is-active" : "")" @onclick='() => _stock = "out"'>
                 <span class="stat-icon is-bad"><i class="bi bi-x-circle" aria-hidden="true"></i></span>
-                <span><span class="stat-value">@_items.Count(i => i.Level == "out")</span><span class="stat-label">Out of stock</span></span>
+                <span><span class="stat-value">@Listed.Count(i => Level(i) == "out")</span><span class="stat-label">Out of stock</span></span>
             </button>
         </div>
 
@@ -60,91 +62,243 @@
             {
                 <div class="table-wrap">
                     <table class="data-table">
-                        <thead>
-                            <tr><th>Stock no.</th><th>Item</th><th>Category</th><th class="t-num">On hand</th><th class="t-num">Reorder at</th><th class="t-num">Unit price</th><th>Status</th></tr>
-                        </thead>
+                        <thead><tr><th>Stock no.</th><th>Item</th><th class="t-num">On hand</th><th class="t-num">Low at</th><th class="t-num">Value</th><th>Status</th><th class="text-end"></th></tr></thead>
                         <tbody>
                             @foreach (var i in Visible)
                             {
-                                <tr class="@(i.IsActive ? "" : "is-dim")" @key="i.ItemId">
+                                <tr @key="i.ItemId">
                                     <td class="text-nowrap">@i.StockNo</td>
-                                    <td><span class="cell-strong">@i.ItemName</span>@if (!string.IsNullOrWhiteSpace(i.Specifications)) {<span class="cell-sub">@i.Specifications</span>}</td>
-                                    <td class="is-muted">@(i.Category ?? "Uncategorized")</td>
-                                    <td class="t-num"><strong>@i.StockOnHand.ToString("N0")</strong> @i.Unit</td>
+                                    <td><span class="cell-strong">@i.ItemName</span><span class="cell-sub">@(i.Category?.CategoryName ?? "Uncategorized")</span></td>
+                                    <td class="t-num"><strong>@i.StockOnHand.ToString("N0")</strong> @i.UnitOfMeasure</td>
                                     <td class="t-num">@i.ReorderLevel.ToString("N0")</td>
-                                    <td class="t-num">₱@i.UnitPrice.ToString("N2")</td>
+                                    <td class="t-num text-nowrap">₱@((i.StockOnHand * i.UnitPrice).ToString("N2"))</td>
                                     <td>
-                                        @if (!i.IsActive) { <span class="badge-pill badge-grey">Inactive</span> }
-                                        else if (i.Level == "out") { <span class="badge-pill badge-bad"><i class="bi bi-x-circle-fill" aria-hidden="true"></i>Out of stock</span> }
-                                        else if (i.Level == "low") { <span class="badge-pill badge-warn"><i class="bi bi-exclamation-circle-fill" aria-hidden="true"></i>Low stock</span> }
-                                        else { <span class="badge-pill badge-ok"><i class="bi bi-check-circle-fill" aria-hidden="true"></i>In stock</span> }
+                                        <span class="badge-pill @LevelBadge(i)"><i class="bi @LevelIcon(i)" aria-hidden="true"></i>@LevelLabel(i)</span>
                                     </td>
+                                    <td class="text-end"><a class="act" href="/inventory/@i.ItemId"><i class="bi bi-journal-text" aria-hidden="true"></i>Stock card</a></td>
                                 </tr>
                             }
                         </tbody>
                     </table>
                 </div>
+                <div class="panel-body border-top d-flex justify-content-end">
+                    <strong>Total value on hand: ₱@Visible.Sum(i => i.StockOnHand * i.UnitPrice).ToString("N2")</strong>
+                </div>
             }
         </section>
-
-        <p class="small text-muted-2"><i class="bi bi-info-circle" aria-hidden="true"></i> Recording deliveries and stock adjustments will be added to this page next.</p>
     }
 </div>
+
+@* ── Receive delivery ── *@
+<Dialog Show="_receiveOpen" Title="Receive delivery" Icon="bi-truck" Size="xl" OnClose="() => _receiveOpen = false">
+    <ChildContent>
+        <div class="row g-3">
+            <div class="col-sm-4">
+                <label class="form-label" for="r-ref">IAR / delivery receipt no.</label>
+                <input id="r-ref" class="form-control" maxlength="50" autocomplete="off" @bind="_reference" placeholder="IAR 2026-10-015" />
+            </div>
+            <div class="col-sm-4">
+                <label class="form-label" for="r-date">Date received</label>
+                <input id="r-date" type="date" class="form-control" autocomplete="off" @bind="_receivedOn" max="@(PhTime.Now.ToString("yyyy-MM-dd"))" />
+            </div>
+            <div class="col-sm-4">
+                <label class="form-label" for="r-notes">Remarks</label>
+                <input id="r-notes" class="form-control" maxlength="500" autocomplete="off" @bind="_remarks" placeholder="Optional, e.g. PS-DBM, PO no." />
+            </div>
+        </div>
+
+        <table class="data-table mt-3">
+            <thead><tr><th style="min-width: 260px">Item</th><th class="t-num" style="width: 120px">Quantity</th><th class="t-num" style="width: 150px">Unit cost (₱)</th><th style="width: 48px"></th></tr></thead>
+            <tbody>
+                @for (var n = 0; n < _lines.Count; n++)
+                {
+                    var line = _lines[n];
+                    var index = n;
+                    <tr>
+                        <td><Picker TValue="int" Id="@($"r-item-{index}")" Options="ItemOptions" Value="line.ItemId" ValueChanged="v => SetLineItem(line, v)" /></td>
+                        <td><input type="number" min="1" class="form-control text-end" autocomplete="off" aria-label="Quantity" @bind="line.Quantity" /></td>
+                        <td><input type="number" min="0" step="0.01" class="form-control text-end" autocomplete="off" aria-label="Unit cost" @bind="line.UnitCost" /></td>
+                        <td>
+                            @if (_lines.Count > 1)
+                            {
+                                <button type="button" class="act is-danger" aria-label="Remove line" @onclick="() => _lines.RemoveAt(index)"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <button type="button" class="btn btn-link px-0 mt-1" @onclick="() => _lines.Add(new ReceiptLine())"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Add another item</button>
+
+        <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" id="r-prices" @bind="_updatePrices" />
+            <label class="form-check-label" for="r-prices">Update catalog prices to these unit costs</label>
+        </div>
+        @if (_formError is not null)
+        {
+            <div class="form-error" role="alert"><i class="bi bi-exclamation-circle" aria-hidden="true"></i>@_formError</div>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-light" @onclick="() => _receiveOpen = false">Cancel</button>
+        <button type="button" class="btn btn-primary" @onclick="ReceiveAsync">
+            Record delivery
+        </button>
+    </Footer>
+</Dialog>
+
+@* ── Adjust stock ── *@
+<Dialog Show="_adjustOpen" Title="Adjust stock" Icon="bi-sliders2" Variant="warning" OnClose="() => _adjustOpen = false">
+    <ChildContent>
+        <p class="am-message">Use this to correct the count after a physical inventory, or for damaged, expired or lost items. It's recorded on the item's stock card.</p>
+        <div class="field">
+            <label class="form-label" for="a-item">Item</label>
+            <Picker TValue="int" Id="a-item" Options="ItemOptions" @bind-Value="_adjItemId" />
+        </div>
+        <div class="row g-3 mt-0">
+            <div class="col-sm-6">
+                <label class="form-label" for="a-dir">Change</label>
+                <Picker TValue="string" Id="a-dir" Options="DirectionOptions" @bind-Value="_adjDirection" />
+            </div>
+            <div class="col-sm-6">
+                <label class="form-label" for="a-qty">Quantity</label>
+                <input id="a-qty" type="number" min="1" class="form-control text-end" autocomplete="off" @bind="_adjQty" />
+            </div>
+        </div>
+        <div class="field mt-3">
+            <label class="form-label" for="a-reason">Reason</label>
+            <input id="a-reason" class="form-control" maxlength="500" autocomplete="off" @bind="_adjReason" placeholder="Physical count, October 2026" />
+        </div>
+        @if (_adjItemId != 0 && _items?.FirstOrDefault(i => i.ItemId == _adjItemId) is { } sel)
+        {
+            <p class="small text-muted-2 mt-2 mb-0">On hand now: <strong>@sel.StockOnHand @sel.UnitOfMeasure</strong>. After: <strong>@(_adjDirection == "in" ? sel.StockOnHand + _adjQty : sel.StockOnHand - _adjQty) @sel.UnitOfMeasure</strong></p>
+        }
+        @if (_formError is not null)
+        {
+            <div class="form-error" role="alert"><i class="bi bi-exclamation-circle" aria-hidden="true"></i>@_formError</div>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-light" @onclick="() => _adjustOpen = false">Cancel</button>
+        <button type="button" class="btn btn-primary" @onclick="AdjustAsync">Save adjustment</button>
+    </Footer>
+</Dialog>
 
 @code {
     [SupplyParameterFromQuery(Name = "stock")] public string? StockQuery { get; set; }
 
-    public sealed class ItemRow
-    {
-        public long ItemId { get; set; }
-        public string StockNo { get; set; } = "";
-        public string ItemName { get; set; } = "";
-        public string? Specifications { get; set; }
-        public string Unit { get; set; } = "";
-        public string? Category { get; set; }
-        public long StockOnHand { get; set; }
-        public long ReorderLevel { get; set; }
-        public decimal UnitPrice { get; set; }
-        public bool IsActive { get; set; }
+    private static readonly IReadOnlyList<PickOption<string>> DirectionOptions =
+        [new("out", "Remove from stock", "Damaged, expired, lost, or the count is lower"), new("in", "Add to stock", "Found items, or the count is higher")];
 
-        public string Level => StockOnHand <= 0 ? "out" : StockOnHand <= ReorderLevel ? "low" : "in";
+    private List<SupplyItem>? _items;
+    private string _search = "", _stock = "";
+    private uint _userId;
+
+    private bool _receiveOpen, _adjustOpen, _updatePrices = true;
+    private string _reference = "", _remarks = "", _adjReason = "", _adjDirection = "out";
+    private DateTime _receivedOn = PhTime.Now.Date;
+    private List<ReceiptLine> _lines = [];
+    private int _adjItemId, _adjQty = 1;
+    private string? _formError;
+
+    private IEnumerable<SupplyItem> Listed => (_items ?? new List<SupplyItem>()).Where(i => i.IsActive);
+
+    private IEnumerable<SupplyItem> Visible
+    {
+        get
+        {
+            var t = _search.Trim();
+            return Listed.Where(i => _stock == "" || Level(i) == _stock)
+                .Where(i => t.Length == 0 || i.ItemName.Contains(t, StringComparison.OrdinalIgnoreCase)
+                         || i.StockNo.Contains(t, StringComparison.OrdinalIgnoreCase)
+                         || (i.Specifications?.Contains(t, StringComparison.OrdinalIgnoreCase) ?? false))
+                .OrderBy(i => Level(i) switch { "out" => 0, "low" => 1, _ => 2 }).ThenBy(i => i.ItemName);
+        }
     }
 
-    private List<ItemRow>? _items;
-    private bool _missing;
-    private string _search = "";
-    private string _stock = "";
+    private IReadOnlyList<PickOption<int>> ItemOptions =>
+        [new(0, "Select an item"), .. Listed.OrderBy(i => i.ItemName).Select(i => new PickOption<int>(i.ItemId, i.ItemName, $"{i.StockNo}, {i.StockOnHand} {i.UnitOfMeasure} on hand"))];
 
-    private IEnumerable<ItemRow> Visible => (_items ?? new List<ItemRow>())
-        .Where(i => _stock == "" || (i.IsActive && i.Level == _stock))
-        .Where(i => string.IsNullOrWhiteSpace(_search)
-                 || i.ItemName.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase)
-                 || i.StockNo.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase)
-                 || (i.Specifications?.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase) ?? false));
+    private static string LevelBadge(SupplyItem i) => Level(i) switch { "out" => "badge-bad", "low" => "badge-warn", _ => "badge-ok" };
+    private static string LevelIcon(SupplyItem i) => Level(i) switch { "out" => "bi-x-circle-fill", "low" => "bi-exclamation-circle-fill", _ => "bi-check-circle-fill" };
+    private static string LevelLabel(SupplyItem i) => Level(i) switch { "out" => "Out of stock", "low" => "Low stock", _ => "In stock" };
+
+    private static string Level(SupplyItem i) => i.StockOnHand <= 0 ? "out" : i.StockOnHand <= i.ReorderLevel ? "low" : "in";
 
     protected override async Task OnInitializedAsync()
     {
         _stock = StockQuery is "in" or "low" or "out" ? StockQuery : "";
-        try
-        {
-            await using var db = await DbFactory.CreateDbContextAsync();
-            _items = await db.Database.SqlQuery<ItemRow>($@"
-                SELECT CAST(i.item_id AS SIGNED) AS ItemId, i.stock_no AS StockNo, i.item_name AS ItemName,
-                       i.specifications AS Specifications, i.unit_of_measure AS Unit, c.category_name AS Category,
-                       CAST(i.stock_on_hand AS SIGNED) AS StockOnHand, CAST(i.reorder_level AS SIGNED) AS ReorderLevel,
-                       i.unit_price AS UnitPrice, i.is_active AS IsActive
-                  FROM supply_items i
-                  LEFT JOIN item_categories c ON c.category_id = i.category_id
-                 ORDER BY i.is_active DESC, COALESCE(c.sort_order, 999), i.item_name").ToListAsync();
-        }
-        catch (Exception ex) when (ex.GetBaseException().Message.Contains("doesn't exist"))
-        {
-            _missing = true;
-        }
-        catch (Exception ex)
-        {
-            Log.LogError(ex, "Inventory failed to load");
-            _items = [];
-        }
+        var user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        uint.TryParse(user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out _userId);
+        _items = await CatalogSvc.ItemsAsync();
+        Live.Changed += OnLiveAsync;
+    }
+
+    // Approvals deduct stock; refresh the figures when that happens.
+    private async Task OnLiveAsync(IReadOnlyList<RisEvent> _)
+    {
+        _items = await CatalogSvc.ItemsAsync();
+        StateHasChanged();
+    }
+
+    public void Dispose() => Live.Changed -= OnLiveAsync;
+
+    private void OpenReceive()
+    {
+        _reference = _remarks = "";
+        _receivedOn = PhTime.Now.Date;
+        _lines = [new ReceiptLine()];
+        _formError = null;
+        _receiveOpen = true;
+    }
+
+    private void SetLineItem(ReceiptLine line, int itemId)
+    {
+        line.ItemId = itemId;
+        if (line.UnitCost == 0 && _items?.FirstOrDefault(i => i.ItemId == itemId) is { } item) line.UnitCost = item.UnitPrice;
+    }
+
+    private async Task ReceiveAsync()
+    {
+        _formError = null;
+        var count = _lines.Count(l => l.ItemId != 0);
+        var ok = await Modal.ConfirmAsync("Record this delivery?",
+            $"{count} item(s) will be added to the warehouse count under {_reference.Trim()}.",
+            "Record delivery", "Go back", ModalVariant.Success,
+            onConfirmAsync: async _ =>
+            {
+                var r = await Stock.ReceiveAsync(_userId, _reference, _receivedOn, _remarks, _lines, _updatePrices);
+                return r.Ok ? null : r.Message;
+            });
+        if (!ok) return;
+        _receiveOpen = false;
+        _items = await CatalogSvc.ItemsAsync();
+        await JS.InvokeVoidAsync("showToast", "Delivery recorded.", "success");
+    }
+
+    private void OpenAdjust()
+    {
+        _adjItemId = 0; _adjQty = 1; _adjDirection = "out"; _adjReason = "";
+        _formError = null;
+        _adjustOpen = true;
+    }
+
+    private async Task AdjustAsync()
+    {
+        _formError = _adjItemId == 0 ? "Select the item." : null;
+        if (_formError is not null) return;
+        var item = _items!.First(i => i.ItemId == _adjItemId);
+        var ok = await Modal.ConfirmAsync("Save this adjustment?",
+            $"{(_adjDirection == "in" ? "Add" : "Remove")} {_adjQty} {item.UnitOfMeasure} of {item.ItemName}. Reason: {_adjReason.Trim()}",
+            "Save adjustment", "Go back", ModalVariant.Warning,
+            onConfirmAsync: async _ =>
+            {
+                var r = await Stock.AdjustAsync(_userId, _adjItemId, _adjDirection == "in", _adjQty, _adjReason);
+                return r.Ok ? null : r.Message;
+            });
+        if (!ok) return;
+        _adjustOpen = false;
+        _items = await CatalogSvc.ItemsAsync();
+        await JS.InvokeVoidAsync("showToast", "Stock adjusted.", "success");
     }
 }

@@ -100,7 +100,14 @@
                                     <td>
                                         <div class="row-actions justify-content-end">
                                             <button type="button" class="act" @onclick="() => ShowActivityAsync(u)"><i class="bi bi-clock-history" aria-hidden="true"></i>Activity</button>
-                                            <button type="button" class="act" @onclick="() => OpenReset(u)"><i class="bi bi-key" aria-hidden="true"></i>Reset password</button>
+                                            @if (u.UserId != _currentUserId)
+                                            {
+                                                <button type="button" class="act" @onclick="() => OpenReset(u)"><i class="bi bi-key" aria-hidden="true"></i>Reset password</button>
+                                            }
+                                            else
+                                            {
+                                                <a class="act" href="/profile"><i class="bi bi-key" aria-hidden="true"></i>Change in My profile</a>
+                                            }
                                             @if (u.UserId != _currentUserId)
                                             {
                                                 @if (u.IsActive)
@@ -129,23 +136,13 @@
     <ChildContent>
         <div class="field">
             <label class="form-label" for="a-role">Account type</label>
-            <select id="a-role" class="form-select" @bind="_nRole">
-                <option value="Admin">AMS Admin</option>
-                <option value="SuperAdmin">AMS Super Admin (can manage accounts)</option>
-                <option value="Office">Office (AMS Supplies portal)</option>
-            </select>
+            <Picker TValue="string" Id="a-role" Options="RoleOptions" @bind-Value="_nRole" />
         </div>
         @if (_nRole == "Office")
         {
             <div class="field">
                 <label class="form-label" for="a-office">Office</label>
-                <select id="a-office" class="form-select" @bind="_nOfficeId">
-                    <option value="0">Select an office</option>
-                    @foreach (var o in _offices)
-                    {
-                        <option value="@o.OfficeId">@o.OfficeAcronym, @o.OfficeName</option>
-                    }
-                </select>
+                <Picker TValue="int" Id="a-office" Options="OfficeChoices" @bind-Value="_nOfficeId" />
             </div>
         }
         <div class="field">
@@ -174,7 +171,7 @@
                     <i class="bi bi-magic me-1" aria-hidden="true"></i>Generate
                 </button>
             </div>
-            <div class="form-text">At least 8 characters. They'll be asked to change it the first time they sign in.</div>
+            <div class="form-text">At least 8 characters, with letters and numbers. They'll be asked to change it the first time they sign in.</div>
         </div>
         @if (_formError is not null)
         {
@@ -205,7 +202,7 @@
                     <i class="bi bi-magic me-1" aria-hidden="true"></i>Generate
                 </button>
             </div>
-            <div class="form-text">At least 8 characters.</div>
+            <div class="form-text">At least 8 characters, with letters and numbers. Anyone signed in with the old password is signed out within 5 minutes.</div>
         </div>
         <div class="form-check mt-3">
             <input class="form-check-input" type="checkbox" id="r-require" @bind="_resetRequireChange" />
@@ -296,6 +293,16 @@
     private User? _activityUser;
     private List<UserActivity>? _activities;
 
+    private static readonly IReadOnlyList<PickOption<string>> RoleOptions =
+    [
+        new("Admin", "AMS Admin", "Uses this site"),
+        new("SuperAdmin", "AMS Super Admin", "Uses this site and can manage accounts"),
+        new("Office", "Office account", "Requests supplies through the AMS Supplies portal"),
+    ];
+
+    private IReadOnlyList<PickOption<int>> OfficeChoices =>
+        [new(0, "Select an office"), .. _offices.Select(o => new PickOption<int>(o.OfficeId, o.OfficeAcronym, o.OfficeName))];
+
     private IEnumerable<User> Visible
     {
         get
@@ -326,6 +333,8 @@
         UserRole.Admin => "Admin",
         _ => $"Office, {u.Office?.OfficeAcronym ?? "unassigned"}",
     };
+
+    private static bool StrongEnough(string p) => p.Length >= 8 && p.Any(char.IsLetter) && p.Any(char.IsDigit);
 
     private static bool RecentlyActive(User u) => u.IsActive && u.LastLoginAt > PhTime.Now.AddMinutes(-30);
 
@@ -365,7 +374,7 @@
         else if (role == UserRole.Office && _nOfficeId == 0) _formError = "Select the office for this account.";
         else if (username.Length < 3 || username.Any(char.IsWhiteSpace)) _formError = "The username needs at least 3 characters and no spaces.";
         else if (!email.Contains('@') || !email.Contains('.')) _formError = "Enter a valid email address.";
-        else if (_nPassword.Length < 8) _formError = "The password needs at least 8 characters.";
+        else if (!StrongEnough(_nPassword)) _formError = "The password needs at least 8 characters, with letters and numbers. Use Generate for a strong one.";
         if (_formError is not null) return;
 
         _saving = true;
@@ -410,7 +419,7 @@
     private async Task ResetAsync()
     {
         if (_resetUser is null) return;
-        _formError = _resetPassword.Length < 8 ? "The password needs at least 8 characters." : null;
+        _formError = !StrongEnough(_resetPassword) ? "The password needs at least 8 characters, with letters and numbers. Use Generate for a strong one." : null;
         if (_formError is not null) return;
 
         _saving = true;

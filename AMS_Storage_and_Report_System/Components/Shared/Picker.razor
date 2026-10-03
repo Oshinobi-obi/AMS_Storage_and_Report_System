@@ -1,0 +1,139 @@
+@typeparam TValue
+@* Dropdown that replaces the browser's <select>. The list is exactly as wide as the
+   field, long text wraps instead of spilling out, and lists with many choices get a
+   filter box. Works with any value type:
+   <Picker TValue="int" Id="f-office" Options="OfficeOptions" @bind-Value="_officeId" @bind-Value:after="ReloadAsync" /> *@
+
+<div class="picker @(_open ? "is-open" : "")">
+    <button type="button" id="@Id" class="form-select picker-toggle" disabled="@Disabled"
+            aria-haspopup="listbox" aria-expanded="@(_open ? "true" : "false")"
+            @onclick="Toggle">
+        @if (Selected is null)
+        {
+            <span class="picker-placeholder">@Placeholder</span>
+        }
+        else
+        {
+            <span class="picker-label">@Selected.Label</span>
+            @if (!string.IsNullOrEmpty(Selected.Detail))
+            {
+                <span class="picker-sep">, </span><span class="picker-detail">@Selected.Detail</span>
+            }
+        }
+    </button>
+
+    @if (_open)
+    {
+        <div class="picker-backdrop" @onclick="Close"></div>
+        <div class="picker-panel">
+            @if (Searchable)
+            {
+                <div class="picker-search">
+                    <i class="bi bi-search" aria-hidden="true"></i>
+                    <input @ref="_searchBox" type="search" autocomplete="off" placeholder="Type to filter"
+                           aria-label="Filter choices" value="@_filter" @oninput="OnFilter" @onkeydown="OnKeyDownAsync" />
+                </div>
+            }
+            <ul class="picker-list" role="listbox" tabindex="-1" @ref="_list" aria-labelledby="@Id"
+                @onkeydown="OnKeyDownAsync" @onkeydown:preventDefault="true">
+                @for (var i = 0; i < Visible.Count; i++)
+                {
+                    var option = Visible[i];
+                    var index = i;
+                    <li role="option" aria-selected="@(IsSelected(option) ? "true" : "false")"
+                        class="picker-option @(index == _active ? "is-active" : "") @(IsSelected(option) ? "is-selected" : "")"
+                        @onclick="() => ChooseAsync(option)" @onmouseenter="() => _active = index">
+                        <span class="picker-name">@option.Label</span>
+                        @if (!string.IsNullOrEmpty(option.Detail))
+                        {
+                            <span class="picker-position">@option.Detail</span>
+                        }
+                    </li>
+                }
+                @if (Visible.Count == 0)
+                {
+                    <li class="picker-empty">No matches for “@_filter”</li>
+                }
+            </ul>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+    [Parameter, EditorRequired] public IReadOnlyList<PickOption<TValue>> Options { get; set; } = [];
+    [Parameter] public TValue Value { get; set; } = default!;
+    [Parameter] public EventCallback<TValue> ValueChanged { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "Select";
+    [Parameter] public bool Disabled { get; set; }
+    /// Lists longer than this get a filter box.
+    [Parameter] public int SearchThreshold { get; set; } = 8;
+
+    private ElementReference _list, _searchBox;
+    private bool _open, _focusPending;
+    private int _active;
+    private string _filter = "";
+
+    private bool Searchable => Options.Count > SearchThreshold;
+
+    private PickOption<TValue>? Selected =>
+        Options.FirstOrDefault(o => EqualityComparer<TValue>.Default.Equals(o.Value, Value));
+
+    private bool IsSelected(PickOption<TValue> o) => EqualityComparer<TValue>.Default.Equals(o.Value, Value);
+
+    private List<PickOption<TValue>> Visible => string.IsNullOrWhiteSpace(_filter)
+        ? Options.ToList()
+        : Options.Where(o => o.Label.Contains(_filter.Trim(), StringComparison.OrdinalIgnoreCase)
+                          || (o.Detail?.Contains(_filter.Trim(), StringComparison.OrdinalIgnoreCase) ?? false)).ToList();
+
+    private void Toggle()
+    {
+        if (_open) { Close(); return; }
+        _open = true;
+        _filter = "";
+        _focusPending = true;
+        _active = Math.Max(0, Visible.FindIndex(IsSelected));
+    }
+
+    private void Close() => _open = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusPending || !_open) return;
+        _focusPending = false;
+        try { await (Searchable ? _searchBox : _list).FocusAsync(); } catch { /* closed meanwhile */ }
+    }
+
+    private void OnFilter(ChangeEventArgs e)
+    {
+        _filter = e.Value?.ToString() ?? "";
+        _active = 0;
+    }
+
+    private async Task ChooseAsync(PickOption<TValue> option)
+    {
+        _open = false;
+        if (!IsSelected(option)) await ValueChanged.InvokeAsync(option.Value);
+    }
+
+    private async Task OnKeyDownAsync(KeyboardEventArgs e)
+    {
+        var visible = Visible;
+        var last = visible.Count - 1;
+        switch (e.Key)
+        {
+            case "ArrowDown": _active = Math.Min(last, _active + 1); break;
+            case "ArrowUp": _active = Math.Max(0, _active - 1); break;
+            case "Home" when !Searchable: _active = 0; break;
+            case "End" when !Searchable: _active = last; break;
+            case "Enter":
+            case " " when !Searchable:
+                if (_active >= 0 && _active <= last) await ChooseAsync(visible[_active]);
+                break;
+            case "Escape":
+            case "Tab":
+                Close();
+                break;
+        }
+    }
+}

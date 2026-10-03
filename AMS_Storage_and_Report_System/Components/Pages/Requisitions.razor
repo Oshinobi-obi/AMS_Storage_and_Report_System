@@ -1,17 +1,184 @@
 @page "/requisitions"
 @layout AppLayout
 @attribute [Authorize]
+@inject RequisitionAdminService RisService
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject ILogger<Requisitions> Log
+@inject LiveRefresh Live
+@implements IDisposable
 
 <PageTitle>Requisitions | AMS StockWatch</PageTitle>
 
 <PageHeader Title="Requisitions" Subtitle="Requisition and Issue Slips submitted by offices through the AMS Supplies portal." />
 
 <div class="wrap page-body">
-    <ComingSoon Icon="bi-inbox" Heading="The approval queue is being built next"
-                Description="This page will list every RIS waiting for AMS, so you can:"
-                Planned="@(new[] {
-                    "Review each slip next to the warehouse stock",
-                    "Lower issue quantities for partial issue",
-                    "Approve or reject with a reason (with confirmation)",
-                    "Record who received the items, and print the RIS" })" />
+    @if (_error)
+    {
+        <div class="empty-state">
+            <i class="bi bi-database-exclamation" aria-hidden="true"></i>
+            <h2>Requisitions couldn't load</h2>
+            <p>Make sure the AMS Supplies database update (<code>001_requisition_portal.sql</code>) has been run, then reload.</p>
+        </div>
+    }
+    else
+    {
+        <div class="stat-grid">
+            @foreach (var t in Tabs)
+            {
+                <button type="button" class="stat @(_status == t.Status ? "is-active" : "")" @onclick="() => SelectAsync(t.Status)">
+                    <span class="stat-icon @t.Tone"><i class="bi @t.Icon" aria-hidden="true"></i></span>
+                    <span><span class="stat-value">@Count(t.Status)</span><span class="stat-label">@t.Label</span></span>
+                </button>
+            }
+        </div>
+
+        <section class="panel">
+            <header class="panel-head">
+                <div class="filters flex-grow-1">
+                    <div>
+                        <label class="form-label" for="q-search">Search</label>
+                        <div class="input-icon">
+                            <i class="bi bi-search" aria-hidden="true"></i>
+                            <input id="q-search" type="search" class="form-control" placeholder="RIS no., office or purpose"
+                                   autocomplete="off" @bind="_search" @bind:event="oninput" />
+                        </div>
+                    </div>
+                    <div>
+                        <label class="form-label" for="q-office">Office</label>
+                        <Picker TValue="int" Id="q-office" Options="OfficeOptions" @bind-Value="_officeId" />
+                    </div>
+                </div>
+            </header>
+
+            @if (_rows is null)
+            {
+                <div class="loading">Loading requisitions…</div>
+            }
+            else if (!Visible.Any())
+            {
+                <div class="empty-state">
+                    <i class="bi @(_status == RisStatus.Pending ? "bi-check2-circle" : "bi-inbox")" aria-hidden="true"></i>
+                    <h2>@(_status == RisStatus.Pending && _rows.Count == 0 ? "All caught up" : "No requisitions here")</h2>
+                    <p>@(_status == RisStatus.Pending && _rows.Count == 0
+                        ? "No office is waiting for AMS right now."
+                        : "Try another status, office or search word.")</p>
+                </div>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>RIS no.</th><th>Office</th><th>Purpose</th><th class="t-num">Items</th><th class="t-num">Amount</th><th>Submitted</th><th>Status</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var r in Visible)
+                            {
+                                <tr @key="r.RisId">
+                                    <td class="cell-strong text-nowrap">@r.RisNo</td>
+                                    <td><span class="cell-strong">@r.OfficeAcronym</span><span class="cell-sub">@r.OfficeName</span></td>
+                                    <td><span class="d-inline-block text-truncate" style="max-width: 260px" title="@r.Purpose">@r.Purpose</span></td>
+                                    <td class="t-num">@r.ItemCount</td>
+                                    <td class="t-num text-nowrap">₱@r.Amount.ToString("N2")</td>
+                                    <td class="text-nowrap">@r.RequestedAt.ToString("MMM d, yyyy")<span class="cell-sub">@Age(r.RequestedAt)</span></td>
+                                    <td><span class="badge-pill @RisStatus.Badge(r.Status)">@RisStatus.Label(r.Status)</span></td>
+                                    <td class="text-end">
+                                        <a class="btn btn-sm @(r.Status == RisStatus.Pending ? "btn-primary" : "btn-outline-primary")" href="/requisitions/@r.RisId">
+                                            @(r.Status == RisStatus.Pending ? "Review" : r.Status == RisStatus.Approved ? "Release" : "View")
+                                        </a>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    }
 </div>
+
+@code {
+    private sealed record Tab(string Status, string Label, string Icon, string Tone);
+    private static readonly Tab[] Tabs =
+    [
+        new(RisStatus.Pending, "Waiting for approval", "bi-hourglass-split", "is-gold"),
+        new(RisStatus.Approved, "Approved, to be released", "bi-box-arrow-up-right", ""),
+        new(RisStatus.Issued, "Issued", "bi-check2-circle", "is-ok"),
+        new(RisStatus.Rejected, "Rejected", "bi-x-circle", "is-bad"),
+        new("", "All requisitions", "bi-collection", ""),
+    ];
+
+    private string _status = RisStatus.Pending;
+    private List<QueueRow>? _rows;
+    private Dictionary<string, int> _counts = new();
+    private List<Office> _offices = [];
+    private int _officeId;
+    private string _search = "";
+    private bool _error;
+
+    private int Count(string status) => status == "" ? _counts.Values.Sum() : _counts.GetValueOrDefault(status);
+
+    private IReadOnlyList<PickOption<int>> OfficeOptions =>
+        [new(0, "All offices"), .. _offices.Select(o => new PickOption<int>(o.OfficeId, o.OfficeAcronym, o.OfficeName))];
+
+    private IEnumerable<QueueRow> Visible
+    {
+        get
+        {
+            var term = _search.Trim();
+            return (_rows ?? new List<QueueRow>())
+                .Where(r => _officeId == 0 || r.OfficeId == _officeId)
+                .Where(r => term.Length == 0
+                    || r.RisNo.Contains(term, StringComparison.OrdinalIgnoreCase)
+                    || r.OfficeAcronym.Contains(term, StringComparison.OrdinalIgnoreCase)
+                    || r.OfficeName.Contains(term, StringComparison.OrdinalIgnoreCase)
+                    || r.Purpose.Contains(term, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private static string Age(DateTime at)
+    {
+        var days = (PhTime.Now.Date - at.Date).Days;
+        return days switch { 0 => "Today", 1 => "Yesterday", _ => $"{days} days ago" };
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await using (var db = await DbFactory.CreateDbContextAsync())
+                _offices = await db.Offices.AsNoTracking().OrderBy(o => o.OfficeAcronym).ToListAsync();
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Requisition queue failed to load");
+            _error = true;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _counts = await RisService.CountByStatusAsync();
+        _rows = await RisService.QueueAsync(_status == "" ? null : _status);
+    }
+
+    protected override void OnInitialized() => Live.Changed += OnLiveAsync;
+
+    // New, cancelled or updated requisitions appear without reloading the page.
+    private async Task OnLiveAsync(IReadOnlyList<RisEvent> _)
+    {
+        if (_error) return;
+        await LoadAsync();
+        StateHasChanged();
+    }
+
+    public void Dispose() => Live.Changed -= OnLiveAsync;
+
+    private async Task SelectAsync(string status)
+    {
+        _status = status;
+        _rows = null;
+        await LoadAsync();
+    }
+}

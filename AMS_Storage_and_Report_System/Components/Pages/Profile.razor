@@ -178,6 +178,13 @@
 
 @code {
     [SupplyParameterFromQuery(Name = "requirePasswordChange")] public bool RequirePasswordChange { get; set; }
+    [SupplyParameterFromQuery(Name = "passwordChanged")] public bool PasswordChanged { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && PasswordChanged)
+            await JS.InvokeVoidAsync("showToast", "Password changed. Other devices signed in with the old password will be signed out.", "success");
+    }
 
     private const long MaxPictureBytes = 5 * 1024 * 1024;
     private static readonly string[] PictureTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
@@ -306,10 +313,9 @@
             await db.SaveChangesAsync();
 
             _passwordOpen = false;
-            if (wasRequired)
-                RefreshSession("/dashboard");   // clears the "must change" flag in the sign-in cookie
-            else
-                await JS.InvokeVoidAsync("showToast", "Password changed.", "success");
+            // Always re-issue the sign-in cookie: it carries a fingerprint of the password,
+            // and other sessions using the old password are signed out within 5 minutes.
+            RefreshSession(wasRequired ? "/dashboard" : "/profile?passwordChanged=true");
         }
         catch (Exception ex)
         {

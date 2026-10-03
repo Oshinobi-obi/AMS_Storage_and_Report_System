@@ -1,0 +1,76 @@
+@* Live updates for AMS: listens for requisition changes made on either website,
+   refreshes open pages silently, and announces new requisitions with a sound,
+   a toast and (when the tab is in the background) a desktop notification. *@
+@implements IDisposable
+@inject RisEventFeed Feed
+@inject LiveRefresh Refresh
+@inject IJSRuntime JS
+
+@if (_showPrompt)
+{
+    <div class="notify-prompt" role="region" aria-label="Notifications">
+        <i class="bi bi-bell-fill" aria-hidden="true"></i>
+        <span>Turn on notifications so you're alerted to new requisitions even while this tab is in the background.</span>
+        <button type="button" class="btn btn-sm btn-accent" @onclick="EnableAsync">Turn on</button>
+        <button type="button" class="btn btn-sm notify-later" @onclick="() => _showPrompt = false">Not now</button>
+    </div>
+}
+
+@code {
+    private const string NewRequestSound = "sounds/Admin_Request.mp3";
+    private bool _ready, _showPrompt;
+
+    protected override void OnInitialized() => Feed.Changed += OnFeed;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            await JS.InvokeVoidAsync("amsLive.preload", (object)new[] { NewRequestSound });   // (object): send ONE array, not one argument per sound
+            _showPrompt = await JS.InvokeAsync<string>("amsLive.permission") == "default";
+            _ready = true;
+            if (_showPrompt) StateHasChanged();
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    private void OnFeed(IReadOnlyList<RisEvent> events) => _ = InvokeAsync(async () =>
+    {
+        if (!_ready) return;
+        await Refresh.RaiseAsync(events);   // pages reload their data quietly
+
+        try
+        {
+            var created = events.Where(e => e.ToStatus == "PendingApproval").ToList();
+            if (created.Count == 1)
+            {
+                var e = created[0];
+                await JS.InvokeVoidAsync("showToast", $"New requisition {e.RisNo} from {e.OfficeAcronym}.", "success");
+                await JS.InvokeVoidAsync("amsLive.notify", "New requisition",
+                    $"RIS {e.RisNo} from {e.OfficeAcronym} is waiting for approval.", NewRequestSound, $"/requisitions/{e.RisId}");
+            }
+            else if (created.Count > 1)
+            {
+                await JS.InvokeVoidAsync("showToast", $"{created.Count} new requisitions are waiting for approval.", "success");
+                await JS.InvokeVoidAsync("amsLive.notify", "New requisitions",
+                    $"{created.Count} requisitions are waiting for approval.", NewRequestSound, "/requisitions");
+            }
+
+            foreach (var e in events.Where(e => e.ToStatus == "Cancelled"))
+                await JS.InvokeVoidAsync("showToast", $"{e.OfficeAcronym} cancelled RIS {e.RisNo}.", "danger");
+        }
+        catch (JSDisconnectedException) { }
+    });
+
+    private async Task EnableAsync()
+    {
+        _showPrompt = false;
+        var result = await JS.InvokeAsync<string>("amsLive.requestPermission");
+        await JS.InvokeVoidAsync("showToast",
+            result == "granted" ? "Notifications are on." : "Notifications are off. You can turn them on later in the browser's site settings.",
+            result == "granted" ? "success" : "danger");
+    }
+
+    public void Dispose() => Feed.Changed -= OnFeed;
+}

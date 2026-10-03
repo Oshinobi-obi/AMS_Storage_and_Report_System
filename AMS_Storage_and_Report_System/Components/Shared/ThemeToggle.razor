@@ -1,0 +1,31 @@
+@* Light / dark switch. Moon = switch to dark; sun = switch back to light. Remembered per browser. *@
+@inject IJSRuntime JS
+
+<button type="button" class="theme-toggle @Class" @onclick="ToggleAsync"
+        aria-label="@(_dark ? "Switch to light mode" : "Switch to dark mode")"
+        title="@(_dark ? "Light mode" : "Dark mode")">
+    <i class="bi @(_dark ? "bi-sun-fill" : "bi-moon-stars-fill")" aria-hidden="true"></i>
+    @if (ShowLabel)
+    {
+        <span>@(_dark ? "Light mode" : "Dark mode")</span>
+    }
+</button>
+
+@code {
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public bool ShowLabel { get; set; }
+    private bool _dark;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            _dark = await JS.InvokeAsync<string>("amsUi.current") == "dark";
+            StateHasChanged();
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task ToggleAsync() => _dark = await JS.InvokeAsync<string>("amsUi.toggle") == "dark";
+}
