@@ -1,0 +1,141 @@
+@page "/activity"
+@layout AppLayout
+@attribute [Authorize(Roles = "SuperAdmin,Admin")]
+@inject AdminExtrasService Extras
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Activity log | AMS StockWatch</PageTitle>
+
+<PageHeader Title="Activity log" Subtitle="Who did what and when, on both websites: sign-ins, approvals, issuances, changes and deletions.">
+    <Actions>
+        <a class="btn btn-light" href="/account"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i> Accounts</a>
+    </Actions>
+</PageHeader>
+
+<div class="wrap page-body">
+    @if (!_isSuperAdmin)
+    {
+        <NoAccess Title="Only Super Admins can view the activity log" Message="Ask a Super Admin if you need to check a past action." />
+    }
+    else
+    {
+        <section class="panel">
+            <header class="panel-head">
+                <div class="filters flex-grow-1">
+                    <div>
+                        <label class="form-label" for="al-search">Search</label>
+                        <div class="input-icon">
+                            <i class="bi bi-search" aria-hidden="true"></i>
+                            <input id="al-search" type="search" class="form-control" placeholder="e.g. RIS 2026-10-0001, password, PPE-2026" autocomplete="off"
+                                   @bind="_filter.Search" @bind:event="oninput" @bind:after="SearchChangedAsync" />
+                        </div>
+                    </div>
+                    <div><label class="form-label" for="al-user">Account</label><Picker TValue="uint" Id="al-user" Options="UserOptions" @bind-Value="_filter.UserId" @bind-Value:after="ReloadAsync" /></div>
+                    <div><label class="form-label" for="al-type">Type</label><Picker TValue="string" Id="al-type" Options="TypeOptions" @bind-Value="_filter.Type" @bind-Value:after="ReloadAsync" /></div>
+                    <div><label class="form-label" for="al-from">From</label><DatePicker Id="al-from" @bind-Value="_filter.From" @bind-Value:after="ReloadAsync" Max="_filter.To" Placeholder="Any date" /></div>
+                    <div><label class="form-label" for="al-to">To</label><DatePicker Id="al-to" @bind-Value="_filter.To" @bind-Value:after="ReloadAsync" Min="_filter.From" Placeholder="Any date" /></div>
+                </div>
+            </header>
+
+            @if (_rows is null)
+            {
+                <div class="loading">Loading activity…</div>
+            }
+            else if (_rows.Count == 0)
+            {
+                <div class="empty-state"><i class="bi bi-clock-history" aria-hidden="true"></i><h2>No activity found</h2><p>Try another account, type or date range.</p></div>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead><tr><th style="width: 170px">When</th><th>Account</th><th>Type</th><th>What happened</th></tr></thead>
+                        <tbody>
+                            @foreach (var r in _rows)
+                            {
+                                <tr>
+                                    <td class="text-nowrap">@r.At.ToString("MMM d, yyyy")<span class="cell-sub">@r.At.ToString("h:mm:ss tt")</span></td>
+                                    <td><span class="cell-strong">@r.User</span><span class="cell-sub">@r.Role</span></td>
+                                    <td><span class="badge-pill @TypeBadge(r.Type)">@r.Type</span></td>
+                                    <td><span>@r.Description</span>@if (!string.IsNullOrEmpty(r.Ip)) {<span class="cell-sub">IP @r.Ip</span>}</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="panel-body border-top d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <span class="text-muted-2">Showing the newest @_rows.Count.ToString("N0")</span>
+                    @if (_more)
+                    {
+                        <button type="button" class="btn btn-outline-primary" @onclick="LoadMoreAsync" disabled="@_loading">
+                            @if (_loading) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
+                            Show @AdminExtrasService.PageSize more
+                        </button>
+                    }
+                </div>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private bool _isSuperAdmin, _more, _loading;
+    private ActivityFilter _filter = new();
+    private List<ActivityRow>? _rows;
+    private int _take = AdminExtrasService.PageSize;
+    private List<User> _users = [];
+    private List<string> _types = [];
+    private CancellationTokenSource? _debounce;
+
+    private IReadOnlyList<PickOption<uint>> UserOptions =>
+        [new(0u, "All accounts"), .. _users.Select(u => new PickOption<uint>(u.UserId, u.Name, u.Username))];
+
+    private IReadOnlyList<PickOption<string>> TypeOptions =>
+        [new("", "All types"), .. _types.Select(t => new PickOption<string>(t, t))];
+
+    private static string TypeBadge(string type) => type.ToLowerInvariant() switch
+    {
+        var t when t.Contains("delete") => "badge-bad",
+        var t when t.Contains("login") || t.Contains("logout") => "badge-grey",
+        var t when t.Contains("create") || t.Contains("submit") => "badge-ok",
+        var t when t.Contains("password") => "badge-gold",
+        _ => "badge-navy",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        _isSuperAdmin = user.IsInRole("SuperAdmin");
+        if (!_isSuperAdmin) return;
+        _users = await Extras.UsersAsync();
+        _types = await Extras.ActivityTypesAsync();
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _take = AdminExtrasService.PageSize;
+        (_rows, _more) = await Extras.ActivityAsync(_filter, _take);
+    }
+
+    // Wait until typing pauses before searching
+    private async Task SearchChangedAsync()
+    {
+        _debounce?.Cancel();
+        _debounce = new CancellationTokenSource();
+        var token = _debounce.Token;
+        try { await Task.Delay(350, token); } catch (TaskCanceledException) { return; }
+        await ReloadAsync();
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        _loading = true;
+        try
+        {
+            _take += AdminExtrasService.PageSize;
+            (_rows, _more) = await Extras.ActivityAsync(_filter, _take);
+        }
+        finally { _loading = false; }
+    }
+}

@@ -1,6 +1,8 @@
 @page "/suggestions"
 @layout AppLayout
 @attribute [Authorize]
+@inject LiveRefresh Live
+@implements IDisposable
 @inject CatalogAdminService CatalogSvc
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IJSRuntime JS
@@ -149,4 +151,17 @@
         }
         finally { _saving = false; }
     }
+
+    // Live: when suggestions change on either website, reload without a refresh.
+    private static readonly string[] LiveAreas = ["suggestions"];
+    protected override void OnInitialized() => Live.AreasChanged += OnAreasAsync;
+
+    private async Task OnAreasAsync(IReadOnlySet<string> areas)
+    {
+        if (!areas.Overlaps(LiveAreas)) return;
+        _items = await CatalogSvc.SuggestionsAsync();
+        StateHasChanged();
+    }
+
+    public void Dispose() => Live.AreasChanged -= OnAreasAsync;
 }

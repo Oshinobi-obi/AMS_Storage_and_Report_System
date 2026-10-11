@@ -29,7 +29,7 @@
                         <span class="meta">Every item issued through an RIS in the month, with the recapitulation by stock number.</span>
                     </div>
                     <div class="d-flex flex-wrap gap-2 align-items-end no-print">
-                        <div><label class="form-label" for="rs-month">Month</label><input id="rs-month" type="month" class="form-control" autocomplete="off" @bind="_month" @bind:after="LoadAsync" /></div>
+                        <div><label class="form-label" for="rs-month">Month</label><DatePicker Id="rs-month" @bind-Value="_month" @bind-Value:after="LoadAsync" MonthOnly="true" Max="PhTime.Now.Date" /></div>
                         <a class="btn btn-outline-primary" href="@($"/exports/rsmi?year={_month.Year}&month={_month.Month}")"><i class="bi bi-file-earmark-excel me-1" aria-hidden="true"></i>Excel</a>
                         <button type="button" class="btn btn-accent" @onclick="PrintAsync"><i class="bi bi-printer me-1" aria-hidden="true"></i>Print</button>
                     </div>

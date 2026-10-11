@@ -22,7 +22,7 @@
     }
     else
     {
-        <RisDocument Model="Model" IsDraft="@(_ris.Status == RisStatus.Pending)" MinRows="10" />
+        <RisDocument Model="Model" IsDraft="@(_ris.Status == RisStatus.Pending)" />
     }
 </div>
 
@@ -59,5 +59,5 @@
     private static RisSignatory? Signatory(RoPersonnel? p, DateTime? date) =>
         p is null && date is null ? null : new RisSignatory(p?.FullName, p?.Position, date);
 
-    private async Task PrintAsync() => await JS.InvokeVoidAsync("print");
+    private async Task PrintAsync() => await JS.InvokeVoidAsync("amsPrint.ris");
 }

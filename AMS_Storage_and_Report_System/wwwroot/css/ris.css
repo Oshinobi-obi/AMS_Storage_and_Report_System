@@ -1,9 +1,31 @@
-/* ris.css — Appendix 63 look on screen ("paper on a desk") and on print/PDF.
-   Link globally in App.razor:  <link rel="stylesheet" href="css/ris.css" /> */
+/* ris.css — Appendix 63 Requisition and Issue Slip, matching the AMS form (RIS.xlsx):
+   Bookman Old Style 10 pt, title 17 pt bold, 14 item rows, A4 portrait.
+   Shared by the AMS Supplies portal and AMS StockWatch. */
+
+/* ───────── Font: Bookman Old Style ─────────
+   Uses the real Bookman Old Style when the computer has it (Windows with Microsoft Office).
+   Otherwise the bundled TeX Gyre Bonum (wwwroot/fonts, a free Bookman typeface under the
+   GUST Font License) is used, so the slip looks the same on every computer and phone. */
+@font-face {
+    font-family: "RIS Bookman"; font-weight: 400; font-style: normal; font-display: block;
+    src: local("Bookman Old Style"), local("BookmanOldStyle"), url("../fonts/ris-bookman-regular.woff2") format("woff2");
+}
+@font-face {
+    font-family: "RIS Bookman"; font-weight: 700; font-style: normal; font-display: block;
+    src: local("Bookman Old Style Bold"), local("BookmanOldStyle-Bold"), url("../fonts/ris-bookman-bold.woff2") format("woff2");
+}
+@font-face {
+    font-family: "RIS Bookman"; font-weight: 400; font-style: italic; font-display: block;
+    src: local("Bookman Old Style Italic"), local("BookmanOldStyle-Italic"), url("../fonts/ris-bookman-italic.woff2") format("woff2");
+}
+@font-face {
+    font-family: "RIS Bookman"; font-weight: 700; font-style: italic; font-display: block;
+    src: local("Bookman Old Style Bold Italic"), local("BookmanOldStyle-BoldItalic"), url("../fonts/ris-bookman-bolditalic.woff2") format("woff2");
+}
 
 /* ───────── Screen ───────── */
 
-.ris-scroll {                       /* wrap the sheet in this inside the split view */
+.ris-scroll {                       /* wraps the sheet in the cart split view */
     overflow-x: auto;
     padding: 1rem;
     background: #e9edf2;
@@ -12,112 +34,145 @@
 
 .ris-sheet {
     position: relative;
-    width: 210mm;                   /* true A4 width so preview == printout */
+    width: 210mm;                   /* true A4 width, so the preview matches the printout */
     max-width: none;
-    min-height: 140mm;
     margin: 0 auto;
-    padding: 12mm 12mm 14mm;
+    padding: 12mm 14mm 14mm;
     background: #fff;
     color: #000;
-    font-family: "Times New Roman", Times, serif;
-    font-size: 11pt;
-    line-height: 1.3;
+    font-family: "RIS Bookman", "Bookman Old Style", "TeX Gyre Bonum", serif;
+    font-size: 9pt;
+    line-height: 1.25;
     box-shadow: 0 1px 2px rgb(0 0 0 / .08), 0 8px 24px rgb(15 23 36 / .12);
-    overflow-wrap: anywhere;   /* long words or pasted text wrap inside the form instead of crossing its borders */
+    overflow-wrap: anywhere;        /* long words or pasted text wrap inside the form */
 }
 
 /* Narrow screens: scale the whole page instead of reflowing an official form */
-@media (max-width: 900px) {
-    .ris-sheet { zoom: .62; }
-}
-@media (max-width: 575.98px) {
-    .ris-sheet { zoom: .45; }   /* whole page visible on a phone; pinch to zoom */
-}
+@media (max-width: 900px) { .ris-sheet { zoom: .62; } }
+@media (max-width: 575.98px) { .ris-sheet { zoom: .45; } }   /* whole page on a phone; pinch to zoom */
 
-.ris-appendix { text-align: right; font-style: italic; font-size: 10pt; }
-.ris-title    { text-align: center; font-size: 13pt; font-weight: 700; letter-spacing: .02em; margin: 4mm 0 5mm; }
+.ris-appendix { text-align: right; font-style: italic; font-size: 10.5pt; margin-bottom: 7mm; }
+.ris-title    { text-align: center; font-size: 14.5pt; font-weight: 700; margin: 0 0 5mm; letter-spacing: .01em; }
 
-.ris-topline { display: flex; justify-content: space-between; gap: 8mm; margin-bottom: 2mm; }
-.ris-fill    { display: inline-block; min-width: 70mm; border-bottom: 1px solid #000; font-weight: 700; padding: 0 1mm; }
-.ris-fill-sm { min-width: 28mm; }
+.ris-topline { display: flex; justify-content: space-between; align-items: flex-end; gap: 8mm; margin-bottom: 1.2mm; }
+.ris-fill    { display: inline-block; min-width: 62mm; border-bottom: 1px solid #000; font-weight: 700; padding: 0 1mm; }
+.ris-fill-sm { min-width: 32mm; }
+.ris-sheet table, .ris-sheet th, .ris-sheet td, .ris-sheet h1 { font-family: inherit; }   /* tables don't inherit the font in some browsers */
 
-.ris-grid, .ris-sign {
-    width: 100%;
-    border-collapse: collapse;
-    table-layout: fixed;
-}
+.ris-grid, .ris-sign { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .ris-grid th, .ris-grid td,
 .ris-sign th, .ris-sign td {
     border: 1px solid #000;
-    padding: 1.2mm 1.6mm;
-    vertical-align: top;
+    padding: 1mm 1.4mm;
+    vertical-align: middle;
     word-wrap: break-word;
 }
-.ris-grid thead th { text-align: center; font-weight: 700; word-wrap: normal; overflow-wrap: normal; }
-.ris-cols th { font-size: 10pt; padding-inline: .8mm; }
-.ris-band th { font-weight: 700; }
-.ris-meta td { font-size: 10.5pt; }
 
-.c-stock { width: 12%; } .c-unit { width: 8%; } .c-desc { width: 33%; }
-.c-qty   { width: 10.5%; } .c-yn   { width: 5.5%; } .c-remarks { width: 15%; }
+/* Column widths taken from the AMS form's column widths */
+.c-stock { width: 15%; } .c-unit { width: 6.9%; } .c-desc { width: 27.5%; } .c-qty { width: 9.4%; }
+.c-yes   { width: 10.4%; } .c-no  { width: 6.4%; } .c-remarks { width: 15%; }
+/* PS-DBM stock numbers (e.g. 60121524-SP-G07) stay on one line */
+.ris-grid tbody td:first-child { font-size: 7pt; white-space: nowrap; overflow: hidden; text-overflow: clip; padding-inline: .6mm; }
+
+/* Units like "gallon" or "bottle" stay on one line */
+.ris-grid tbody td:nth-child(2) { font-size: 8pt; overflow-wrap: normal; padding-inline: .5mm; }
+
+.ris-meta td { height: 8mm; }
+.ris-division { vertical-align: middle !important; }   /* "Division Office: Asset Management Section" on one line */
+.ris-rc { font-size: 8.5pt; }
+.ris-rc div + div { margin-top: .6mm; }
+.ris-rc strong { white-space: nowrap; }   /* codes like R-ASD-03 never split across lines */
+
+.ris-grid thead th { text-align: center; font-weight: 400; word-wrap: normal; overflow-wrap: normal; height: 5.4mm; }
+.ris-grid thead th.ris-em { font-weight: 700; font-style: italic; }
+.ris-grid tbody td { height: 5.4mm; }   /* + padding = about 7.5 mm per row, like the printed form */
 
 .t-center { text-align: center; }
 .t-num    { text-align: right; font-variant-numeric: tabular-nums; }
-.t-strong { font-weight: 700; text-transform: uppercase; text-align: center; }
-
-.ris-blank td { height: 6.5mm; }
+.t-name   { font-weight: 700; text-transform: uppercase; text-align: center; }
+.t-desig  { font-weight: 700; text-align: center; }
 
 /* Live link between the cart list and the slip */
-.ris-grid tbody tr.is-highlight td {
-    background: #fff4c2;
-    transition: background-color 200ms ease;
-}
+.ris-grid tbody tr.is-highlight td { background: #fff4c2; transition: background-color 200ms ease; }
 
+/* Purpose: a box with three ruled lines, like the form */
 .ris-purpose {
-    display: flex;
-    gap: 2mm;
-    min-height: 12mm;
-    padding: 1.5mm 1.6mm;
-    border: 1px solid #000;
-    border-top: 0;
+    display: flex; gap: 2mm;
+    padding: 2mm 2mm 2.5mm 2.5mm;
+    border: 1px solid #000; border-top: 0;
 }
-.ris-purpose-text { flex: 1; min-width: 0; border-bottom: 1px solid #000; white-space: pre-line; }
+.ris-purpose-label { padding-top: .2mm; }
+.ris-purpose-text {
+    flex: 1; min-width: 0; min-height: 13.5mm; white-space: pre-line;
+    line-height: 4.5mm;
+    background-image: linear-gradient(to bottom, transparent calc(4.5mm - 1px), #000 calc(4.5mm - 1px), #000 4.5mm);
+    background-size: 100% 4.5mm;
+}
 
+/* Signatures: "Requested by:" etc. sit inside the tall signature boxes */
 .ris-sign { border-top: 0; }
-.ris-sign thead th { text-align: left; font-weight: 400; border-top: 0; }
-.ris-sign tbody th { font-weight: 400; white-space: nowrap; text-align: left; }
-.ris-sign td { text-align: center; }
-.ris-sign-line td { height: 11mm; }
-.c-label { width: 16%; }
+.ris-sign tr:first-child th, .ris-sign tr:first-child td { border-top: 0; }
+.s-label { width: 15%; } .s-req { width: 27%; } .s-app { width: 22%; } .s-iss { width: 18%; } .s-rec { width: 18%; }
+/* Names and positions wrap only between words */
+.ris-sign td { overflow-wrap: break-word; word-break: normal; hyphens: manual; font-size: 8.5pt; }
+.ris-sign th { font-weight: 400; text-align: left; white-space: nowrap; }
+.ris-sign td { height: 4.4mm; }
+.ris-sign-line th { vertical-align: bottom; height: 10mm; }
+.ris-sign-line td { vertical-align: top; font-weight: 700; text-align: left; height: 10mm; }
 
-/* Draft watermark — makes it unmistakable that the preview isn't a filed slip */
+/* Draft watermark — the preview is not a filed slip */
 .ris-watermark {
-    position: absolute;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    pointer-events: none;
-    font: 700 72pt/1 system-ui, sans-serif;
-    color: rgb(11 47 168 / .07);
-    transform: rotate(-24deg);
-    text-transform: uppercase;
+    position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none;
+    font: 700 72pt/1 "RIS Bookman", "Bookman Old Style", serif; color: rgb(11 47 168 / .07);
+    transform: rotate(-24deg); text-transform: uppercase;
 }
 
 /* ───────── Print / PDF ───────── */
 
+/* Print button: ui.js copies the slip into #ris-print-root and prints only that copy,
+   so the page around it (columns, scroll boxes, dark theme) can't crop or tint the paper. */
+#ris-print-root { display: none; }
+
 @page {
-    size: A4 portrait;              /* change to: size: 8.5in 13in;  for long bond/folio */
-    margin: 10mm;
+    size: A4 portrait;              /* the AMS form is A4. For long bond: size: 8.5in 13in; */
+    margin: 15mm 15mm 12mm 15mm;   /* inside every printer's printable area */
 }
 
 @media print {
-    html, body { background: #fff !important; }
+    /* Paper is always white, even when the screen is in dark mode */
+    html, html[data-theme], html[data-theme] body, body {
+        background: #fff !important; color: #000 !important; color-scheme: light;
+    }
+    /* Nothing prints a background except the slip itself */
+    *, *::before, *::after { -webkit-print-color-adjust: economy; print-color-adjust: economy; }
+    .ris-sheet, .ris-sheet * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+    /* Bootstrap's dark colours too (tables, text), so nothing prints white-on-white */
+    html[data-bs-theme="dark"] {
+        --bs-body-color: #212529; --bs-body-bg: #fff; --bs-emphasis-color: #000;
+        --bs-secondary-color: rgb(33 37 41 / .75); --bs-tertiary-bg: #f8f9fa;
+        --bs-border-color: #dee2e6; --bs-heading-color: inherit;
+    }
+
+    html.ris-printing body > :not(#ris-print-root) { display: none !important; }
+    html.ris-printing #ris-print-root { display: block !important; }
+
     .app-chrome, .no-print, nav, header.app-header, footer.app-footer { display: none !important; }
-    .ris-scroll { padding: 0; background: none; overflow: visible; }
-    .ris-sheet  { width: auto; min-height: 0; padding: 0; box-shadow: none; zoom: 1; }
+
+    /* Ctrl+P on a page that shows the slip: let it use the full paper width */
+    html[data-theme] .ris-scroll, html[data-theme] .print-page,
+    .slip-sticky, .slip-column {
+        padding: 0 !important; margin: 0 !important; border: 0 !important; box-shadow: none !important;
+        background: none !important; overflow: visible !important; position: static !important;
+    }
+
+    html[data-theme] .ris-sheet, .ris-sheet {
+        width: 100% !important; max-width: 100% !important; min-height: 0;
+        margin: 0 !important; padding: 0 !important; zoom: 1 !important;
+        box-shadow: none !important; background: #fff !important; color: #000 !important;
+    }
     .ris-sheet.is-draft .ris-watermark { color: rgb(0 0 0 / .08); }
-    .ris-grid thead { display: table-header-group; }   /* repeat column headers on page 2+ */
+    .ris-grid thead { display: table-header-group; }   /* repeat column titles on page 2+ */
     .ris-grid tr, .ris-purpose, .ris-sign { break-inside: avoid; }
     .ris-grid tbody tr.is-highlight td { background: none; }
-    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }

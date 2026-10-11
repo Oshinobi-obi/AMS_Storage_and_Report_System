@@ -1,0 +1,317 @@
+@typeparam TValue
+@using System.Globalization
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+@* Calendar that replaces the browser's plain date box, styled like the rest of AMS StockWatch.
+   Works with DateTime and DateTime? fields:
+     <DatePicker Id="r-date" @bind-Value="_receivedOn" Max="PhTime.Now.Date" />
+     <DatePicker Id="q-from" @bind-Value="_from" Placeholder="Any date" />           (DateTime? → has "Clear")
+     <DatePicker Id="an-start" @bind-Value="_form.StartsAt" ShowTime="true" />       (date and time)
+     <DatePicker Id="rs-month" @bind-Value="_month" MonthOnly="true" />              (month and year)
+   Keyboard: arrows move a day/week, Page Up/Down a month, Enter picks, Esc closes. *@
+
+<div class="datepicker @(_open ? "is-open" : "")">
+    <button type="button" id="@Id" class="form-control datepicker-toggle" disabled="@Disabled" @ref="_toggle"
+            aria-haspopup="dialog" aria-expanded="@(_open ? "true" : "false")" @onclick="Toggle">
+        <i class="bi @(MonthOnly ? "bi-calendar3-range" : "bi-calendar3")" aria-hidden="true"></i>
+        @if (Current is null)
+        {
+            <span class="datepicker-placeholder">@Placeholder</span>
+        }
+        else
+        {
+            <span class="datepicker-value">@Display(Current.Value)</span>
+        }
+    </button>
+
+    @if (_open)
+    {
+        <div class="picker-backdrop" @onclick="Close"></div>
+        <div class="datepicker-panel" role="dialog" aria-label="@(MonthOnly ? "Choose a month" : "Choose a date")" @ref="_panel"
+             @onkeydown:stopPropagation="true">
+            <div class="dp-head">
+                <button type="button" class="dp-nav" @onclick="() => Page(-1)" aria-label="@PrevLabel"><i class="bi bi-chevron-left" aria-hidden="true"></i></button>
+                <button type="button" class="dp-title" @onclick="ZoomOut" disabled="@(_view == View.Years)"
+                        aria-label="@(_view == View.Days ? "Choose month and year" : "Choose year")">
+                    @Title <i class="bi bi-chevron-down" aria-hidden="true"></i>
+                </button>
+                <button type="button" class="dp-nav" @onclick="() => Page(1)" aria-label="@NextLabel"><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
+            </div>
+
+            @if (_view == View.Days)
+            {
+                <div class="dp-weekdays" aria-hidden="true">
+                    @foreach (var d in WeekdayNames) { <span>@d</span> }
+                </div>
+                <div class="dp-grid" role="grid" tabindex="0" @ref="_grid" aria-activedescendant="@CellId(_active)"
+                     aria-label="@_active.ToString("MMMM yyyy", En)" @onkeydown="OnGridKeyAsync" @onkeydown:preventDefault="true">
+                    @foreach (var day in Days)
+                    {
+                        var date = day;
+                        var outside = date.Month != _active.Month;
+                        var blocked = !Allowed(date);
+                        var css = "dp-day"
+                                  + (outside ? " is-outside" : "")
+                                  + (date == Today ? " is-today" : "")
+                                  + (Current?.Date == date ? " is-selected" : "")
+                                  + (date == _active ? " is-active" : "");
+                        <button type="button" id="@CellId(date)" class="@css" tabindex="-1" disabled="@blocked"
+                                role="gridcell" aria-selected="@(Current?.Date == date ? "true" : "false")"
+                                aria-label="@date.ToString("dddd, MMMM d, yyyy", En)" @onclick="() => PickDayAsync(date)">@date.Day</button>
+                    }
+                </div>
+            }
+            else if (_view == View.Months)
+            {
+                <div class="dp-months">
+                    @for (var m = 1; m <= 12; m++)
+                    {
+                        var month = new DateTime(_active.Year, m, 1);
+                        var css = "dp-cell"
+                                  + (Current is { } c && c.Year == month.Year && c.Month == m ? " is-selected" : "")
+                                  + (Today.Year == month.Year && Today.Month == m ? " is-today" : "");
+                        <button type="button" class="@css" disabled="@(!MonthAllowed(month))" @onclick="() => PickMonthAsync(month)">@month.ToString("MMM", En)</button>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="dp-months">
+                    @for (var y = YearStart; y < YearStart + 12; y++)
+                    {
+                        var year = y;
+                        var css = "dp-cell" + (Current?.Year == year ? " is-selected" : "") + (Today.Year == year ? " is-today" : "");
+                        <button type="button" class="@css" disabled="@(!YearAllowed(year))" @onclick="() => PickYear(year)">@year</button>
+                    }
+                </div>
+            }
+
+            @if (ShowTime && _view == View.Days)
+            {
+                <div class="dp-time">
+                    <i class="bi bi-clock" aria-hidden="true"></i>
+                    <select class="form-select form-select-sm" aria-label="Hour" value="@Hour12" @onchange="SetHourAsync">
+                        @for (var h = 1; h <= 12; h++) { <option value="@h">@h</option> }
+                    </select>
+                    <span>:</span>
+                    <select class="form-select form-select-sm" aria-label="Minute" value="@Minute" @onchange="SetMinuteAsync">
+                        @foreach (var m in Minutes) { <option value="@m">@m.ToString("00")</option> }
+                    </select>
+                    <div class="dp-ampm" role="group" aria-label="AM or PM">
+                        <button type="button" class="@(IsPm ? "" : "is-on")" @onclick="() => SetPmAsync(false)">AM</button>
+                        <button type="button" class="@(IsPm ? "is-on" : "")" @onclick="() => SetPmAsync(true)">PM</button>
+                    </div>
+                </div>
+            }
+
+            <div class="dp-foot">
+                <button type="button" class="dp-link" @onclick="PickTodayAsync" disabled="@(!TodayAllowed)">@(MonthOnly ? "This month" : ShowTime ? "Now" : "Today")</button>
+                @if (Clearable && Current is not null)
+                {
+                    <button type="button" class="dp-link is-muted" @onclick="ClearAsync">Clear</button>
+                }
+                @if (ShowTime)
+                {
+                    <button type="button" class="btn btn-primary btn-sm ms-auto" @onclick="Close">Done</button>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+    [Parameter] public TValue Value { get; set; } = default!;
+    [Parameter] public EventCallback<TValue> ValueChanged { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "Select a date";
+    [Parameter] public bool Disabled { get; set; }
+    /// Earliest and latest date that can be picked (the time part is ignored).
+    [Parameter] public DateTime? Min { get; set; }
+    [Parameter] public DateTime? Max { get; set; }
+    /// Pick a date and a time (hour, minute, AM/PM).
+    [Parameter] public bool ShowTime { get; set; }
+    /// Pick only a month and year; the value is the 1st of that month.
+    [Parameter] public bool MonthOnly { get; set; }
+
+    private enum View { Days, Months, Years }
+    private static readonly CultureInfo En = CultureInfo.GetCultureInfo("en-US");
+    private static readonly string[] WeekdayNames = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+    private static readonly int[] MinuteSteps = Enumerable.Range(0, 12).Select(i => i * 5).ToArray();
+
+    private ElementReference _grid, _toggle, _panel;
+    private bool _open, _focusPending, _placed;
+    private View _view;
+    private DateTime _active;                       // the day (or month) the keyboard is on
+    private readonly string _uid = Guid.NewGuid().ToString("N")[..8];
+
+    private static DateTime Today => PhTime.Now.Date;
+    private bool Clearable => default(TValue) is null;   // DateTime? fields can be emptied
+    private DateTime? Current => (object?)Value is DateTime d ? d : null;
+
+    private string Display(DateTime d) =>
+        MonthOnly ? d.ToString("MMMM yyyy", En) : ShowTime ? d.ToString("MMM d, yyyy  h:mm tt", En) : d.ToString("MMM d, yyyy", En);
+
+    private string Title => _view switch
+    {
+        View.Days => _active.ToString("MMMM yyyy", En),
+        View.Months => _active.Year.ToString(),
+        _ => $"{YearStart} – {YearStart + 11}",
+    };
+    private string PrevLabel => _view switch { View.Days => "Previous month", View.Months => "Previous year", _ => "Earlier years" };
+    private string NextLabel => _view switch { View.Days => "Next month", View.Months => "Next year", _ => "Later years" };
+    private int YearStart => _active.Year - (_active.Year % 12);
+    private string CellId(DateTime d) => $"dp-{_uid}-{d:yyyyMMdd}";
+
+    private IEnumerable<DateTime> Days
+    {
+        get
+        {
+            var first = new DateTime(_active.Year, _active.Month, 1);
+            var start = first.AddDays(-(int)first.DayOfWeek);
+            return Enumerable.Range(0, 42).Select(i => start.AddDays(i));
+        }
+    }
+
+    private bool Allowed(DateTime d) => (Min is null || d >= Min.Value.Date) && (Max is null || d <= Max.Value.Date);
+    private bool MonthAllowed(DateTime m) =>
+        (Min is null || m.AddMonths(1) > Min.Value.Date) && (Max is null || m <= Max.Value.Date);
+    private bool YearAllowed(int y) => (Min is null || y >= Min.Value.Year) && (Max is null || y <= Max.Value.Year);
+    private bool TodayAllowed => MonthOnly ? MonthAllowed(new DateTime(Today.Year, Today.Month, 1)) : Allowed(Today);
+
+    // ── Time ──
+    private TimeSpan TimeOfDay => Current?.TimeOfDay ?? new TimeSpan(8, 0, 0);
+    private int Hour12 => TimeOfDay.Hours % 12 == 0 ? 12 : TimeOfDay.Hours % 12;
+    private int Minute => TimeOfDay.Minutes;
+    private bool IsPm => TimeOfDay.Hours >= 12;
+    private IEnumerable<int> Minutes => MinuteSteps.Contains(Minute) ? MinuteSteps : MinuteSteps.Append(Minute).Order();
+
+    private Task SetHourAsync(ChangeEventArgs e) => SetTimeAsync(int.Parse(e.Value?.ToString() ?? "12") % 12 + (IsPm ? 12 : 0), Minute);
+    private Task SetMinuteAsync(ChangeEventArgs e) => SetTimeAsync(TimeOfDay.Hours, int.Parse(e.Value?.ToString() ?? "0"));
+    private Task SetPmAsync(bool pm) => SetTimeAsync(TimeOfDay.Hours % 12 + (pm ? 12 : 0), Minute);
+    private Task SetTimeAsync(int hours, int minutes) =>
+        SetAsync((Current?.Date ?? _active.Date).Add(new TimeSpan(hours, minutes, 0)));
+
+    // ── Open / close / move ──
+    private void Toggle()
+    {
+        if (_open) { Close(); return; }
+        _active = MonthOnly ? (Current ?? Today) : (Current?.Date ?? Clamp(Today));
+        _view = MonthOnly ? View.Months : View.Days;
+        _open = true;
+        _focusPending = !MonthOnly;
+    }
+
+    private void Close() => _open = false;
+
+    private DateTime Clamp(DateTime d) =>
+        Min is { } min && d < min.Date ? min.Date : Max is { } max && d > max.Date ? max.Date : d;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // The calendar floats over the page (even inside a dialog), lined up with the field.
+        // ui.js places it below the field, or above it when there's no room, and keeps it on screen.
+        try
+        {
+            if (_open) { await JS.InvokeVoidAsync("amsDatePicker.attach", _toggle, _panel); _placed = true; }
+            else if (_placed) { _placed = false; await JS.InvokeVoidAsync("amsDatePicker.detach"); }
+        }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { /* prerendering */ }
+
+        if (!_focusPending || !_open || _view != View.Days) return;
+        _focusPending = false;
+        try { await _grid.FocusAsync(); } catch { /* closed meanwhile */ }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (!_placed) return;
+        try { await JS.InvokeVoidAsync("amsDatePicker.detach"); } catch { /* page closed */ }
+    }
+
+    private void Page(int step) => _active = _view switch
+    {
+        View.Days => _active.AddMonths(step),
+        View.Months => _active.AddYears(step),
+        _ => _active.AddYears(12 * step),
+    };
+
+    private void ZoomOut() => _view = _view == View.Days ? View.Months : View.Years;
+
+    private async Task PickDayAsync(DateTime date)
+    {
+        if (!Allowed(date)) return;
+        _active = date;
+        await SetAsync(ShowTime ? date.Add(TimeOfDay) : date);
+        if (!ShowTime) Close();
+    }
+
+    private async Task PickMonthAsync(DateTime month)
+    {
+        if (MonthOnly) { await SetAsync(month); Close(); return; }
+        var day = Math.Min(_active.Day, DateTime.DaysInMonth(month.Year, month.Month));
+        _active = new DateTime(month.Year, month.Month, day);
+        _view = View.Days;
+        _focusPending = true;
+    }
+
+    private void PickYear(int year)
+    {
+        var day = Math.Min(_active.Day, DateTime.DaysInMonth(year, _active.Month));
+        _active = new DateTime(year, _active.Month, day);
+        _view = View.Months;
+    }
+
+    private async Task PickTodayAsync()
+    {
+        if (MonthOnly) { await SetAsync(new DateTime(Today.Year, Today.Month, 1)); Close(); return; }
+        if (ShowTime)
+        {
+            var now = PhTime.Now;
+            _active = now.Date;
+            await SetAsync(new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0));
+            return;
+        }
+        await PickDayAsync(Today);
+    }
+
+    private async Task ClearAsync()
+    {
+        await ValueChanged.InvokeAsync(default!);
+        Close();
+    }
+
+    private async Task SetAsync(DateTime value)
+    {
+        if (Current == value) return;
+        await ValueChanged.InvokeAsync((TValue)(object)value);
+    }
+
+    private async Task OnGridKeyAsync(KeyboardEventArgs e)
+    {
+        var next = e.Key switch
+        {
+            "ArrowLeft" => _active.AddDays(-1),
+            "ArrowRight" => _active.AddDays(1),
+            "ArrowUp" => _active.AddDays(-7),
+            "ArrowDown" => _active.AddDays(7),
+            "PageUp" => _active.AddMonths(e.ShiftKey ? -12 : -1),
+            "PageDown" => _active.AddMonths(e.ShiftKey ? 12 : 1),
+            "Home" => _active.AddDays(-(int)_active.DayOfWeek),
+            "End" => _active.AddDays(6 - (int)_active.DayOfWeek),
+            _ => (DateTime?)null,
+        };
+        if (next is { } n) { _active = n; return; }
+        switch (e.Key)
+        {
+            case "Enter":
+            case " ":
+                await PickDayAsync(_active);
+                break;
+            case "Escape":
+            case "Tab":
+                Close();
+                break;
+        }
+    }
+}

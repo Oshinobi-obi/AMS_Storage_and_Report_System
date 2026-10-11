@@ -47,6 +47,14 @@
                         <label class="form-label" for="q-office">Office</label>
                         <Picker TValue="int" Id="q-office" Options="OfficeOptions" @bind-Value="_officeId" />
                     </div>
+                    <div>
+                        <label class="form-label" for="q-from">Submitted from</label>
+                        <DatePicker Id="q-from" @bind-Value="_from" Max="_to" Placeholder="Any date" />
+                    </div>
+                    <div>
+                        <label class="form-label" for="q-to">To</label>
+                        <DatePicker Id="q-to" @bind-Value="_to" Min="_from" Placeholder="Any date" />
+                    </div>
                 </div>
             </header>
 
@@ -114,6 +122,7 @@
     private List<Office> _offices = [];
     private int _officeId;
     private string _search = "";
+    private DateTime? _from, _to;
     private bool _error;
 
     private int Count(string status) => status == "" ? _counts.Values.Sum() : _counts.GetValueOrDefault(status);
@@ -128,6 +137,8 @@
             var term = _search.Trim();
             return (_rows ?? new List<QueueRow>())
                 .Where(r => _officeId == 0 || r.OfficeId == _officeId)
+                .Where(r => _from is null || r.RequestedAt >= _from.Value.Date)
+                .Where(r => _to is null || r.RequestedAt < _to.Value.Date.AddDays(1))
                 .Where(r => term.Length == 0
                     || r.RisNo.Contains(term, StringComparison.OrdinalIgnoreCase)
                     || r.OfficeAcronym.Contains(term, StringComparison.OrdinalIgnoreCase)

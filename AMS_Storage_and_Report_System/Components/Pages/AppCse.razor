@@ -1,6 +1,8 @@
 @page "/app-cse"
 @layout AppLayout
 @attribute [Authorize]
+@inject LiveRefresh Live
+@implements IDisposable
 @inject AppCseService AppCseSvc
 @inject SettingsService Settings
 @inject AuthenticationStateProvider AuthStateProvider
@@ -22,11 +24,12 @@
             <div style="min-width: 180px"><Picker TValue="int" Id="ap-year" Options="YearOptions" @bind-Value="_year" @bind-Value:after="YearChangedAsync" /></div>
         </header>
         <div class="panel-body">
-            <ol class="small text-muted-2 ps-3 mb-3">
-                <li><strong>Download the Excel file</strong> above. It already has every office and item, with the current figures.</li>
-                <li>Fill in Q1–Q4 (or only Total) from each office's approved APP-CSE. Leave a row blank if the office doesn't need that item.</li>
-                <li>Upload it here. Every row is checked first, and <strong>nothing is saved</strong> until you press Import.</li>
-            </ol>
+            <p class="small mb-2"><strong>Upload either:</strong></p>
+            <ul class="small text-muted-2 ps-3 mb-3">
+                <li>the Regional Office's <strong>APP-CSE workbook</strong> (the PS-DBM form, one sheet per office). All office sheets are read at once; or</li>
+                <li>the <strong>Excel file downloaded above</strong>, filled in with Q1–Q4 or a yearly total.</li>
+            </ul>
+            <p class="small text-muted-2 mb-3">Every row is checked first, and <strong>nothing is saved</strong> until you press Import.</p>
             <InputFile class="form-control" OnChange="OnFileSelected" accept=".xlsx" disabled="@_busy" />
             @if (_busy)
             {
@@ -54,6 +57,65 @@
                 }
                 else
                 {
+                    @if (_preview.Format == "official")
+                    {
+                        <div class="table-wrap mb-3">
+                            <table class="data-table">
+                                <thead><tr><th>Sheet</th><th>Office</th><th class="t-num">Items</th><th class="t-num">Units</th><th class="t-num">Warnings</th><th>Result</th></tr></thead>
+                                <tbody>
+                                    @foreach (var sh in _preview.Sheets)
+                                    {
+                                        <tr>
+                                            <td class="cell-strong">@sh.Sheet</td>
+                                            <td>@(sh.Office ?? "–")</td>
+                                            <td class="t-num">@(sh.Status == "Check only" ? "" : sh.Items.ToString("N0"))</td>
+                                            <td class="t-num">@(sh.Status == "Check only" ? "" : sh.Units.ToString("N0"))</td>
+                                            <td class="t-num">@(sh.Warnings > 0 ? sh.Warnings.ToString() : "")</td>
+                                            <td>
+                                                <span class="badge-pill @SheetBadge(sh.Status)">@sh.Status</span>
+                                                @if (sh.Note is not null) { <span class="cell-sub">@sh.Note</span> }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        @foreach (var n in _preview.Notices)
+                        {
+                            <div class="callout mb-2"><i class="bi bi-info-circle" aria-hidden="true"></i><p>@n</p></div>
+                        }
+                        @if (_preview.NewItems.Count > 0)
+                        {
+                            <div class="new-items-box mb-3">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="ap-add-items" @bind="_preview.AddMissingItems" />
+                                    <label class="form-check-label fw-semibold" for="ap-add-items">
+                                        Add the @_preview.NewItems.Count item(s) that aren't in the Catalog yet
+                                        (@_preview.NewItems.Count(n => !n.FromPartII) from Part I, @_preview.NewItems.Count(n => n.FromPartII) from Part II)
+                                    </label>
+                                </div>
+                                <p class="small text-muted-2 mb-2">
+                                    @(_preview.AddMissingItems
+                                        ? "They're added with the PS-DBM code as the stock no. (Part II items get OTH-001, OTH-002, …), the unit and the unit price from the workbook. Stock starts at 0; record deliveries in Inventory."
+                                        : "Off: rows for these items are skipped. Only items already in the Catalog are imported.")
+                                </p>
+                                <details>
+                                    <summary class="small fw-semibold">See the items</summary>
+                                    <div class="table-wrap mt-2">
+                                        <table class="data-table">
+                                            <thead><tr><th>Stock no.</th><th>Item</th><th>Unit</th><th class="t-num">Unit price</th><th>Category</th></tr></thead>
+                                            <tbody>
+                                                @foreach (var n in _preview.NewItems)
+                                                {
+                                                    <tr><td class="text-nowrap">@n.StockNo</td><td>@n.Name</td><td>@n.Unit</td><td class="t-num">@(n.Price > 0 ? "₱" + n.Price.ToString("N2") : "–")</td><td class="is-muted">@n.Category</td></tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </details>
+                            </div>
+                        }
+                    }
                     <div class="d-flex flex-wrap gap-2 mb-3">
                         <span class="badge-pill badge-ok">@_preview.Rows.Count(r => r.Change == "New") new</span>
                         <span class="badge-pill badge-navy">@_preview.Rows.Count(r => r.Change == "Changed") changed</span>
@@ -75,14 +137,17 @@
             {
                 <div class="table-wrap">
                     <table class="data-table">
-                        <thead><tr><th>Row</th><th>Office</th><th>Item</th><th class="t-num">Q1</th><th class="t-num">Q2</th><th class="t-num">Q3</th><th class="t-num">Q4</th><th class="t-num">New total</th><th class="t-num">Was</th><th>Result</th></tr></thead>
+                        <thead><tr><th>@(_preview.Format == "official" ? "Sheet / row" : "Row")</th><th>Office</th><th>Item</th><th class="t-num">Q1</th><th class="t-num">Q2</th><th class="t-num">Q3</th><th class="t-num">Q4</th><th class="t-num">New total</th><th class="t-num">Was</th><th>Result</th></tr></thead>
                         <tbody>
                             @foreach (var r in _preview.Rows.OrderBy(r => r.Error is null).ThenBy(r => r.Change == "Unchanged").ThenBy(r => r.RowNumber).Take(500))
                             {
                                 <tr>
-                                    <td class="is-muted">@r.RowNumber</td>
+                                    <td class="is-muted text-nowrap">@(r.Sheet is null ? r.RowNumber.ToString() : $"{r.Sheet} · {r.RowNumber}")</td>
                                     <td class="cell-strong">@r.OfficeAcronym</td>
-                                    <td><span>@(r.ItemName ?? r.StockNo)</span><span class="cell-sub">@r.StockNo</span></td>
+                                    <td>
+                                        <span>@(r.ItemName ?? r.StockNo)</span>
+                                        <span class="cell-sub">@r.StockNo @if (r.NewItemKey is not null) {<span class="badge-pill badge-gold ms-1">New to catalog</span>}</span>
+                                    </td>
                                     <td class="t-num">@r.Q1</td><td class="t-num">@r.Q2</td><td class="t-num">@r.Q3</td><td class="t-num">@r.Q4</td>
                                     <td class="t-num"><strong>@r.Total</strong></td>
                                     <td class="t-num is-muted">@r.CurrentTotal</td>
@@ -184,6 +249,11 @@
     private IReadOnlyList<PickOption<int>> OfficeOptions =>
         [new(0, "All offices"), .. _offices.Where(o => o.CanRequisition).Select(o => new PickOption<int>(o.OfficeId, o.OfficeAcronym, o.OfficeName))];
 
+    private static string SheetBadge(string status) => status switch
+    {
+        "Read" => "badge-ok", "Error" => "badge-bad", "Skipped" => "badge-warn", _ => "badge-grey",
+    };
+
     private static string ChangeBadge(string change) => change switch
     {
         "New" => "badge-ok", "Changed" => "badge-navy", "Error" => "badge-bad", _ => "badge-grey",
@@ -241,7 +311,9 @@
         if (_preview is null) return;
         var p = _preview;
         var ok = await Modal.ConfirmAsync($"Import APP-CSE for FY {p.FiscalYear}?",
-            $"{p.Rows.Count(r => r.Change == "New")} new and {p.Rows.Count(r => r.Change == "Changed")} changed allocations will be saved. Offices see the new figures right away.",
+            $"{p.Rows.Count(r => p.WillImport(r) && r.Change == "New")} new and {p.Rows.Count(r => p.WillImport(r) && r.Change == "Changed")} changed allocations will be saved"
+            + (p.AddMissingItems && p.NewItems.Count > 0 ? $", and {p.NewItems.Count} item(s) will be added to the Catalog" : "")
+            + ". Offices see the new figures right away.",
             "Import", "Go back", ModalVariant.Success,
             onConfirmAsync: async _ =>
             {
@@ -253,4 +325,18 @@
         await YearChangedAsync();
         await JS.InvokeVoidAsync("showToast", $"APP-CSE for FY {p.FiscalYear} saved.", "success");
     }
+
+    // Live: when appcse, catalog change on either website, reload without a refresh.
+    private static readonly string[] LiveAreas = ["appcse", "catalog"];
+    protected override void OnInitialized() => Live.AreasChanged += OnAreasAsync;
+
+    private async Task OnAreasAsync(IReadOnlySet<string> areas)
+    {
+        if (!areas.Overlaps(LiveAreas)) return;
+        // Swap the rows in place (no "Loading…" blink while someone is reading the table)
+        _allocations = await AppCseSvc.AllocationsAsync(_year, _officeId);
+        StateHasChanged();
+    }
+
+    public void Dispose() => Live.AreasChanged -= OnAreasAsync;
 }

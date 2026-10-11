@@ -3,6 +3,7 @@
 @attribute [Authorize]
 @inject CatalogAdminService CatalogSvc
 @inject StockService Stock
+@inject RequisitionAdminService RisSvc
 @inject AuthenticationStateProvider AuthStateProvider
 @inject ModalService Modal
 @inject IJSRuntime JS
@@ -68,8 +69,20 @@
                             {
                                 <tr @key="i.ItemId">
                                     <td class="text-nowrap">@i.StockNo</td>
-                                    <td><span class="cell-strong">@i.ItemName</span><span class="cell-sub">@(i.Category?.CategoryName ?? "Uncategorized")</span></td>
-                                    <td class="t-num"><strong>@i.StockOnHand.ToString("N0")</strong> @i.UnitOfMeasure</td>
+                                    <td>
+                                        <span class="cell-strong">@i.ItemName</span><span class="cell-sub">@(i.Category?.CategoryName ?? "Uncategorized")</span>
+                                        @if (i.DaysToExpiry is int days)
+                                        {
+                                            <span class="cell-sub"><span class="exp-tag @Expiry.Css(days)"><i class="bi @Expiry.Icon(days)" aria-hidden="true"></i>@Expiry.Text(i)</span></span>
+                                        }
+                                    </td>
+                                    <td class="t-num">
+                                        <strong>@i.StockOnHand.ToString("N0")</strong> @i.UnitOfMeasure
+                                        @if (_reserved.GetValueOrDefault(i.ItemId) is > 0 and var held)
+                                        {
+                                            <span class="cell-sub text-nowrap" title="Approved RIS not picked up yet. Deducted when marked as issued.">@held.ToString("N0") reserved for pickup</span>
+                                        }
+                                    </td>
                                     <td class="t-num">@i.ReorderLevel.ToString("N0")</td>
                                     <td class="t-num text-nowrap">₱@((i.StockOnHand * i.UnitPrice).ToString("N2"))</td>
                                     <td>
@@ -99,7 +112,7 @@
             </div>
             <div class="col-sm-4">
                 <label class="form-label" for="r-date">Date received</label>
-                <input id="r-date" type="date" class="form-control" autocomplete="off" @bind="_receivedOn" max="@(PhTime.Now.ToString("yyyy-MM-dd"))" />
+                <DatePicker Id="r-date" @bind-Value="_receivedOn" Max="PhTime.Now.Date" />
             </div>
             <div class="col-sm-4">
                 <label class="form-label" for="r-notes">Remarks</label>
@@ -230,18 +243,30 @@
         _stock = StockQuery is "in" or "low" or "out" ? StockQuery : "";
         var user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
         uint.TryParse(user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out _userId);
-        _items = await CatalogSvc.ItemsAsync();
+        await LoadAsync();
         Live.Changed += OnLiveAsync;
     }
 
-    // Approvals deduct stock; refresh the figures when that happens.
-    private async Task OnLiveAsync(IReadOnlyList<RisEvent> _)
+    private Dictionary<int, int> _reserved = new();
+
+    private async Task LoadAsync()
     {
         _items = await CatalogSvc.ItemsAsync();
+        _reserved = await RisSvc.ReservedByItemAsync();
+    }
+
+    // Approvals reserve stock and releases deduct it; refresh the figures when either happens.
+    private async Task OnLiveAsync(IReadOnlyList<RisEvent> _)
+    {
+        await LoadAsync();
         StateHasChanged();
     }
 
-    public void Dispose() => Live.Changed -= OnLiveAsync;
+    public void Dispose()
+    {
+        Live.Changed -= OnLiveAsync;
+        Live.AreasChanged -= OnAreasAsync;
+    }
 
     private void OpenReceive()
     {
@@ -272,7 +297,7 @@
             });
         if (!ok) return;
         _receiveOpen = false;
-        _items = await CatalogSvc.ItemsAsync();
+        await LoadAsync();
         await JS.InvokeVoidAsync("showToast", "Delivery recorded.", "success");
     }
 
@@ -298,7 +323,18 @@
             });
         if (!ok) return;
         _adjustOpen = false;
-        _items = await CatalogSvc.ItemsAsync();
+        await LoadAsync();
         await JS.InvokeVoidAsync("showToast", "Stock adjusted.", "success");
+    }
+
+    // Live: when catalog change on either website, reload without a refresh.
+    private static readonly string[] LiveAreas = ["catalog"];
+    protected override void OnInitialized() => Live.AreasChanged += OnAreasAsync;
+
+    private async Task OnAreasAsync(IReadOnlySet<string> areas)
+    {
+        if (!areas.Overlaps(LiveAreas)) return;
+        await LoadAsync();
+        StateHasChanged();
     }
 }

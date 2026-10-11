@@ -45,6 +45,13 @@ public class SupplyItem
     public int StockOnHand { get; set; }
     public int ReorderLevel { get; set; }
     public bool IsActive { get; set; }
+    /// Has an expiration date (printer ink, toner, glue...). EXP is required, MFD is optional.
+    public bool IsPerishable { get; set; }
+    public DateTime? ManufacturedOn { get; set; }
+    public DateTime? ExpiresOn { get; set; }
+
+    /// Days until expiry (negative = already expired); null when the item doesn't expire.
+    public int? DaysToExpiry => IsPerishable && ExpiresOn is { } e ? (e.Date - Services.PhTime.Now.Date).Days : null;
 
     public ItemCategory? Category { get; set; }
     public Supplier? Supplier { get; set; }

@@ -7,6 +7,7 @@ public static class PhTime
 {
     private static readonly TimeZoneInfo Manila = Find();
     public static DateTime Now => TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Manila);
+    public static DateTime FromUtc(DateTime utc) => TimeZoneInfo.ConvertTimeFromUtc(utc, Manila);
 
     private static TimeZoneInfo Find()
     {

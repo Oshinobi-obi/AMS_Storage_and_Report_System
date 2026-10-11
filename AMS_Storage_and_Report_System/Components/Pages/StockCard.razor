@@ -41,8 +41,8 @@
         <section class="panel">
             <header class="panel-head no-print">
                 <div class="d-flex flex-wrap align-items-end gap-3">
-                    <div><label class="form-label" for="sc-from">From</label><input id="sc-from" type="date" class="form-control" autocomplete="off" @bind="_from" @bind:after="LoadAsync" /></div>
-                    <div><label class="form-label" for="sc-to">To</label><input id="sc-to" type="date" class="form-control" autocomplete="off" @bind="_to" @bind:after="LoadAsync" /></div>
+                    <div><label class="form-label" for="sc-from">From</label><DatePicker Id="sc-from" @bind-Value="_from" @bind-Value:after="LoadAsync" Max="_to" Placeholder="Any date" /></div>
+                    <div><label class="form-label" for="sc-to">To</label><DatePicker Id="sc-to" @bind-Value="_to" @bind-Value:after="LoadAsync" Min="_from" Placeholder="Any date" /></div>
                     @if (_from is not null || _to is not null)
                     {
                         <button type="button" class="btn btn-light btn-sm mb-1" @onclick="ClearAsync">Show all dates</button>

@@ -1,0 +1,31 @@
+@* One stacked bar: how many catalog items are in stock, low, and out of stock. *@
+@using System.Globalization
+
+@if (Total > 0)
+{
+    <div class="health">
+        <div class="health-bar" role="img" aria-label="@($"{InStock} in stock, {Low} low, {Out} out of stock")">
+            @foreach (var (count, css, label) in Parts)
+            {
+                if (count == 0) continue;
+                <span class="health-part @css" style="flex-grow: @count.ToString(CultureInfo.InvariantCulture)" title="@($"{label}: {count:N0} items")"></span>
+            }
+        </div>
+        <ul class="health-legend">
+            @foreach (var (count, css, label) in Parts)
+            {
+                <li class="@css"><span class="health-dot" aria-hidden="true"></span>@label <strong>@count.ToString("N0")</strong>
+                    <small>@((100.0 * count / Total).ToString("0", CultureInfo.InvariantCulture))%</small></li>
+            }
+        </ul>
+    </div>
+}
+
+@code {
+    [Parameter] public int InStock { get; set; }
+    [Parameter] public int Low { get; set; }
+    [Parameter] public int Out { get; set; }
+
+    private int Total => InStock + Low + Out;
+    private (int, string, string)[] Parts => [(InStock, "is-ok", "In stock"), (Low, "is-low", "Low"), (Out, "is-out", "Out of stock")];
+}

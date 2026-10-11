@@ -48,7 +48,11 @@ builder.Services.AddScoped<CatalogAdminService>();
 builder.Services.AddScoped<StockService>();
 builder.Services.AddScoped<AppCseService>();
 builder.Services.AddScoped<ReportService>();
+builder.Services.AddScoped<SupplyDashboardService>();
+builder.Services.AddScoped<SemiExpendableService>();
 builder.Services.AddScoped<SettingsService>();
+builder.Services.AddScoped<PropertyService>();
+builder.Services.AddScoped<AdminExtrasService>();
 // Live updates: one database watcher for the server, one relay per browser tab
 builder.Services.AddSingleton<AMS_Storage_and_Report_System.Services.Live.RisEventFeed>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<AMS_Storage_and_Report_System.Services.Live.RisEventFeed>());
@@ -142,6 +146,25 @@ app.Use(async (context, next) =>
 app.UseAntiforgery();
 
 app.MapStaticAssets();
+// ── Live-update status (open /live/status while signed in) ──────────────────
+// Shows whether the 5-second watcher is running and the last error it met, if any.
+app.MapGet("/live/status", (AMS_Storage_and_Report_System.Services.Live.RisEventFeed feed) =>
+{
+    static string? Ph(DateTime? utc) => utc is { } u ? AMS_Storage_and_Report_System.Services.PhTime.FromUtc(u).ToString("yyyy-MM-dd hh:mm:ss tt") : null;
+    var running = feed.LastCheckUtc is { } last && DateTime.UtcNow - last < TimeSpan.FromSeconds(30);
+    return Results.Json(new
+    {
+        running,
+        meaning = running ? "Live updates are working." : "The watcher has not checked in the last 30 seconds. Restart the site and see lastError.",
+        lastCheck = Ph(feed.LastCheckUtc),
+        lastChange = Ph(feed.LastChangeUtc),
+        lastChangedAreas = feed.LastChangedAreas,
+        lastError = feed.LastError,
+        lastErrorAt = Ph(feed.LastErrorUtc),
+        watching = feed.Signatures.Keys.OrderBy(k => k).ToArray(),
+    });
+}).RequireAuthorization();
+
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
@@ -319,6 +342,37 @@ app.MapGet("/exports/rsmi", async (int year, int month, ReportService reports, S
 
 app.MapGet("/exports/utilization", async (int year, int? office, ReportService reports) =>
     Results.File(await reports.UtilizationExcelAsync(year, office ?? 0), Xlsx, $"APP-CSE-utilization-{year}.xlsx")).RequireAuthorization();
+
+app.MapGet("/exports/supplies-report", async (string? period, SupplyDashboardService supplies, SettingsService settings) =>
+{
+    var (since, label) = SupplyDashboardService.Period(period);
+    var entity = (await settings.LoadAsync()).EntityName;
+    return Results.File(await supplies.ExcelAsync(since, label, entity), Xlsx, $"office-supplies-report-{PhTime.Now:yyyyMMdd}.xlsx");
+}).RequireAuthorization();
+
+// SPLV / SPHV deliveries: one delivery, or the filtered list, as Excel or PDF
+static string PreparedBy(HttpContext http) =>
+    http.User.FindFirst("FullName")?.Value is { Length: > 0 } n ? n : http.User.Identity?.Name ?? "";
+
+app.MapGet("/exports/semi-expendable/{id:int}", async (int id, string? format, HttpContext http, SemiExpendableService svc, SettingsService settings) =>
+{
+    var entity = (await settings.LoadAsync()).EntityName;
+    if (format == "pdf")
+        return await svc.DeliveryPdfAsync(id, entity, PreparedBy(http)) is { } pdf
+            ? Results.File(pdf, "application/pdf", $"semi-expendable-delivery-{id}.pdf") : Results.NotFound();
+    return await svc.DeliveryExcelAsync(id, entity) is { } xlsx
+        ? Results.File(xlsx, Xlsx, $"semi-expendable-delivery-{id}.xlsx") : Results.NotFound();
+}).RequireAuthorization();
+
+app.MapGet("/exports/semi-expendable", async (int? year, string? type, string? q, string? format, HttpContext http, SemiExpendableService svc, SettingsService settings) =>
+{
+    var filter = new SeFilter(year ?? PhTime.Now.Year, type is "SPLV" or "SPHV" ? type : null, q);
+    var entity = (await settings.LoadAsync()).EntityName;
+    var name = $"{(filter.Category ?? "splv-sphv").ToLowerInvariant()}-deliveries-{filter.Year}";
+    return format == "pdf"
+        ? Results.File(await svc.RegisterPdfAsync(filter, entity, PreparedBy(http)), "application/pdf", name + ".pdf")
+        : Results.File(await svc.RegisterExcelAsync(filter, entity), Xlsx, name + ".xlsx");
+}).RequireAuthorization();
 
 app.MapGet("/exports/reorder", async (bool? all, ReportService reports) =>
     Results.File(await reports.ReorderExcelAsync(all != true), Xlsx, $"reorder-list-{PhTime.Now:yyyyMMdd}.xlsx")).RequireAuthorization();

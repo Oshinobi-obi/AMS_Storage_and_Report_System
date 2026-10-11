@@ -3,6 +3,8 @@
 // 2) Fill in / correct quantities in Excel.
 // 3) Upload: every row is checked and previewed; nothing is saved until "Import".
 
+using System.Globalization;
+using System.Text.RegularExpressions;
 using AMS_Storage_and_Report_System.Data;
 using AMS_Storage_and_Report_System.Models;
 using ClosedXML.Excel;
@@ -27,6 +29,10 @@ public sealed class AppCseRowCheck
     public string? Warning { get; set; }
     public int OfficeId { get; set; }
     public int ItemId { get; set; }
+    /// The workbook sheet this row came from (official PS-DBM workbook only).
+    public string? Sheet { get; set; }
+    /// Set when the item isn't in the Catalog yet; it is created on import if allowed.
+    public string? NewItemKey { get; set; }
 
     public string Change => Error is not null ? "Error"
         : CurrentTotal is null ? "New"
@@ -40,7 +46,42 @@ public sealed class AppCsePreview
     public List<AppCseRowCheck> Rows { get; set; } = [];
     public string? FileError { get; set; }
     public int Errors => Rows.Count(r => r.Error is not null);
-    public bool CanImport => FileError is null && Errors == 0 && Rows.Any(r => r.Change is "New" or "Changed");
+
+    /// "template" (the website's own Excel) or "official" (the PS-DBM APP-CSE workbook).
+    public string Format { get; set; } = "template";
+    public List<AppCseSheetInfo> Sheets { get; set; } = [];
+    public List<NewCatalogItem> NewItems { get; set; } = [];
+    public List<string> Notices { get; set; } = [];
+    /// Add items that aren't in the Catalog yet (official workbook). If off, their rows are skipped.
+    public bool AddMissingItems { get; set; } = true;
+
+    public bool WillImport(AppCseRowCheck r) =>
+        r.Error is null && (r.NewItemKey is null || AddMissingItems) &&
+        (r.Change is "New" or "Changed" || (r.Change == "Unchanged" && r.Q1 is not null));
+
+    public bool CanImport => FileError is null && Errors == 0 && Rows.Any(r => WillImport(r) && r.Change is "New" or "Changed");
+}
+
+public sealed class AppCseSheetInfo
+{
+    public string Sheet { get; set; } = "";
+    public string? Office { get; set; }
+    public int Items { get; set; }
+    public int Units { get; set; }
+    public int Warnings { get; set; }
+    public string Status { get; set; } = "Read";      // Read | Skipped (empty) | Error | Check only
+    public string? Note { get; set; }
+}
+
+public sealed class NewCatalogItem
+{
+    public string Key { get; set; } = "";
+    public string StockNo { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Unit { get; set; } = "";
+    public decimal Price { get; set; }
+    public string Category { get; set; } = "";
+    public bool FromPartII { get; set; }
 }
 
 public sealed class AppCseService(IDbContextFactory<AppDbContext> dbFactory)
@@ -118,6 +159,10 @@ public sealed class AppCseService(IDbContextFactory<AppDbContext> dbFactory)
 
         using (wb)
         {
+            // The Regional Office's official PS-DBM APP-CSE workbook (one sheet per office)?
+            if (wb.Worksheets.Any(sheet => FindOfficialHeader(sheet) is not null))
+                return await PreviewOfficialAsync(wb, preview);
+
             var ws = wb.Worksheets.First();
             var headerRow = ws.FirstRowUsed();
             if (headerRow is null) { preview.FileError = "The first sheet is empty."; return preview; }
@@ -222,9 +267,45 @@ public sealed class AppCseService(IDbContextFactory<AppDbContext> dbFactory)
         db.AppCseUploads.Add(upload);
         await db.SaveChangesAsync();
 
-        var existing = await db.AppCseAllocations.Where(a => a.FiscalYear == preview.FiscalYear).ToDictionaryAsync(a => (a.OfficeId, a.ItemId));
-        foreach (var r in preview.Rows.Where(r => r.Change is "New" or "Changed" || (r.Change == "Unchanged" && r.Q1 is not null)))
+        // Items from the workbook that aren't in the Catalog yet
+        var newIds = new Dictionary<string, int>();
+        var added = 0;
+        if (preview.AddMissingItems && preview.NewItems.Count > 0)
         {
+            var reorderText = await db.SystemSettings.Where(x => x.SettingKey == "stock.default_reorder").Select(x => x.SettingValue).FirstOrDefaultAsync();
+            var reorder = int.TryParse(reorderText, out var rl) ? rl : 10;
+            var categories = await db.ItemCategories.ToListAsync();
+            var nextSort = categories.Count == 0 ? 1 : categories.Max(c => c.SortOrder) + 1;
+            foreach (var n in preview.NewItems)
+            {
+                var already = await db.SupplyItems.FirstOrDefaultAsync(i => i.StockNo == n.StockNo);
+                if (already is not null) { newIds[n.Key] = already.ItemId; continue; }
+
+                var cat = categories.FirstOrDefault(c => c.CategoryName.Equals(n.Category, StringComparison.OrdinalIgnoreCase));
+                if (cat is null && n.Category.Length > 0)
+                {
+                    cat = new ItemCategory { CategoryName = n.Category[..Math.Min(n.Category.Length, 100)], Icon = n.FromPartII ? "bi-bag" : "bi-box-seam", SortOrder = nextSort++ };
+                    db.ItemCategories.Add(cat);
+                    categories.Add(cat);
+                    await db.SaveChangesAsync();
+                }
+                var item = new SupplyItem
+                {
+                    StockNo = n.StockNo, ItemName = n.Name[..Math.Min(n.Name.Length, 200)], UnitOfMeasure = n.Unit[..Math.Min(n.Unit.Length, 30)],
+                    UnitPrice = n.Price, CategoryId = cat?.CategoryId, ReorderLevel = reorder, IsActive = true,
+                };
+                db.SupplyItems.Add(item);
+                await db.SaveChangesAsync();
+                newIds[n.Key] = item.ItemId;
+                added++;
+            }
+        }
+
+        var existing = await db.AppCseAllocations.Where(a => a.FiscalYear == preview.FiscalYear).ToDictionaryAsync(a => (a.OfficeId, a.ItemId));
+        foreach (var r in preview.Rows.Where(preview.WillImport))
+        {
+            if (r.NewItemKey is not null) r.ItemId = newIds.GetValueOrDefault(r.NewItemKey);
+            if (r.ItemId == 0) continue;
             if (!existing.TryGetValue((r.OfficeId, r.ItemId), out var a))
             {
                 a = new AppCseAllocation { OfficeId = r.OfficeId, ItemId = r.ItemId, FiscalYear = preview.FiscalYear };
@@ -237,7 +318,273 @@ public sealed class AppCseService(IDbContextFactory<AppDbContext> dbFactory)
         db.UserActivities.Add(new UserActivity { UserId = userId, ActivityType = "Update", Description = $"Imported APP-CSE {preview.FiscalYear} from {preview.FileName}", CreatedAt = PhTime.Now });
         await db.SaveChangesAsync();
         await tx.CommitAsync();
-        return OpResult.Success($"APP-CSE {preview.FiscalYear} saved: {upload.Notes}. Offices see the new figures right away.");
+        var catalogNote = added > 0 ? $" {added} new item(s) were added to the Catalog." : "";
+        return OpResult.Success($"APP-CSE {preview.FiscalYear} saved: {upload.Notes}.{catalogNote} Offices see the new figures right away.");
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  Official PS-DBM APP-CSE workbook (one sheet per office + a consolidated sheet)
+    // ════════════════════════════════════════════════════════════════════════
+    // Columns of the PS-DBM form: E–G, J–L, O–Q, T–V months · H, M, R, W quarters ·
+    // Y total for the year · Z unit price. Rows: category headings, items, PART II, totals.
+    private static readonly int[] MonthCols = [5, 6, 7, 10, 11, 12, 15, 16, 17, 20, 21, 22];
+    private static readonly int[] QuarterCols = [8, 13, 18, 23];
+    private const int TotalCol = 25, PriceCol = 26;
+
+    private sealed record SheetRow(int Row, int Part, string? Code, string Name, string Unit, string Section,
+                                   double[] Months, double[] Quarters, double Total, double Price, string? Error);
+
+    private static string Text(IXLCell c)
+    {
+        var v = c.Value;
+        var t = v.IsBlank ? "" : v.IsText ? v.GetText() : c.GetFormattedString();
+        return Regex.Replace(t, @"\s+", " ").Trim();
+    }
+
+    /// Number in a cell, whether stored as a number or as text ("811.6"). Blank = 0.
+    private static bool TryNumber(IXLCell c, out double value)
+    {
+        value = 0;
+        var v = c.Value;
+        if (v.IsBlank) return true;
+        if (v.IsNumber) { value = v.GetNumber(); return true; }
+        if (v.IsError) return false;
+        var t = Text(c).Replace(",", "");
+        return t.Length == 0 || double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+    }
+
+    /// Row of the "Item & Specifications" heading (row 2 in 2026, row 4 in 2027), or null if not this form.
+    private static int? FindOfficialHeader(IXLWorksheet ws)
+    {
+        for (var r = 1; r <= 15; r++)
+            if (Text(ws.Cell(r, 1)).StartsWith("Item & Spec", StringComparison.OrdinalIgnoreCase) &&
+                Text(ws.Cell(r, TotalCol)).Contains("Total Quantity", StringComparison.OrdinalIgnoreCase))
+                return r;
+        return null;
+    }
+
+    /// "13 ORD" → "ORD", "ORD" → "ORD"
+    private static string SheetOffice(string sheetName) => Regex.Replace(sheetName, @"^\s*\d+[\s.\-_)]*", "").Trim();
+
+    private static bool IsConsolidated(string sheetName)
+    {
+        var n = SheetOffice(sheetName).ToUpperInvariant();
+        return n.Contains("CONSOL") || n is "FINAL" or "SUMMARY" or "TOTAL";
+    }
+
+    private static string NormalName(string s) => Regex.Replace(s, @"\s+", " ").Trim().ToUpperInvariant();
+
+    private static string TitleCase(string s)
+    {
+        var small = new HashSet<string> { "and", "or", "of", "the", "for", "in", "at", "to", "with" };
+        var words = Regex.Replace(s, @"\(.*?\)", "").Trim().ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return string.Join(' ', words.Select((w, i) => i > 0 && small.Contains(w) ? w : char.ToUpperInvariant(w[0]) + w[1..]));
+    }
+
+    private static List<SheetRow> ReadOfficialSheet(IXLWorksheet ws, int header)
+    {
+        var rows = new List<SheetRow>();
+        var part = 1;
+        var section = "";
+        var last = ws.LastRowUsed()?.RowNumber() ?? 0;
+        for (var r = header + 2; r <= last; r++)
+        {
+            var a = Text(ws.Cell(r, 1));
+            var code = Text(ws.Cell(r, 2));
+            var name = Text(ws.Cell(r, 3));
+            if (a.StartsWith("PART II", StringComparison.OrdinalIgnoreCase)) { part = 2; section = "Other Items"; continue; }
+            if (a.StartsWith("PART I", StringComparison.OrdinalIgnoreCase)) continue;
+            if (Regex.IsMatch(a, @"^[A-E]\.\s")) break;                       // "A. TOTAL", "B. ADDITIONAL PROVISION…"
+            var isNumbered = double.TryParse(a, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
+            if (!isNumbered)
+            {
+                if (a.Length > 0 && code.Length == 0 && name.Length == 0 && part == 1) section = TitleCase(a);
+                continue;
+            }
+            if (name.Length == 0) continue;
+
+            string? error = null;
+            double Read(int col)
+            {
+                if (TryNumber(ws.Cell(r, col), out var v)) return v;
+                error ??= $"Cell {ws.Cell(r, col).Address} has \"{Text(ws.Cell(r, col))}\" instead of a number.";
+                return 0;
+            }
+            var months = MonthCols.Select(Read).ToArray();
+            var quarters = QuarterCols.Select(Read).ToArray();
+            var total = Read(TotalCol);
+            TryNumber(ws.Cell(r, PriceCol), out var price);
+            rows.Add(new SheetRow(r, part, code.Length > 0 ? code : null, name, Text(ws.Cell(r, 4)), section, months, quarters, total, price, error));
+        }
+        return rows;
+    }
+
+    private async Task<AppCsePreview> PreviewOfficialAsync(XLWorkbook wb, AppCsePreview preview)
+    {
+        preview.Format = "official";
+        var year = preview.FiscalYear;
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var offices = await db.Offices.AsNoTracking().ToListAsync();
+        var bySheet = new Dictionary<string, Office>(StringComparer.OrdinalIgnoreCase);
+        foreach (var o in offices) bySheet.TryAdd(o.AppCseSheet ?? o.OfficeAcronym, o);
+        foreach (var o in offices) bySheet.TryAdd(o.OfficeAcronym, o);
+
+        var items = await db.SupplyItems.AsNoTracking().ToListAsync();
+        var byCode = items.GroupBy(i => i.StockNo.ToUpperInvariant()).ToDictionary(g => g.Key, g => g.First());
+        var byName = new Dictionary<string, SupplyItem>();
+        foreach (var i in items)
+        {
+            byName.TryAdd(NormalName(i.ItemName), i);
+            if (!string.IsNullOrWhiteSpace(i.Specifications)) byName.TryAdd(NormalName($"{i.ItemName}, {i.Specifications}"), i);
+        }
+        var current = await db.AppCseAllocations.AsNoTracking().Where(a => a.FiscalYear == year).ToDictionaryAsync(a => (a.OfficeId, a.ItemId));
+        var pending = await db.RisItems
+            .Join(db.RisTransactions.Where(r => r.FiscalYear == year && r.Status == RisStatus.Pending), i => i.RisId, r => r.RisId, (i, r) => new { r.OfficeId, i.ItemId, i.RequestedQty })
+            .GroupBy(x => new { x.OfficeId, x.ItemId })
+            .Select(g => new { g.Key.OfficeId, g.Key.ItemId, Qty = g.Sum(x => x.RequestedQty) })
+            .ToDictionaryAsync(x => (x.OfficeId, x.ItemId), x => x.Qty);
+
+        // Part II items get simple stock numbers (OTH-001, OTH-002, …) after the highest one in use
+        var nextOther = items.Select(i => Regex.Match(i.StockNo, @"^OTH-(\d+)$", RegexOptions.IgnoreCase))
+                             .Where(m => m.Success).Select(m => int.Parse(m.Groups[1].Value)).DefaultIfEmpty(0).Max() + 1;
+        var newItems = new Dictionary<string, NewCatalogItem>();
+        var seenOffices = new Dictionary<int, string>();
+        var sheetTotals = new Dictionary<string, double>();      // item key → offices' sheets added up
+        List<SheetRow>? consolidated = null;
+        string? consolidatedName = null;
+
+        foreach (var ws in wb.Worksheets)
+        {
+            var header = FindOfficialHeader(ws);
+            if (header is null) continue;                          // e.g. an empty "Sheet1"
+            var rowsRead = ReadOfficialSheet(ws, header.Value);
+            if (IsConsolidated(ws.Name))
+            {
+                consolidated = rowsRead;
+                consolidatedName = ws.Name;
+                preview.Sheets.Add(new AppCseSheetInfo { Sheet = ws.Name, Status = "Check only", Note = "Consolidated sheet: used only to compare totals, not imported." });
+                continue;
+            }
+
+            var info = new AppCseSheetInfo { Sheet = ws.Name };
+            preview.Sheets.Add(info);
+            if (!rowsRead.Any(r => r.Total > 0 || r.Quarters.Any(q => q > 0) || r.Error is not null))
+            {
+                info.Status = "Skipped";
+                info.Note = "No quantities on this sheet. The office keeps its current APP-CSE.";
+                info.Office = bySheet.GetValueOrDefault(SheetOffice(ws.Name))?.OfficeAcronym;
+                continue;
+            }
+
+            var officeName = SheetOffice(ws.Name);
+            if (!bySheet.TryGetValue(officeName, out var office))
+            {
+                info.Status = "Error";
+                info.Note = $"No office is called \"{officeName}\". Set the office's APP-CSE sheet name in Settings → Offices, then upload again.";
+                preview.Rows.Add(new AppCseRowCheck { Sheet = ws.Name, OfficeAcronym = officeName, Error = info.Note });
+                continue;
+            }
+            info.Office = office.OfficeAcronym;
+            if (!office.CanRequisition)
+            {
+                info.Status = "Error";
+                info.Note = $"{office.OfficeAcronym} isn't allowed to request supplies. Turn it on in Settings → Offices, or remove the sheet.";
+                preview.Rows.Add(new AppCseRowCheck { Sheet = ws.Name, OfficeAcronym = office.OfficeAcronym, Error = info.Note });
+                continue;
+            }
+            if (seenOffices.TryGetValue(office.OfficeId, out var otherSheet))
+            {
+                info.Status = "Error";
+                info.Note = $"Sheets \"{otherSheet}\" and \"{ws.Name}\" are both {office.OfficeAcronym}.";
+                preview.Rows.Add(new AppCseRowCheck { Sheet = ws.Name, OfficeAcronym = office.OfficeAcronym, Error = info.Note });
+                continue;
+            }
+            seenOffices[office.OfficeId] = ws.Name;
+
+            foreach (var r in rowsRead)
+            {
+                var key = r.Code is not null ? r.Code.ToUpperInvariant() : "P2:" + NormalName(r.Name);
+                var check = new AppCseRowCheck { Sheet = ws.Name, RowNumber = r.Row, OfficeAcronym = office.OfficeAcronym, OfficeId = office.OfficeId, StockNo = r.Code ?? "", ItemName = r.Name };
+
+                // Quarters are the official figures; a row with only a yearly total is imported as a yearly total.
+                var hasQuarters = r.Quarters.Any(q => q > 0);
+                var total = hasQuarters ? r.Quarters.Sum() : r.Total;
+                if (r.Error is not null) check.Error = $"Row {r.Row}: {r.Error}";
+                else if (r.Quarters.Concat([r.Total]).Any(v => v < 0 || v != Math.Floor(v))) check.Error = $"Row {r.Row}: quantities must be whole numbers, 0 or more.";
+                if (hasQuarters)
+                {
+                    check.Q1 = (int)r.Quarters[0]; check.Q2 = (int)r.Quarters[1]; check.Q3 = (int)r.Quarters[2]; check.Q4 = (int)r.Quarters[3];
+                    if (r.Total > 0 && Math.Abs(r.Total - total) > 0.001)
+                        check.Warning = $"Total for the year says {r.Total:0}, but Q1–Q4 add up to {total:0}. Q1–Q4 are used.";
+                    else if (Enumerable.Range(0, 4).Any(q => r.Months.Skip(q * 3).Take(3).Any(m => m > 0) && Math.Abs(r.Months.Skip(q * 3).Take(3).Sum() - r.Quarters[q]) > 0.001))
+                        check.Warning = "The monthly figures don't add up to the quarters. The quarters are used.";
+                }
+                check.Total = (int)total;
+                sheetTotals[key] = sheetTotals.GetValueOrDefault(key) + total;
+
+                // Which catalog item?
+                SupplyItem? item = r.Code is not null ? byCode.GetValueOrDefault(r.Code.ToUpperInvariant()) : byName.GetValueOrDefault(NormalName(r.Name));
+                if (item is not null)
+                {
+                    check.ItemId = item.ItemId;
+                    check.StockNo = item.StockNo;
+                    current.TryGetValue((office.OfficeId, item.ItemId), out var existing);
+                    check.CurrentTotal = existing?.AllocatedQty;
+                    check.AlreadyUsed = (existing?.IssuedQty ?? 0) + pending.GetValueOrDefault((office.OfficeId, item.ItemId));
+                    if (check.Error is null && check.Total < check.AlreadyUsed)
+                        check.Error = $"Row {r.Row}: {office.OfficeAcronym} has already used {check.AlreadyUsed} (issued or pending). The new total can't be lower.";
+                    if (check.Error is null && check.Total == 0 && check.CurrentTotal is null) continue;   // not needed, never was
+                }
+                else
+                {
+                    if (check.Error is null && check.Total == 0) continue;                                // not needed, not in catalog
+                    if (!newItems.TryGetValue(key, out var n))
+                    {
+                        n = new NewCatalogItem
+                        {
+                            Key = key, Name = r.Name, Unit = r.Unit.Length > 0 ? r.Unit : "piece", Price = (decimal)Math.Round(r.Price, 2),
+                            Category = r.Section.Length > 0 ? r.Section : "Other Items", FromPartII = r.Part == 2,
+                            StockNo = r.Code ?? $"OTH-{nextOther++:000}",
+                        };
+                        newItems[key] = n;
+                    }
+                    else if (n.Price == 0 && r.Price > 0) n.Price = (decimal)Math.Round(r.Price, 2);
+                    check.NewItemKey = key;
+                    check.StockNo = n.StockNo;
+                }
+
+                info.Items += check.Total > 0 ? 1 : 0;
+                info.Units += check.Total;
+                info.Warnings += check.Warning is not null ? 1 : 0;
+                if (check.Error is not null) info.Status = "Error";
+                preview.Rows.Add(check);
+            }
+        }
+
+        preview.NewItems = newItems.Values.OrderBy(n => n.FromPartII).ThenBy(n => n.Category).ThenBy(n => n.Name).ToList();
+
+        // Compare with the consolidated sheet (information only)
+        if (consolidated is not null)
+        {
+            var diffs = consolidated
+                .Select(r => new { r.Name, Key = r.Code is not null ? r.Code.ToUpperInvariant() : "P2:" + NormalName(r.Name), Total = r.Quarters.Any(q => q > 0) ? r.Quarters.Sum() : r.Total })
+                .Where(r => Math.Abs(r.Total - sheetTotals.GetValueOrDefault(r.Key)) > 0.001)
+                .ToList();
+            if (diffs.Count > 0)
+            {
+                var ex = diffs[0];
+                preview.Notices.Add($"The \"{consolidatedName}\" sheet differs from the office sheets added together on {diffs.Count} item(s), e.g. {ex.Name}: {ex.Total:0} there, {sheetTotals.GetValueOrDefault(ex.Key):0} on the office sheets. Each office's own sheet is what gets imported.");
+            }
+            else preview.Notices.Add($"The \"{consolidatedName}\" sheet matches the office sheets added together.");
+        }
+        var skipped = preview.Sheets.Where(x => x.Status == "Skipped").Select(x => x.Sheet).ToList();
+        if (skipped.Count > 0) preview.Notices.Add($"Skipped (no quantities): {string.Join(", ", skipped)}.");
+
+        if (!preview.Sheets.Any(x => x.Status is "Read" or "Error"))
+            preview.FileError = "No office sheet with quantities was found in this workbook.";
+        else if (preview.Rows.Count == 0)
+            preview.FileError = "No quantities were found in the office sheets.";
+        return preview;
     }
 
     public async Task<List<AppCseAllocation>> AllocationsAsync(int year, int officeId)

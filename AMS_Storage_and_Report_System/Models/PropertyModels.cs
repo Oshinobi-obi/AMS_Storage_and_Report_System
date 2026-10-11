@@ -6,6 +6,8 @@ public class Office
     public string OfficeName { get; set; } = string.Empty;
     public string OfficeAcronym { get; set; } = string.Empty;
     public string? ResponsibilityCenterCode { get; set; }
+    /// Sheet name of this office in the APP-CSE workbook, when it differs from the acronym (e.g. "SHNU").
+    public string? AppCseSheet { get; set; }
     public bool CanRequisition { get; set; } = true;   // new offices can request supplies
     public bool IsActive { get; set; } = true;
 }

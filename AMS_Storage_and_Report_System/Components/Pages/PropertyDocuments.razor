@@ -1,6 +1,8 @@
 @page "/property-documents"
 @layout AppLayout
 @attribute [Authorize]
+@inject LiveRefresh Live
+@implements IDisposable
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject PropertyDocumentStorage Storage
 @inject AuthenticationStateProvider AuthStateProvider
@@ -444,4 +446,17 @@
     }
 
     private ValueTask Toast(string text, string type = "success") => JS.InvokeVoidAsync("showToast", text, type);
+
+    // Live: when documents, personnel change on either website, reload without a refresh.
+    private static readonly string[] LiveAreas = ["documents", "personnel"];
+    protected override void OnInitialized() => Live.AreasChanged += OnAreasAsync;
+
+    private async Task OnAreasAsync(IReadOnlySet<string> areas)
+    {
+        if (!areas.Overlaps(LiveAreas)) return;
+        await RunFilterAsync();
+        StateHasChanged();
+    }
+
+    public void Dispose() => Live.AreasChanged -= OnAreasAsync;
 }

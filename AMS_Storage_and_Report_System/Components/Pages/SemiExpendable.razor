@@ -1,0 +1,535 @@
+@page "/semi-expendable"
+@layout AppLayout
+@attribute [Authorize]
+@implements IDisposable
+@inject SemiExpendableService SeSvc
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject CatalogAdminService CatalogSvc
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ModalService Modal
+@inject IJSRuntime JS
+@inject ILogger<SemiExpendable> Log
+
+<PageTitle>SPLV and SPHV | AMS StockWatch</PageTitle>
+
+<PageHeader Title="SPLV and SPHV deliveries" Subtitle="Semi-expendable property delivered to AMS. ICS and PAR numbers are given automatically when you save.">
+    <Actions>
+        <button type="button" class="btn btn-light" @onclick="OpenNumbering" disabled="@_error"><i class="bi bi-123 me-1" aria-hidden="true"></i> Numbering</button>
+        <button type="button" class="btn btn-accent" @onclick="OpenAdd" disabled="@_error"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i> New delivery</button>
+    </Actions>
+</PageHeader>
+
+<div class="wrap page-body">
+    @if (_error)
+    {
+        <div class="empty-state">
+            <i class="bi bi-database-exclamation" aria-hidden="true"></i>
+            <h2>This page isn't set up yet</h2>
+            <p>Run the database update <code>011_semi_expendable_deliveries.sql</code>, then reload this page.</p>
+        </div>
+    }
+    else if (_list is null)
+    {
+        <div class="panel"><div class="loading">Loading deliveries…</div></div>
+    }
+    else
+    {
+        <div class="status-chips" role="group" aria-label="Filter by type">
+            <button type="button" class="status-chip @(_type == "" ? "is-active" : "")" @onclick='() => SetTypeAsync("")'>All <span>@_counts.All</span></button>
+            <button type="button" class="status-chip @(_type == SeCategory.Splv ? "is-active" : "")" @onclick="() => SetTypeAsync(SeCategory.Splv)"
+                    title="Semi-Expendable Property, Low Value">SPLV <span>@_counts.Splv</span></button>
+            <button type="button" class="status-chip @(_type == SeCategory.Sphv ? "is-active" : "")" @onclick="() => SetTypeAsync(SeCategory.Sphv)"
+                    title="Semi-Expendable Property, High Value">SPHV <span>@_counts.Sphv</span></button>
+        </div>
+
+        <section class="panel">
+            <header class="panel-head">
+                <div class="filters flex-grow-1">
+                    <div>
+                        <label class="form-label" for="se-search">Search</label>
+                        <div class="input-icon">
+                            <i class="bi bi-search" aria-hidden="true"></i>
+                            <input id="se-search" type="search" class="form-control" placeholder="ICS / PAR no., item, supplier or DR no." autocomplete="off"
+                                   @bind="_search" @bind:event="oninput" @bind:after="SearchChangedAsync" />
+                        </div>
+                    </div>
+                    <div><label class="form-label" for="se-year">Year delivered</label><Picker TValue="int" Id="se-year" Options="YearOptions" @bind-Value="_year" @bind-Value:after="ReloadAsync" /></div>
+                    <div class="se-exports">
+                        <a class="btn btn-outline-primary" href="@ExportUrl("xlsx")" download><i class="bi bi-file-earmark-excel me-1" aria-hidden="true"></i>Excel</a>
+                        <a class="btn btn-outline-primary" href="@ExportUrl("pdf")" download><i class="bi bi-file-earmark-pdf me-1" aria-hidden="true"></i>PDF</a>
+                    </div>
+                </div>
+            </header>
+
+            @if (_list.Count == 0)
+            {
+                <div class="empty-state">
+                    <i class="bi bi-truck" aria-hidden="true"></i>
+                    <h2>@(string.IsNullOrWhiteSpace(_search) && _type == "" ? $"No deliveries recorded for {_year}" : "No deliveries match")</h2>
+                    <p>@(string.IsNullOrWhiteSpace(_search) && _type == "" ? "Record SPLV or SPHV items when they are delivered; their ICS and PAR numbers are given automatically." : "Try another word, type or year.")</p>
+                    @if (string.IsNullOrWhiteSpace(_search) && _type == "") { <button type="button" class="btn btn-primary" @onclick="OpenAdd">New delivery</button> }
+                </div>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead><tr><th>Delivered</th><th>Type</th><th>Supplier</th><th>Items and ICS / PAR numbers</th><th class="t-num">Amount</th><th class="text-end">Actions</th></tr></thead>
+                        <tbody>
+                            @foreach (var d in _list)
+                            {
+                                <tr @key="d.DeliveryId">
+                                    <td class="text-nowrap"><span class="cell-strong">@d.DeliveredOn.ToString("MMM d, yyyy")</span>
+                                        @if (!string.IsNullOrWhiteSpace(d.ReferenceNo)) { <span class="cell-sub">DR / invoice @d.ReferenceNo</span> }</td>
+                                    <td><span class="badge-pill @(d.Category == SeCategory.Sphv ? "badge-gold" : "badge-navy")">@d.Category</span></td>
+                                    <td>@d.SupplierName</td>
+                                    <td>
+                                        <ul class="se-lines">
+                                            @foreach (var l in d.Lines.Take(3))
+                                            {
+                                                <li><span class="se-no @(l.DocType == SeCategory.Par ? "is-par" : "")">@l.DocType @l.DocNo</span> @l.Description <span class="text-muted-2">× @l.Quantity @l.Unit@(l.EndUser is null ? "" : $" · {l.EndUser}")</span></li>
+                                            }
+                                            @if (d.Lines.Count > 3)
+                                            {
+                                                <li><button type="button" class="btn btn-link btn-sm p-0" @onclick="() => _view = d">and @(d.Lines.Count - 3) more…</button></li>
+                                            }
+                                        </ul>
+                                    </td>
+                                    <td class="t-num text-nowrap">₱@d.TotalAmount.ToString("N2")</td>
+                                    <td>
+                                        <div class="row-actions justify-content-end">
+                                            <button type="button" class="act" @onclick="() => _view = d"><i class="bi bi-eye" aria-hidden="true"></i>View</button>
+                                            <a class="act" href="/exports/semi-expendable/@d.DeliveryId" download><i class="bi bi-file-earmark-excel" aria-hidden="true"></i>Excel</a>
+                                            <a class="act" href="/exports/semi-expendable/@(d.DeliveryId)?format=pdf" download><i class="bi bi-file-earmark-pdf" aria-hidden="true"></i>PDF</a>
+                                            <button type="button" class="act is-danger" @onclick="() => DeleteAsync(d)"><i class="bi bi-trash" aria-hidden="true"></i>Delete</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="panel-body border-top d-flex flex-wrap justify-content-between gap-2">
+                    <span class="text-muted-2">@_list.Count deliveries · @_list.Sum(d => d.Lines.Count) items · @_list.Sum(d => d.Lines.Sum(l => l.Quantity)).ToString("N0") units</span>
+                    <strong>Total: ₱@_list.Sum(d => d.TotalAmount).ToString("N2")</strong>
+                </div>
+            }
+        </section>
+    }
+</div>
+
+@* ── New delivery ── *@
+<Dialog Show="_formOpen" Title="New SPLV / SPHV delivery" Icon="bi-truck" Size="xl" Busy="_saving" OnClose="() => _formOpen = false">
+    <ChildContent>
+        <div class="row g-3">
+            <div class="col-lg-5">
+                <span class="form-label d-block" id="se-cat-label">Type</span>
+                <div class="se-type" role="radiogroup" aria-labelledby="se-cat-label">
+                    <label class="se-type-option @(_form.Category == SeCategory.Splv ? "is-on" : "")">
+                        <input type="radio" class="form-check-input" name="se-cat" checked="@(_form.Category == SeCategory.Splv)" @onchange="() => SetCategory(SeCategory.Splv)" />
+                        <span><strong>SPLV</strong><small>Low value, ₱5,000 and below · ICS</small></span>
+                    </label>
+                    <label class="se-type-option @(_form.Category == SeCategory.Sphv ? "is-on" : "")">
+                        <input type="radio" class="form-check-input" name="se-cat" checked="@(_form.Category == SeCategory.Sphv)" @onchange="() => SetCategory(SeCategory.Sphv)" />
+                        <span><strong>SPHV</strong><small>High value · ICS below ₱50,000, PAR from ₱50,000</small></span>
+                    </label>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <label class="form-label" for="se-date">Date delivered</label>
+                <DatePicker Id="se-date" @bind-Value="_form.DeliveredOn" @bind-Value:after="LoadFormSeriesAsync" Max="PhTime.Now.Date" />
+            </div>
+            <div class="col-sm-6 col-lg-4">
+                <label class="form-label" for="se-ref">DR / invoice no. <span class="text-muted-2 fw-normal">optional</span></label>
+                <input id="se-ref" class="form-control" maxlength="100" autocomplete="off" @bind="_form.ReferenceNo" placeholder="DR-2026-0153" />
+            </div>
+            <div class="col-lg-4">
+                <label class="form-label" for="se-sup">Supplier</label>
+                @if (_addingSupplier)
+                {
+                    <div class="d-flex gap-2">
+                        <input id="se-sup" class="form-control" maxlength="200" autocomplete="off" placeholder="Name of the supplier" @bind="_newSupplier" @bind:event="oninput" />
+                        <button type="button" class="btn btn-primary" @onclick="AddSupplierAsync" disabled="@string.IsNullOrWhiteSpace(_newSupplier)">Add</button>
+                        <button type="button" class="btn btn-light" @onclick="() => _addingSupplier = false">Cancel</button>
+                    </div>
+                }
+                else
+                {
+                    <Picker TValue="int" Id="se-sup" Options="SupplierOptions" @bind-Value="_form.SupplierId" Placeholder="Choose the supplier" />
+                    <button type="button" class="btn btn-link btn-sm px-0" @onclick="() => { _addingSupplier = true; _newSupplier = string.Empty; }"><i class="bi bi-plus-circle me-1" aria-hidden="true"></i>New supplier</button>
+                }
+            </div>
+            <div class="col-lg-4">
+                <span class="form-label d-block" id="se-eu-label">End users <span class="text-muted-2 fw-normal">optional</span></span>
+                <div class="choice-row se-eu" role="radiogroup" aria-labelledby="se-eu-label">
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="se-eu" id="se-eu-office" checked="@(_form.EndUserType == SeCategory.EndUserOffice)" @onchange="() => SetEndUserType(SeCategory.EndUserOffice)" />
+                        <label class="form-check-label" for="se-eu-office">Office</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="se-eu" id="se-eu-person" checked="@(_form.EndUserType == SeCategory.EndUserPersonnel)" @onchange="() => SetEndUserType(SeCategory.EndUserPersonnel)" />
+                        <label class="form-check-label" for="se-eu-person">RO-Personnel</label>
+                    </div>
+                    @if (_form.EndUserType is not null)
+                    {
+                        <button type="button" class="btn btn-link btn-sm p-0 ms-auto" @onclick="() => SetEndUserType(null)">Clear</button>
+                    }
+                </div>
+                <span class="form-text d-block mt-0">@(_form.EndUserType switch
+                {
+                    SeCategory.EndUserOffice => "Choose the office for each item below.",
+                    SeCategory.EndUserPersonnel => "Choose the person for each item below.",
+                    _ => "Choose one to name who each item is for.",
+                })</span>
+            </div>
+            <div class="col-lg-4">
+                <label class="form-label" for="se-remarks">Remarks <span class="text-muted-2 fw-normal">optional</span></label>
+                <input id="se-remarks" class="form-control" maxlength="500" autocomplete="off" @bind="_form.Remarks" placeholder="e.g. PO no., purpose" />
+            </div>
+        </div>
+
+        <h3 class="se-items-title">Items</h3>
+        <div class="table-wrap se-items">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th style="width:2.5rem">#</th><th style="min-width:15rem">Description</th>
+                        @if (_form.EndUserType is not null)
+                        {
+                            <th style="min-width:14rem">@(_form.EndUserType == SeCategory.EndUserOffice ? "Office" : "End user")</th>
+                        }
+                        <th style="width:6.5rem">Unit</th>
+                        <th class="t-num" style="width:6.5rem">Quantity</th><th class="t-num" style="width:9.5rem">Unit price (₱)</th>
+                        <th class="t-num" style="width:9rem">Total</th><th style="min-width:12rem">ICS / PAR no.</th><th style="width:2.5rem"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var i = 0; i < _form.Lines.Count; i++)
+                    {
+                        var line = _form.Lines[i];
+                        var n = i;
+                        var type = SeCategory.DocTypeFor(_form.Category, line.UnitCost);
+                        <tr @key="line">
+                            <td class="text-muted-2">@(n + 1)</td>
+                            <td>
+                                <input class="form-control form-control-sm" maxlength="500" autocomplete="off" placeholder="Monoblock chair, white" aria-label="@($"Item {n + 1} description")" @bind="line.Description" />
+                                @if (_form.Category == SeCategory.Splv && line.UnitCost > SeCategory.SplvLimit)
+                                {
+                                    <span class="se-warn"><i class="bi bi-exclamation-circle" aria-hidden="true"></i> Over ₱5,000: this is usually SPHV.</span>
+                                }
+                            </td>
+                            @if (_form.EndUserType is not null)
+                            {
+                                <td class="se-eu-cell">
+                                    <Picker TValue="int" Id="@($"se-eu-{n}")" Floating="true" Options="EndUserOptions" @bind-Value="line.EndUserId"
+                                            Placeholder="@(_form.EndUserType == SeCategory.EndUserOffice ? "Choose office" : "Choose person")" />
+                                </td>
+                            }
+                            <td><input class="form-control form-control-sm" maxlength="30" autocomplete="off" aria-label="@($"Item {n + 1} unit")" @bind="line.Unit" /></td>
+                            <td><input type="number" min="1" max="@SemiExpendableService.MaxQuantity" class="form-control form-control-sm text-end" autocomplete="off" aria-label="@($"Item {n + 1} quantity")" @bind="line.Quantity" @bind:event="oninput" /></td>
+                            <td><input type="number" min="0" step="0.01" class="form-control form-control-sm text-end" autocomplete="off" aria-label="@($"Item {n + 1} unit price")" @bind="line.UnitCost" /></td>
+                            <td class="t-num text-nowrap fw-semibold">₱@line.Total.ToString("N2")</td>
+                            <td>
+                                @if (line.Quantity > 0)
+                                {
+                                    <span class="se-no @(type == SeCategory.Par ? "is-par" : "")">@type @Preview.ElementAtOrDefault(n)</span>
+                                }
+                            </td>
+                            <td>
+                                <button type="button" class="act is-danger" aria-label="@($"Remove item {n + 1}")" title="Remove" @onclick="() => RemoveLine(n)" disabled="@(_form.Lines.Count == 1)">
+                                    <i class="bi bi-x-lg" aria-hidden="true"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="se-items-foot">
+            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="AddLine"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Add item</button>
+            <span class="se-total">@_form.Lines.Count(l => l.Quantity > 0) item(s) · @_form.Lines.Sum(l => Math.Max(l.Quantity, 0)).ToString("N0") unit(s) · <strong>Total amount ₱@_form.Total.ToString("N2")</strong></span>
+        </div>
+        <p class="form-text mb-0"><i class="bi bi-info-circle me-1" aria-hidden="true"></i>The numbers shown are a preview. They are final once you save: 2026-01-001 for one unit, 2026-01-001-007 for seven of the same item.</p>
+        @if (_formError is not null)
+        {
+            <div class="form-error" role="alert"><i class="bi bi-exclamation-circle" aria-hidden="true"></i>@_formError</div>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-light" @onclick="() => _formOpen = false" disabled="@_saving">Cancel</button>
+        <button type="button" class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">
+            @if (_saving) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
+            Save and assign numbers
+        </button>
+    </Footer>
+</Dialog>
+
+@* ── View one delivery ── *@
+<Dialog Show="_view is not null" Title="@(_view is null ? "" : $"{_view.Category} delivery, {_view.DeliveredOn:MMMM d, yyyy}")" Icon="bi-truck" Size="xl" DismissOnBackdrop="true" OnClose="() => _view = null">
+    <ChildContent>
+        @if (_view is not null)
+        {
+            <dl class="se-facts">
+                <dt>Type</dt><dd>@SeCategory.Label(_view.Category)</dd>
+                <dt>Supplier</dt><dd>@_view.SupplierName</dd>
+                @if (!string.IsNullOrWhiteSpace(_view.ReferenceNo)) { <dt>DR / invoice no.</dt><dd>@_view.ReferenceNo</dd> }
+                @if (!string.IsNullOrWhiteSpace(_view.Remarks)) { <dt>Remarks</dt><dd>@_view.Remarks</dd> }
+                <dt>Recorded</dt><dd>@_view.CreatedAt.ToString("MMMM d, yyyy h:mm tt")</dd>
+            </dl>
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead><tr><th>#</th><th>ICS / PAR no.</th><th>Description</th>@if (ViewHasEndUser) { <th>@(_view.EndUserType == SeCategory.EndUserOffice ? "Office" : "End user")</th> }<th>Unit</th><th class="t-num">Qty</th><th class="t-num">Unit price</th><th class="t-num">Total</th></tr></thead>
+                    <tbody>
+                        @foreach (var l in _view.Lines)
+                        {
+                            <tr>
+                                <td class="text-muted-2">@l.LineNo</td>
+                                <td class="text-nowrap"><span class="se-no @(l.DocType == SeCategory.Par ? "is-par" : "")">@l.DocType @l.DocNo</span></td>
+                                <td>@l.Description</td>
+                                @if (ViewHasEndUser) { <td>@(l.EndUser ?? "")</td> }
+                                <td>@l.Unit</td>
+                                <td class="t-num">@l.Quantity.ToString("N0")</td>
+                                <td class="t-num text-nowrap">₱@l.UnitCost.ToString("N2")</td>
+                                <td class="t-num text-nowrap">₱@l.TotalCost.ToString("N2")</td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot><tr><th colspan="@(ViewHasEndUser ? 7 : 6)" class="text-end">Total amount</th><th class="t-num text-nowrap">₱@_view.TotalAmount.ToString("N2")</th></tr></tfoot>
+                </table>
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        @if (_view is not null)
+        {
+            <a class="btn btn-outline-primary" href="/exports/semi-expendable/@_view.DeliveryId" download><i class="bi bi-file-earmark-excel me-1" aria-hidden="true"></i>Export to Excel</a>
+            <a class="btn btn-outline-primary" href="/exports/semi-expendable/@(_view.DeliveryId)?format=pdf" download><i class="bi bi-file-earmark-pdf me-1" aria-hidden="true"></i>Export to PDF</a>
+            <button type="button" class="btn btn-primary" @onclick="() => _view = null">Close</button>
+        }
+    </Footer>
+</Dialog>
+
+@* ── Numbering: last number used per series ── *@
+<Dialog Show="_numberingOpen" Title="@($"ICS and PAR numbering, {_year}")" Icon="bi-123" Size="md" Busy="_saving" OnClose="() => _numberingOpen = false">
+    <ChildContent>
+        <p class="am-message">Each series counts on through the year and starts again at 001 in January. If numbers were already given out on paper this year, enter the last one used so the next delivery continues from it.</p>
+        @foreach (var s in _series)
+        {
+            var key = (s.Category, s.DocType);
+            <div class="se-series">
+                <div>
+                    <strong>@s.Category @s.DocType</strong>
+                    <span class="cell-sub">Next number: @_year-MM-@((_lastEdit.GetValueOrDefault(key, s.LastSeq) + 1).ToString("000"))@(s.HighestAssigned > 0 ? $" · highest on a delivery: {s.HighestAssigned:000}" : "")</span>
+                </div>
+                <label class="visually-hidden" for="@($"se-last-{s.Category}-{s.DocType}")">Last @s.Category @s.DocType number used</label>
+                <input id="@($"se-last-{s.Category}-{s.DocType}")" type="number" min="@s.HighestAssigned" class="form-control text-end" style="width:7rem" autocomplete="off"
+                       value="@_lastEdit.GetValueOrDefault(key, s.LastSeq)" @onchange="e => _lastEdit[key] = int.TryParse(e.Value?.ToString(), out var v) ? v : s.LastSeq" />
+            </div>
+        }
+        @if (_formError is not null)
+        {
+            <div class="form-error" role="alert"><i class="bi bi-exclamation-circle" aria-hidden="true"></i>@_formError</div>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-light" @onclick="() => _numberingOpen = false" disabled="@_saving">Cancel</button>
+        <button type="button" class="btn btn-primary" @onclick="SaveNumberingAsync" disabled="@_saving">Save</button>
+    </Footer>
+</Dialog>
+
+@code {
+    private List<SeDelivery>? _list;
+    private (int All, int Splv, int Sphv) _counts;
+    private List<int> _years = [];
+    private List<Supplier> _suppliers = [];
+    private List<Office> _offices = [];
+    private List<(RoPersonnel Person, string Office)> _people = [];
+    private int _year = PhTime.Now.Year;
+    private string _type = "", _search = "";
+    private bool _error, _formOpen, _saving, _numberingOpen, _addingSupplier;
+    private string? _formError;
+    private string _newSupplier = "";
+    private SeDeliveryForm _form = new();
+    private List<SeSeriesInfo> _formSeries = [], _series = [];
+    private readonly Dictionary<(string, string), int> _lastEdit = new();
+    private SeDelivery? _view;
+    private uint _userId;
+    private CancellationTokenSource? _searchCts;
+
+    private IReadOnlyList<PickOption<int>> YearOptions => _years.Select(y => new PickOption<int>(y, y.ToString())).ToList();
+    private IReadOnlyList<PickOption<int>> SupplierOptions =>
+        [new(0, "Choose the supplier"), .. _suppliers.Where(s => s.IsActive).Select(s => new PickOption<int>(s.SupplierId, s.SupplierName, s.ContactPerson))];
+    private List<string> Preview => SemiExpendableService.Preview(_form, _formSeries);
+
+    private string ExportUrl(string format) =>
+        $"/exports/semi-expendable?year={_year}&type={_type}&q={Uri.EscapeDataString(_search.Trim())}&format={format}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        uint.TryParse(user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out _userId);
+        try
+        {
+            _years = await SeSvc.YearsAsync();
+            _suppliers = await CatalogSvc.SuppliersAsync();
+            await using (var db = await DbFactory.CreateDbContextAsync())
+            {
+                _offices = await db.Offices.AsNoTracking().Where(o => o.IsActive).OrderBy(o => o.OfficeAcronym).ToListAsync();
+                var acronyms = _offices.ToDictionary(o => o.OfficeId, o => o.OfficeAcronym);
+                _people = (await db.RoPersonnel.AsNoTracking().OrderBy(p => p.FullName).ToListAsync())
+                    .Select(p => (p, acronyms.GetValueOrDefault(p.OfficeId, ""))).ToList();
+            }
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "SPLV / SPHV page failed to load");
+            _error = true;
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        var all = await SeSvc.ListAsync(new SeFilter(_year, null, _search));
+        _counts = (all.Count, all.Count(d => d.Category == SeCategory.Splv), all.Count(d => d.Category == SeCategory.Sphv));
+        _list = _type == "" ? all : all.Where(d => d.Category == _type).ToList();
+    }
+
+    private async Task SetTypeAsync(string type)
+    {
+        _type = type;
+        await ReloadAsync();
+    }
+
+    private async Task SearchChangedAsync()
+    {
+        _searchCts?.Cancel();
+        _searchCts = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(300, _searchCts.Token);   // wait until typing pauses
+            await ReloadAsync();
+        }
+        catch (TaskCanceledException) { }
+    }
+
+    // ── New delivery ──
+    private async Task OpenAdd()
+    {
+        _form = new SeDeliveryForm { Category = _type == SeCategory.Sphv ? SeCategory.Sphv : SeCategory.Splv };
+        _formError = null;
+        _addingSupplier = false;
+        await LoadFormSeriesAsync();
+        _formOpen = true;
+    }
+
+    private async Task LoadFormSeriesAsync() => _formSeries = await SeSvc.SeriesAsync(_form.DeliveredOn.Year);
+
+    private void SetCategory(string category) => _form.Category = category;
+
+    private void SetEndUserType(string? type)
+    {
+        if (_form.EndUserType == type) return;
+        _form.EndUserType = type;
+        foreach (var l in _form.Lines) l.EndUserId = 0;   // offices and people are different lists
+    }
+
+    private IReadOnlyList<PickOption<int>> EndUserOptions => _form.EndUserType == SeCategory.EndUserOffice
+        ? _offices.Select(o => new PickOption<int>(o.OfficeId, o.OfficeAcronym, o.OfficeName)).ToList()
+        : _people.Select(p => new PickOption<int>(p.Person.PersonnelId, p.Person.FullName,
+              string.IsNullOrWhiteSpace(p.Office) ? p.Person.Position : $"{p.Person.Position}, {p.Office}")).ToList();
+
+    private bool ViewHasEndUser => _view?.Lines.Any(l => l.EndUser is not null) == true;
+
+    private void AddLine()
+    {
+        var last = _form.Lines.LastOrDefault();
+        _form.Lines.Add(new SeLineForm { Unit = string.IsNullOrWhiteSpace(last?.Unit) ? "pc" : last!.Unit, EndUserId = last?.EndUserId ?? 0 });
+    }
+
+    private void RemoveLine(int index)
+    {
+        if (_form.Lines.Count > 1) _form.Lines.RemoveAt(index);
+    }
+
+    private async Task AddSupplierAsync()
+    {
+        var r = await CatalogSvc.SaveSupplierAsync(0, _newSupplier, null, null);
+        if (!r.Ok) { _formError = r.Message; return; }
+        _suppliers = await CatalogSvc.SuppliersAsync();
+        _form.SupplierId = r.Id ?? _suppliers.FirstOrDefault(s => s.SupplierName == _newSupplier.Trim())?.SupplierId ?? 0;
+        _addingSupplier = false;
+        _formError = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        _formError = null;
+        _saving = true;
+        try
+        {
+            var r = await SeSvc.SaveAsync(_form, _userId);
+            if (!r.Ok) { _formError = r.FullMessage; return; }
+            _formOpen = false;
+            _year = _form.DeliveredOn.Year;
+            _years = await SeSvc.YearsAsync();
+            await ReloadAsync();
+            await JS.InvokeVoidAsync("showToast", r.Message, "success");
+            if (r.Id is int id) _view = await SeSvc.GetAsync(id);   // show the numbers that were given
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Saving a SPLV / SPHV delivery failed");
+            _formError = "The delivery couldn't be saved. Nothing was recorded; please try again.";
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task DeleteAsync(SeDelivery d)
+    {
+        var ok = await Modal.ConfirmAsync($"Delete the {d.Category} delivery from {d.SupplierName}?",
+            $"Its {d.Lines.Count} item(s) and numbers ({string.Join(", ", d.Lines.Select(l => l.DocNo))}) will be removed. Only the newest delivery of a series can be deleted, so the numbers stay in order.",
+            "Delete delivery", "Keep it", ModalVariant.Danger,
+            onConfirmAsync: async _ =>
+            {
+                var r = await SeSvc.DeleteAsync(d.DeliveryId, _userId);
+                return r.Ok ? null : r.Message;
+            });
+        if (!ok) return;
+        await ReloadAsync();
+        await JS.InvokeVoidAsync("showToast", "Delivery deleted. Its numbers will be used by the next delivery.", "success");
+    }
+
+    // ── Numbering ──
+    private async Task OpenNumbering()
+    {
+        _series = await SeSvc.SeriesAsync(_year);
+        _lastEdit.Clear();
+        _formError = null;
+        _numberingOpen = true;
+    }
+
+    private async Task SaveNumberingAsync()
+    {
+        _formError = null;
+        _saving = true;
+        try
+        {
+            foreach (var s in _series)
+            {
+                if (!_lastEdit.TryGetValue((s.Category, s.DocType), out var value) || value == s.LastSeq) continue;
+                var r = await SeSvc.SetLastNumberAsync(_year, s.Category, s.DocType, value, _userId);
+                if (!r.Ok) { _formError = r.Message; return; }
+            }
+            _numberingOpen = false;
+            await JS.InvokeVoidAsync("showToast", "Numbering saved.", "success");
+        }
+        finally { _saving = false; }
+    }
+
+    public void Dispose()
+    {
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+    }
+}

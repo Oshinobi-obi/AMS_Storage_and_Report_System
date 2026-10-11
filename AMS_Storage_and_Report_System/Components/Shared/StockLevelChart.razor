@@ -1,0 +1,49 @@
+@* Stock level bars: one bar per item, showing the stock on hand against its low-stock level.
+   The dashed tick marks the low-stock level (the middle of the track); a bar that stops
+   before it is low, an empty bar is out of stock, and a full bar has at least twice the level. *@
+@using System.Globalization
+@using AMS_Storage_and_Report_System.Services
+
+@if (Items.Count == 0)
+{
+    <p class="chart-empty"><i class="bi bi-bar-chart" aria-hidden="true"></i>@EmptyText</p>
+}
+else
+{
+    <div class="level-chart" role="list" aria-label="@Label">
+        @for (var i = 0; i < Items.Count; i++)
+        {
+            var s = Items[i];
+            var scale = Math.Max(s.ReorderLevel * 2, 1);
+            var fill = Math.Clamp((double)s.OnHand / scale, 0, 1) * 100;
+            var mark = s.ReorderLevel <= 0 ? 0 : Math.Min(50, (double)s.ReorderLevel / scale * 100);
+            var css = s.Level switch { StockLevel.Out => "is-out", StockLevel.Low => "is-low", _ => "is-ok" };
+            var tip = $"{s.Item} ({s.StockNo}): {s.OnHand:N0} {s.Unit} on hand, low-stock level {s.ReorderLevel:N0}"
+                      + (s.Reserved > 0 ? $", {s.Reserved:N0} reserved for pickup" : "") + $". {s.LevelLabel}.";
+            <a class="level-row @css" role="listitem" href="/inventory/@s.ItemId" title="@tip"
+               style="--delay: @((i * 50).ToString(CultureInfo.InvariantCulture))ms">
+                <span class="level-label">@s.Item</span>
+                <span class="level-track">
+                    <span class="level-fill" style="width: @(Math.Max(fill, s.OnHand > 0 ? 2 : 0).ToString("0.##", CultureInfo.InvariantCulture))%"></span>
+                    @if (s.ReorderLevel > 0)
+                    {
+                        <span class="level-mark" style="left: @mark.ToString("0.##", CultureInfo.InvariantCulture)%" aria-hidden="true"></span>
+                    }
+                </span>
+                <span class="level-value">
+                    <strong>@s.OnHand.ToString("N0")</strong> <small>/ @s.ReorderLevel.ToString("N0") @s.Unit</small>
+                </span>
+                <span class="level-status">
+                    <i class="bi @(s.Level switch { StockLevel.Out => "bi-x-circle-fill", StockLevel.Low => "bi-exclamation-circle-fill", _ => "bi-check-circle-fill" })" aria-hidden="true"></i>
+                    <span class="visually-hidden">@s.LevelLabel</span>
+                </span>
+            </a>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<StockLevelRow> Items { get; set; } = [];
+    [Parameter] public string Label { get; set; } = "Stock levels";
+    [Parameter] public string EmptyText { get; set; } = "No items in the catalog yet.";
+}

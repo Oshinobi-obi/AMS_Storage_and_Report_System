@@ -1,7 +1,8 @@
-@* RisDocument.razor — Appendix 63 Requisition and Issue Slip.
-   Same component for: cart split-view preview (IsDraft), admin review, and the
-   print route /ris/{id}/print (which is also what a headless browser turns into the PDF).
-   Styles: wwwroot/css/ris.css (global, not scoped, so the print route can use it too). *@
+@* RisDocument.razor — Appendix 63 Requisition and Issue Slip, laid out like the AMS form
+   (RIS.xlsx): Bookman Old Style, "Division Office: <office>" on one line, 14 item rows, ruled Purpose box,
+   signature boxes with "Requested by:" etc. inside them.
+   Used for the cart preview (IsDraft), the office's printout, and the admin print page.
+   Styles: wwwroot/css/ris.css. *@
 
 <article class="ris-sheet @(IsDraft ? "is-draft" : "")" aria-label="Requisition and Issue Slip">
     @if (IsDraft)
@@ -20,25 +21,25 @@
     <table class="ris-grid">
         <colgroup>
             <col class="c-stock" /><col class="c-unit" /><col class="c-desc" /><col class="c-qty" />
-            <col class="c-yn" /><col class="c-yn" /><col class="c-qty" /><col class="c-remarks" />
+            <col class="c-yes" /><col class="c-no" /><col class="c-qty" /><col class="c-remarks" />
         </colgroup>
         <thead>
             <tr class="ris-meta">
-                <td colspan="4">Division: <strong>@Model.Division</strong></td>
-                <td colspan="4">Responsibility Center Code: <strong>@Model.ResponsibilityCenterCode</strong></td>
-            </tr>
-            <tr class="ris-meta">
-                <td colspan="4">Office: <strong>@Model.Office</strong></td>
-                <td colspan="4">RIS No.: <strong>@(Model.RisNo ?? "Assigned when submitted")</strong></td>
+                <td colspan="5" class="ris-division">Division Office: <strong>@DivisionOffice</strong></td>
+                <td colspan="3" class="ris-rc">
+                    <div>Responsibility Center Code: <strong>@Model.ResponsibilityCenterCode</strong></div>
+                    <div>RIS No. <strong>@(Model.RisNo ?? "Assigned when submitted")</strong></div>
+                </td>
             </tr>
             <tr class="ris-band">
-                <th colspan="4"><em>Requisition</em></th>
-                <th colspan="2"><em>Stock Available?</em></th>
-                <th colspan="2"><em>Issue</em></th>
+                <th colspan="4" class="ris-em">Requisition</th>
+                <th colspan="2" class="ris-em">Stock Available?</th>
+                <th>Quantity</th>
+                <th>Remarks</th>
             </tr>
             <tr class="ris-cols">
                 <th>Stock No.</th><th>Unit</th><th>Description</th><th>Quantity</th>
-                <th>Yes</th><th>No</th><th>Quantity</th><th>Remarks</th>
+                <th>Yes</th><th>No</th><th></th><th></th>
             </tr>
         </thead>
         <tbody>
@@ -63,33 +64,28 @@
     </table>
 
     <div class="ris-purpose">
-        <span>Purpose:</span>
+        <span class="ris-purpose-label">Purpose:</span>
         <span class="ris-purpose-text">@Model.Purpose</span>
     </div>
 
     <table class="ris-sign">
-        <colgroup><col class="c-label" /><col /><col /><col /><col /></colgroup>
-        <thead>
-            <tr>
-                <th></th>
-                <th>Requested by:</th><th>Approved by:</th><th>Issued by:</th><th>Received by:</th>
-            </tr>
-        </thead>
+        <colgroup><col class="s-label" /><col class="s-req" /><col class="s-app" /><col class="s-iss" /><col class="s-rec" /></colgroup>
         <tbody>
             <tr class="ris-sign-line">
-                <th scope="row">Signature :</th><td></td><td></td><td></td><td></td>
+                <th scope="row">Signature:</th>
+                <td>Requested by:</td><td>Approved by:</td><td>Issued by:</td><td>Received by:</td>
             </tr>
             <tr>
-                <th scope="row">Printed Name :</th>
-                @foreach (var s in Signatories) { <td class="t-strong">@s?.PrintedName</td> }
+                <th scope="row">Printed Name:</th>
+                @foreach (var s in Signatories) { <td class="t-name">@s?.PrintedName</td> }
             </tr>
             <tr>
-                <th scope="row">Designation :</th>
-                @foreach (var s in Signatories) { <td>@s?.Designation</td> }
+                <th scope="row">Designation:</th>
+                @foreach (var s in Signatories) { <td class="t-desig">@s?.Designation</td> }
             </tr>
             <tr>
-                <th scope="row">Date :</th>
-                @foreach (var s in Signatories) { <td>@s?.Date?.ToString("MM/dd/yyyy")</td> }
+                <th scope="row">Date:</th>
+                @foreach (var s in Signatories) { <td class="t-center">@s?.Date?.ToString("MM/dd/yyyy")</td> }
             </tr>
         </tbody>
     </table>
@@ -100,8 +96,11 @@
     [Parameter] public bool IsDraft { get; set; }
     /// Cart row hover → matching RIS row lights up in the split view.
     [Parameter] public int? HighlightItemId { get; set; }
-    /// Official forms show ruled empty rows; keeps the slip looking like the paper version.
-    [Parameter] public int MinRows { get; set; } = 10;
+    /// The AMS form has 14 item rows; empty ones are drawn so it looks like the paper version.
+    [Parameter] public int MinRows { get; set; } = 14;
 
     private RisSignatory?[] Signatories => [Model.RequestedBy, Model.ApprovedBy, Model.IssuedBy, Model.ReceivedBy];
+
+    /// The office that made the request, e.g. "Asset Management Section" (one office only, like the AMS form).
+    private string DivisionOffice => string.IsNullOrWhiteSpace(Model.Office) ? Model.Division : Model.Office;
 }

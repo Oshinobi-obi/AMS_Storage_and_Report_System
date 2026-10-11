@@ -51,7 +51,7 @@
                 break;
             case RisStatus.Approved:
                 <div class="callout"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
-                    <p><strong>Approved @_ris.ApprovedAt?.ToString("MMMM d, yyyy"), waiting for pickup.</strong> The office prints the RIS from the portal, signs it and brings it here. When they arrive, sign it, hand over the items, scan the signed slip to PDF and mark it as issued.</p></div>
+                    <p><strong>Approved @_ris.ApprovedAt?.ToString("MMMM d, yyyy"), waiting for pickup.</strong> The office prints the RIS from the portal, signs it and brings it here. When they arrive, sign it, hand over the items, scan the signed slip to PDF and mark it as issued. The stock stays reserved and is deducted from Inventory when you mark it as issued.</p></div>
                 break;
             case RisStatus.Issued:
                 <div class="callout" style="background:var(--ok-tint);border-color:#b7e0c6"><i class="bi bi-check2-circle" style="color:var(--ok)" aria-hidden="true"></i>
@@ -81,7 +81,7 @@
                                     <th class="t-num">Requested</th>
                                     @if (IsPending)
                                     {
-                                        <th class="t-num">On hand</th>
+                                        <th class="t-num">Available</th>
                                         <th class="t-num">APP-CSE left</th>
                                     }
                                     <th class="t-num">@(IsPending ? "Issue" : "Issued")</th>
@@ -102,7 +102,11 @@
                                         @if (IsPending && ctx is not null)
                                         {
                                             <td class="t-num">
-                                                <span class="@(ctx.StockOnHand < line.RequestedQty ? "text-danger fw-bold" : "")">@ctx.StockOnHand.ToString("N0")</span>
+                                                <span class="@(ctx.Available < line.RequestedQty ? "text-danger fw-bold" : "")">@ctx.Available.ToString("N0")</span>
+                                                @if (ctx.Reserved > 0)
+                                                {
+                                                    <span class="cell-sub text-nowrap" title="Approved for other offices, not picked up yet">@ctx.StockOnHand.ToString("N0") on hand, @ctx.Reserved.ToString("N0") reserved</span>
+                                                }
                                             </td>
                                             <td class="t-num">
                                                 @if (ctx.RemainingIncludingThis(line.RequestedQty) is int left)
@@ -241,7 +245,7 @@
                             </div>
                             <div class="field">
                                 <label class="form-label" for="issued-on">Date released</label>
-                                <input id="issued-on" type="date" class="form-control" autocomplete="off" @bind="_issuedOn" max="@(PhTime.Now.ToString("yyyy-MM-dd"))" />
+                                <DatePicker Id="issued-on" @bind-Value="_issuedOn" Min="_ris?.ApprovedAt?.Date" Max="PhTime.Now.Date" />
                             </div>
                             <div class="field">
                                 <label class="form-label" for="signed-pdf">Signed RIS (PDF)</label>
@@ -356,7 +360,7 @@
             // Default: issue what was asked for, limited by what's in the warehouse.
             _decisions = _ris.Items.ToDictionary(i => i.RisItemId, i => new Decision
             {
-                IssueQty = Math.Clamp(_context.GetValueOrDefault(i.ItemId)?.StockOnHand ?? 0, 0, i.RequestedQty),
+                IssueQty = Math.Clamp(_context.GetValueOrDefault(i.ItemId)?.Available ?? 0, 0, i.RequestedQty),
             });
         }
     }
@@ -391,8 +395,8 @@
         if (_ris is null) return;
         var full = _ris.Items.Count - PartialCount;
         var message = PartialCount == 0
-            ? $"All {_ris.Items.Count} line(s) will be issued in full. Warehouse stock and {_ris.Office?.OfficeAcronym}'s APP-CSE will be deducted now."
-            : $"{full} line(s) in full and {PartialCount} partially or not at all. Warehouse stock and {_ris.Office?.OfficeAcronym}'s APP-CSE will be deducted now.";
+            ? $"All {_ris.Items.Count} line(s) will be issued in full. {_ris.Office?.OfficeAcronym}'s APP-CSE is used now and the stock is reserved. Inventory goes down when you mark it as issued."
+            : $"{full} line(s) in full and {PartialCount} partially or not at all. {_ris.Office?.OfficeAcronym}'s APP-CSE is used now and the stock is reserved. Inventory goes down when you mark it as issued.";
 
         var decisions = _decisions.ToDictionary(kv => kv.Key, kv => new LineDecision(kv.Value.IssueQty, kv.Value.Remarks));
         var ok = await Modal.ConfirmAsync($"Approve {_ris.RisNo}?", message, "Approve requisition", "Cancel", ModalVariant.Success,

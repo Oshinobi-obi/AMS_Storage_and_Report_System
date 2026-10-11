@@ -67,15 +67,18 @@ public sealed class SettingsService(IDbContextFactory<AppDbContext> dbFactory)
         return await db.Offices.AsNoTracking().OrderBy(o => o.OfficeAcronym).ToListAsync();
     }
 
-    public async Task<OpResult> SaveOfficeAsync(int officeId, string? rcCode, bool canRequisition, uint userId)
+    public async Task<OpResult> SaveOfficeAsync(int officeId, string? rcCode, bool canRequisition, string? appCseSheet, uint userId)
     {
         rcCode = string.IsNullOrWhiteSpace(rcCode) ? null : rcCode.Trim();
+        appCseSheet = string.IsNullOrWhiteSpace(appCseSheet) ? null : appCseSheet.Trim();
         if (rcCode?.Length > 30) return OpResult.Fail("The responsibility center code can be up to 30 characters.");
+        if (appCseSheet?.Length > 50) return OpResult.Fail("The APP-CSE sheet name can be up to 50 characters.");
         await using var db = await dbFactory.CreateDbContextAsync();
         var o = await db.Offices.FindAsync(officeId);
         if (o is null) return OpResult.Fail("This office no longer exists.");
         o.ResponsibilityCenterCode = rcCode;
         o.CanRequisition = canRequisition;
+        o.AppCseSheet = appCseSheet is not null && appCseSheet.Equals(o.OfficeAcronym, StringComparison.OrdinalIgnoreCase) ? null : appCseSheet;
         db.UserActivities.Add(new UserActivity { UserId = userId, ActivityType = "Update", Description = $"Updated office {o.OfficeAcronym}", CreatedAt = PhTime.Now });
         await db.SaveChangesAsync();
         return OpResult.Success($"{o.OfficeAcronym} saved.");

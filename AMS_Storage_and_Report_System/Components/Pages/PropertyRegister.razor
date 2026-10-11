@@ -1,0 +1,309 @@
+@page "/property-register"
+@layout AppLayout
+@attribute [Authorize]
+@inject LiveRefresh Live
+@implements IDisposable
+@inject PropertyService PropertySvc
+@inject IDbContextFactory<AppDbContext> DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ModalService Modal
+@inject IJSRuntime JS
+@inject ILogger<PropertyRegister> Log
+
+<PageTitle>Property register | AMS StockWatch</PageTitle>
+
+<PageHeader Title="Property register" Subtitle="Every PPE and semi-expendable property, who is accountable for it, and its current status.">
+    <Actions>
+        <button type="button" class="btn btn-accent" @onclick="OpenAdd" disabled="@_error"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i> Add property</button>
+    </Actions>
+</PageHeader>
+
+<div class="wrap page-body">
+    @if (_error)
+    {
+        <div class="empty-state">
+            <i class="bi bi-database-exclamation" aria-hidden="true"></i>
+            <h2>The property register isn't set up yet</h2>
+            <p>Run the database update <code>007_property_register.sql</code>, then reload this page.</p>
+        </div>
+    }
+    else if (_items is null)
+    {
+        <div class="panel"><div class="loading">Loading the register…</div></div>
+    }
+    else
+    {
+        <div class="status-chips" role="group" aria-label="Filter by status">
+            <button type="button" class="status-chip @(_status == "" ? "is-active" : "")" @onclick='() => _status = ""'>
+                All <span>@Units(_items).ToString("N0")</span>
+            </button>
+            @foreach (var s in PropertyStatus.All)
+            {
+                var count = Units(_items.Where(i => i.Status == s.Name));
+                <button type="button" class="status-chip @(_status == s.Name ? "is-active" : "")" title="@s.Description" @onclick="() => _status = s.Name">
+                    <i class="dot" style="background: @s.Color" aria-hidden="true"></i>@s.Name <span>@count.ToString("N0")</span>
+                </button>
+            }
+        </div>
+
+        <section class="panel">
+            <header class="panel-head">
+                <div class="filters flex-grow-1">
+                    <div>
+                        <label class="form-label" for="pr-search">Search</label>
+                        <div class="input-icon">
+                            <i class="bi bi-search" aria-hidden="true"></i>
+                            <input id="pr-search" type="search" class="form-control" placeholder="Property no., description or person" autocomplete="off" @bind="_search" @bind:event="oninput" />
+                        </div>
+                    </div>
+                    <div><label class="form-label" for="pr-office">Office</label><Picker TValue="int" Id="pr-office" Options="@(OfficeOptions("All offices"))" @bind-Value="_office" /></div>
+                    <div><label class="form-label" for="pr-class">Classification</label><Picker TValue="string" Id="pr-class" Options="@(ClassOptions("All classifications"))" @bind-Value="_class" /></div>
+                    <div><label class="form-label" for="pr-type">Type</label><Picker TValue="int" Id="pr-type" Options="@(TypeOptions("PPE and semi-expendable"))" @bind-Value="_type" /></div>
+                </div>
+            </header>
+
+            @if (!Visible.Any())
+            {
+                <div class="empty-state">
+                    <i class="bi bi-boxes" aria-hidden="true"></i>
+                    <h2>@(_items.Count == 0 ? "No properties recorded yet" : "No properties match")</h2>
+                    <p>@(_items.Count == 0 ? "Add the Regional Office's PPE and semi-expendable property to see them here and on the dashboard." : "Try another status, office or search word.")</p>
+                </div>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead><tr><th>Property no.</th><th>Description</th><th>Office / accountable</th><th class="t-num">Qty</th><th class="t-num">Total cost</th><th>Status</th><th class="text-end">Actions</th></tr></thead>
+                        <tbody>
+                            @foreach (var p in Visible)
+                            {
+                                <tr @key="p.PropertyId">
+                                    <td class="text-nowrap cell-strong">@p.PropertyNo<span class="cell-sub">@(p.PropertyTypeId == PropertyStatus.PpeTypeId ? "PPE" : "Semi-expendable")</span></td>
+                                    <td><span>@p.Description</span><span class="cell-sub">@(p.Classification + (p.AcquiredOn is { } d ? $", acquired {d:MMM d, yyyy}" : ""))</span></td>
+                                    <td><span>@(p.Office?.OfficeAcronym ?? "No office")</span><span class="cell-sub">@(p.Personnel?.FullName ?? "Unassigned")</span></td>
+                                    <td class="t-num">@p.Quantity</td>
+                                    <td class="t-num text-nowrap">₱@p.TotalCost.ToString("N2")</td>
+                                    <td><span class="status-tag"><i class="dot" style="background: @PropertyStatus.Color(p.Status)" aria-hidden="true"></i>@p.Status</span></td>
+                                    <td>
+                                        <div class="row-actions justify-content-end">
+                                            <button type="button" class="act" @onclick="() => OpenEdit(p)"><i class="bi bi-pencil" aria-hidden="true"></i>Edit</button>
+                                            <button type="button" class="act is-danger" @onclick="() => DeleteAsync(p)"><i class="bi bi-trash" aria-hidden="true"></i>Remove</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="panel-body border-top d-flex flex-wrap justify-content-between gap-2">
+                    <span class="text-muted-2">@Units(Visible).ToString("N0") units in @Visible.Count() records</span>
+                    <strong>Total acquisition cost: ₱@Visible.Sum(p => p.TotalCost).ToString("N2")</strong>
+                </div>
+            }
+        </section>
+    }
+</div>
+
+<Dialog Show="_formOpen" Title="@(_form.PropertyId == 0 ? "Add property" : $"Edit {_form.PropertyNo}")" Icon="bi-boxes" Size="lg" Busy="_saving" OnClose="() => _formOpen = false">
+    <ChildContent>
+        <div class="row g-3">
+            <div class="col-sm-5">
+                <label class="form-label" for="p-no">Property no.</label>
+                <input id="p-no" class="form-control" maxlength="50" autocomplete="off" @bind="_form.PropertyNo" placeholder="2026-10-0001" />
+            </div>
+            <div class="col-sm-7">
+                <label class="form-label" for="p-type">Type</label>
+                <Picker TValue="int" Id="p-type" Options="@(TypeOptions(null))" @bind-Value="_form.PropertyTypeId" />
+            </div>
+            <div class="col-12">
+                <label class="form-label" for="p-desc">Description</label>
+                <input id="p-desc" class="form-control" maxlength="500" autocomplete="off" @bind="_form.Description" placeholder="Desktop computer, Core i5, 16 GB RAM, with monitor" />
+            </div>
+            <div class="col-sm-6">
+                <label class="form-label" for="p-class">Classification</label>
+                <Picker TValue="string" Id="p-class" Options="@(ClassOptions("Choose a classification"))" @bind-Value="_form.Classification" />
+            </div>
+            <div class="col-sm-6">
+                <label class="form-label" for="p-status">Status</label>
+                <Picker TValue="string" Id="p-status" Options="StatusOptions" @bind-Value="_form.Status" />
+            </div>
+            <div class="col-sm-3">
+                <label class="form-label" for="p-qty">Quantity</label>
+                <input id="p-qty" type="number" min="1" class="form-control text-end" autocomplete="off" @bind="_form.Quantity" />
+            </div>
+            <div class="col-sm-4">
+                <label class="form-label" for="p-cost">Unit cost (₱)</label>
+                <input id="p-cost" type="number" min="0" step="0.01" class="form-control text-end" autocomplete="off" @bind="_form.UnitCost" />
+            </div>
+            <div class="col-sm-5">
+                <label class="form-label" for="p-date">Date acquired</label>
+                <DatePicker Id="p-date" @bind-Value="_form.AcquiredOn" Max="PhTime.Now.Date" Placeholder="Not recorded" />
+            </div>
+            <div class="col-sm-6">
+                <label class="form-label" for="p-office">Office</label>
+                <Picker TValue="int" Id="p-office" Options="@(OfficeOptions("No office yet"))" Value="@(_form.OfficeId ?? 0)" ValueChanged="SetOffice" />
+            </div>
+            <div class="col-sm-6">
+                <label class="form-label" for="p-person">Accountable person</label>
+                <Picker TValue="int" Id="p-person" Disabled="@(_form.OfficeId is null)" Options="PeopleOptions"
+                        Value="@(_form.PersonnelId ?? 0)" ValueChanged="v => _form.PersonnelId = v == 0 ? null : v" />
+            </div>
+            <div class="col-12">
+                <label class="form-label" for="p-remarks">Remarks</label>
+                <input id="p-remarks" class="form-control" maxlength="500" autocomplete="off" @bind="_form.Remarks" placeholder="Optional, e.g. PAR no., serial no., reason for repair" />
+            </div>
+        </div>
+        @if (_formError is not null)
+        {
+            <div class="form-error" role="alert"><i class="bi bi-exclamation-circle" aria-hidden="true"></i>@_formError</div>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-light" @onclick="() => _formOpen = false" disabled="@_saving">Cancel</button>
+        <button type="button" class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">
+            @if (_saving) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
+            @(_form.PropertyId == 0 ? "Add property" : "Save changes")
+        </button>
+    </Footer>
+</Dialog>
+
+@code {
+    [SupplyParameterFromQuery(Name = "status")] public string? StatusQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "class")] public string? ClassQuery { get; set; }
+
+    private List<PropertyItem>? _items;
+    private List<Office> _offices = [];
+    private List<RoPersonnel> _people = [];
+    private string _search = "", _status = "", _class = "";
+    private int _office, _type;
+    private bool _error, _formOpen, _saving;
+    private PropertyItem _form = new();
+    private string? _formError;
+    private uint _userId;
+
+    private static int Units(IEnumerable<PropertyItem> items) => items.Sum(i => i.Quantity);
+
+    private IEnumerable<PropertyItem> Visible
+    {
+        get
+        {
+            var t = _search.Trim();
+            return (_items ?? new List<PropertyItem>())
+                .Where(p => _status == "" || p.Status == _status)
+                .Where(p => _office == 0 || p.OfficeId == _office)
+                .Where(p => _class == "" || p.Classification == _class)
+                .Where(p => _type == 0 || p.PropertyTypeId == _type)
+                .Where(p => t.Length == 0 || p.PropertyNo.Contains(t, StringComparison.OrdinalIgnoreCase)
+                         || p.Description.Contains(t, StringComparison.OrdinalIgnoreCase)
+                         || (p.Personnel?.FullName.Contains(t, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+    }
+
+    private static readonly IReadOnlyList<PickOption<string>> StatusOptions =
+        PropertyStatus.All.Select(s => new PickOption<string>(s.Name, s.Name, s.Description)).ToList();
+
+    private IReadOnlyList<PickOption<int>> OfficeOptions(string first) =>
+        [new(0, first), .. _offices.Select(o => new PickOption<int>(o.OfficeId, o.OfficeAcronym, o.OfficeName))];
+
+    private static IReadOnlyList<PickOption<string>> ClassOptions(string first) =>
+        [new("", first), .. PropertyStatus.Classifications.Select(c => new PickOption<string>(c, c))];
+
+    private static IReadOnlyList<PickOption<int>> TypeOptions(string? first)
+    {
+        if (first is null)
+            return [new(PropertyStatus.PpeTypeId, "Property, Plant & Equipment (PPE)"), new(PropertyStatus.SemiExpendableTypeId, "Semi-Expendable (SE)")];
+        return [new(0, first), new(PropertyStatus.PpeTypeId, "PPE"), new(PropertyStatus.SemiExpendableTypeId, "Semi-expendable")];
+    }
+
+    private IReadOnlyList<PickOption<int>> PeopleOptions =>
+        [new(0, _form.OfficeId is null ? "Choose an office first" : "Unassigned"),
+         .. _people.Where(p => p.OfficeId == _form.OfficeId).Select(p => new PickOption<int>(p.PersonnelId, p.FullName, p.Position))];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _status = PropertyStatus.IsValid(StatusQuery ?? "") ? StatusQuery! : "";
+        _class = PropertyStatus.Classifications.Contains(ClassQuery ?? "") ? ClassQuery! : "";
+        var user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        uint.TryParse(user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out _userId);
+        try
+        {
+            await using (var db = await DbFactory.CreateDbContextAsync())
+            {
+                _offices = await db.Offices.AsNoTracking().OrderBy(o => o.OfficeAcronym).ToListAsync();
+                _people = await db.RoPersonnel.AsNoTracking().OrderBy(p => p.FullName).ToListAsync();
+            }
+            _items = await PropertySvc.ListAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Property register failed to load");
+            _error = true;
+        }
+    }
+
+    private void SetOffice(int officeId)
+    {
+        _form.OfficeId = officeId == 0 ? null : officeId;
+        if (_form.PersonnelId is int pid && _people.FirstOrDefault(p => p.PersonnelId == pid)?.OfficeId != _form.OfficeId)
+            _form.PersonnelId = null;   // person no longer matches the office
+    }
+
+    private void OpenAdd()
+    {
+        _form = new PropertyItem { Status = "Newly Acquired", Classification = _class, OfficeId = _office == 0 ? null : _office };
+        _formError = null;
+        _formOpen = true;
+    }
+
+    private void OpenEdit(PropertyItem p)
+    {
+        _form = new PropertyItem
+        {
+            PropertyId = p.PropertyId, PropertyNo = p.PropertyNo, Description = p.Description, Classification = p.Classification,
+            PropertyTypeId = p.PropertyTypeId, Quantity = p.Quantity, UnitCost = p.UnitCost, AcquiredOn = p.AcquiredOn,
+            OfficeId = p.OfficeId, PersonnelId = p.PersonnelId, Status = p.Status, Remarks = p.Remarks,
+        };
+        _formError = null;
+        _formOpen = true;
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        try
+        {
+            var r = await PropertySvc.SaveAsync(_form, _userId);
+            if (!r.Ok) { _formError = r.Message; return; }
+            _formOpen = false;
+            _items = await PropertySvc.ListAsync();
+            await JS.InvokeVoidAsync("showToast", r.Message, "success");
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task DeleteAsync(PropertyItem p)
+    {
+        var ok = await Modal.ConfirmAsync($"Remove {p.PropertyNo} from the register?",
+            "Use this only for records entered by mistake. For property that was disposed of, lost or transferred, change its status instead so the history stays.",
+            "Remove", "Cancel", ModalVariant.Danger);
+        if (!ok) return;
+        var r = await PropertySvc.DeleteAsync(p.PropertyId, _userId);
+        _items = await PropertySvc.ListAsync();
+        await JS.InvokeVoidAsync("showToast", r.Message, r.Ok ? "danger" : "danger");
+    }
+
+    // Live: when property, personnel change on either website, reload without a refresh.
+    private static readonly string[] LiveAreas = ["property", "personnel"];
+    protected override void OnInitialized() => Live.AreasChanged += OnAreasAsync;
+
+    private async Task OnAreasAsync(IReadOnlySet<string> areas)
+    {
+        if (!areas.Overlaps(LiveAreas)) return;
+        if (_error) return;
+        _items = await PropertySvc.ListAsync();
+        StateHasChanged();
+    }
+
+    public void Dispose() => Live.AreasChanged -= OnAreasAsync;
+}

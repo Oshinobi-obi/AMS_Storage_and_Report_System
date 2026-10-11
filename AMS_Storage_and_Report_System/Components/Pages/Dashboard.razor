@@ -4,6 +4,8 @@
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject ILogger<Dashboard> Log
 @inject LiveRefresh Live
+@inject PropertyService PropertySvc
+@inject SupplyDashboardService SupplySvc
 @implements IDisposable
 
 <PageTitle>Dashboard | AMS StockWatch</PageTitle>
@@ -120,6 +122,136 @@
                 </section>
             </div>
         </div>
+
+        @* ── Office supplies: stock levels and most requested ──────────── *@
+        <div class="section-title">
+            <h2><i class="bi bi-box-seam" aria-hidden="true"></i>Office supplies</h2>
+            @if (!_supplyTablesMissing)
+            {
+                <a class="btn btn-accent btn-sm" href="@($"/exports/supplies-report?period={_supplyPeriod}")" download
+                   title="Stock levels, most requested supplies and requisitions, with charts">
+                    <i class="bi bi-file-earmark-excel me-1" aria-hidden="true"></i> Export to Excel
+                </a>
+            }
+        </div>
+
+        @if (!_supplyTablesMissing)
+        {
+            <div class="row g-3">
+                <div class="col-xl-6">
+                    <section class="panel h-100">
+                        <header class="panel-head">
+                            <h2>Stock levels</h2>
+                            <a class="act" href="/inventory">Open inventory <i class="bi bi-chevron-right" aria-hidden="true"></i></a>
+                        </header>
+                        <div class="panel-body">
+                            <StockHealthBar InStock="_levelCounts.Ok" Low="_levelCounts.Low" Out="_levelCounts.Out" />
+                            <h3 class="chart-subtitle mt-4">Closest to running out</h3>
+                            <StockLevelChart Items="_levels" Label="Items closest to running out" />
+                            <p class="chart-note">
+                                <span class="level-key" aria-hidden="true"></span> The bar is the stock on hand; the dashed line is the item's low-stock level.
+                                Click an item to open its stock card.
+                            </p>
+                        </div>
+                    </section>
+                </div>
+                <div class="col-xl-6">
+                    <section class="panel h-100">
+                        <header class="panel-head">
+                            <h2>Most requested supplies</h2>
+                            <div class="period-picker"><Picker TValue="string" Id="supply-period" Options="PeriodOptions" @bind-Value="_supplyPeriod" @bind-Value:after="SupplyPeriodChangedAsync" /></div>
+                        </header>
+                        <div class="panel-body">
+                            <BarChart Items="_topRequested" Label="Most requested supplies" ShowPercent="false" Color="var(--brand)" EmptyText="No requisitions in this period yet." />
+                            <p class="chart-note">Number of requisitions that asked for each item, with the total quantity. Cancelled requisitions are not counted.</p>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        }
+
+        @* ── Property dashboard ───────────────────────────────────────── *@
+        <div class="section-title">
+            <h2><i class="bi bi-boxes" aria-hidden="true"></i>Property</h2>
+            <a class="act" href="/property-register">Open property register <i class="bi bi-chevron-right" aria-hidden="true"></i></a>
+        </div>
+
+        @if (_property is null)
+        {
+            <div class="callout"><i class="bi bi-database-exclamation" aria-hidden="true"></i>
+                <p>Property figures will appear once the database update <code>007_property_register.sql</code> has been run.</p></div>
+        }
+        else
+        {
+            <div class="stat-grid">
+                <a class="stat" href="/property-register">
+                    <span class="stat-icon"><i class="bi bi-pc-display" aria-hidden="true"></i></span>
+                    <span><span class="stat-value">@_property.TotalPpe.ToString("N0")</span><span class="stat-label">Total PPE (units)</span></span>
+                </a>
+                <a class="stat" href="/property-register">
+                    <span class="stat-icon is-ok"><i class="bi bi-box2" aria-hidden="true"></i></span>
+                    <span><span class="stat-value">@_property.TotalSemiExpendable.ToString("N0")</span><span class="stat-label">Semi-expendable (units)</span></span>
+                </a>
+                <a class="stat" href="/property-register">
+                    <span class="stat-icon is-gold"><i class="bi bi-boxes" aria-hidden="true"></i></span>
+                    <span><span class="stat-value">@_property.TotalUnits.ToString("N0")</span><span class="stat-label">Total property</span></span>
+                </a>
+                <a class="stat" href="/property-register">
+                    <span class="stat-icon is-warn"><i class="bi bi-cash-stack" aria-hidden="true"></i></span>
+                    <span><span class="stat-value stat-money">₱@_property.AcquisitionCost.ToString("N2")</span><span class="stat-label">Acquisition cost</span></span>
+                </a>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-xl-6">
+                    <section class="panel h-100">
+                        <header class="panel-head"><h2>Property status</h2><span class="meta">Share of all units</span></header>
+                        <div class="panel-body"><BarChart Items="_property.ByStatus" Label="Property status" EmptyText="No properties in the register yet." /></div>
+                    </section>
+                </div>
+                <div class="col-xl-6">
+                    <section class="panel h-100">
+                        <header class="panel-head"><h2>Property classification</h2><span class="meta">Units per class</span></header>
+                        <div class="panel-body"><BarChart Items="_property.ByClassification" Label="Property classification" Color="var(--brand)" EmptyText="No properties in the register yet." /></div>
+                    </section>
+                </div>
+                <div class="col-xl-6">
+                    <section class="panel h-100">
+                        <header class="panel-head"><h2>Property by office</h2><span class="meta">Top 10 offices, units</span></header>
+                        <div class="panel-body"><BarChart Items="_property.ByOffice" Label="Property by office" Color="#3aa1a6" EmptyText="No properties in the register yet." /></div>
+                    </section>
+                </div>
+                <div class="col-xl-6">
+                    <section class="panel h-100">
+                        <header class="panel-head"><h2>Accountability</h2><span class="meta">Units</span></header>
+                        <div class="panel-body"><BarChart Items="_property.Accountability" Label="Accountability" ShowPercent="false" EmptyText="No properties in the register yet." /></div>
+                    </section>
+                </div>
+                <div class="col-12">
+                    <div class="period-bar">
+                        <span><i class="bi bi-calendar3" aria-hidden="true"></i> Documents and requisitions for</span>
+                        <div class="period-picker"><Picker TValue="string" Id="dash-period" Options="PeriodOptions" @bind-Value="_period" @bind-Value:after="PeriodChangedAsync" /></div>
+                    </div>
+                </div>
+                <div class="col-xl-6">
+                    <section class="panel h-100">
+                        <header class="panel-head"><h2>Property documents</h2><a class="act" href="/property-documents">Open <i class="bi bi-chevron-right" aria-hidden="true"></i></a></header>
+                        <div class="panel-body">
+                            <div class="pie-pair">
+                                <div><h3 class="chart-subtitle">By document</h3><PieChart Items="_property.DocumentsByType" Label="Property documents by type" Caption="documents" /></div>
+                                <div><h3 class="chart-subtitle">By type of property</h3><PieChart Items="_property.DocumentsByPropertyType" Label="Property documents by type of property" Caption="documents" /></div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+                <div class="col-xl-6">
+                    <section class="panel h-100">
+                        <header class="panel-head"><h2>Requisition monitoring</h2><a class="act" href="/requisitions">Open queue <i class="bi bi-chevron-right" aria-hidden="true"></i></a></header>
+                        <div class="panel-body"><BarChart Items="_property.Requisitions" Label="Requisitions by status" ShowPercent="false" EmptyText="No requisitions yet." /></div>
+                    </section>
+                </div>
+            </div>
+        }
     }
 </div>
 
@@ -145,6 +277,60 @@
     }
 
     private bool _loading = true, _supplyTablesMissing;
+    private string _supplyPeriod = "year";
+    private List<StockLevelRow> _levels = [];
+    private (int Ok, int Low, int Out) _levelCounts;
+    private List<ChartPoint> _topRequested = [];
+
+    private async Task LoadSuppliesAsync()
+    {
+        var all = await SupplySvc.StockLevelsAsync();
+        _levels = all.Take(10).ToList();
+        _levelCounts = (all.Count(s => s.Level == StockLevel.Ok), all.Count(s => s.Level == StockLevel.Low), all.Count(s => s.Level == StockLevel.Out));
+        await LoadTopRequestedAsync();
+    }
+
+    private async Task LoadTopRequestedAsync()
+    {
+        var top = await SupplySvc.MostRequestedAsync(SupplyDashboardService.Period(_supplyPeriod).Since, 10);
+        _topRequested = top.Select(t => new ChartPoint(t.Item, t.Requests, null, $"/inventory/{t.ItemId}",
+            Note: $"{t.QtyRequested:N0} {t.Unit}",
+            Tooltip: $"{t.Item} ({t.StockNo}): asked for in {t.Requests:N0} requisition(s) by {t.Offices:N0} office(s), {t.QtyRequested:N0} {t.Unit} in total, {t.QtyIssued:N0} issued.")).ToList();
+    }
+
+    private async Task SupplyPeriodChangedAsync()
+    {
+        try { await LoadTopRequestedAsync(); }
+        catch (Exception ex) { Log.LogError(ex, "Most requested supplies failed"); }
+    }
+    private PropertyDashboard? _property;
+    private string _period = "all";
+
+    private static readonly IReadOnlyList<PickOption<string>> PeriodOptions =
+    [
+        new("all", "All time"), new("year", "This year"), new("quarter", "This quarter"), new("month", "This month"),
+    ];
+
+    private DateTime? Since
+    {
+        get
+        {
+            var now = PhTime.Now;
+            return _period switch
+            {
+                "year" => new DateTime(now.Year, 1, 1),
+                "quarter" => new DateTime(now.Year, (now.Month - 1) / 3 * 3 + 1, 1),
+                "month" => new DateTime(now.Year, now.Month, 1),
+                _ => null,
+            };
+        }
+    }
+
+    private async Task PeriodChangedAsync()
+    {
+        try { _property = await PropertySvc.DashboardAsync(Since); }
+        catch (Exception ex) { Log.LogError(ex, "Property dashboard failed"); }
+    }
     private string _name = "";
     private long _pendingRis, _lowStock, _outOfStock, _documents, _personnel, _offices;
     private List<PendingRow> _pending = [];
@@ -180,7 +366,11 @@
         StateHasChanged();
     }
 
-    public void Dispose() => Live.Changed -= OnLiveAsync;
+    public void Dispose()
+    {
+        Live.Changed -= OnLiveAsync;
+        Live.AreasChanged -= OnAreasAsync;
+    }
 
     private async Task LoadFiguresAsync()
     {
@@ -213,6 +403,8 @@
                  WHERE is_active = 1 AND stock_on_hand <= reorder_level
                  ORDER BY stock_on_hand, item_name
                  LIMIT 8").ToListAsync();
+
+            await LoadSuppliesAsync();
         }
         catch (Exception ex) when (ex.GetBaseException().Message.Contains("doesn't exist"))
         {
@@ -222,8 +414,26 @@
         {
             Log.LogError(ex, "Dashboard supply figures failed");
         }
+
+        try { _property = await PropertySvc.DashboardAsync(Since); }
+        catch (Exception ex)
+        {
+            _property = null;   // register table not created yet
+            if (!ex.GetBaseException().Message.Contains("doesn't exist")) Log.LogError(ex, "Property dashboard failed");
+        }
     }
 
     private static Task<long> Count(AppDbContext db, FormattableString sql) =>
         db.Database.SqlQuery<long>(sql).SingleAsync();
+
+    // Live: when catalog, appcse, property, documents, personnel change on either website, reload without a refresh.
+    private static readonly string[] LiveAreas = ["catalog", "appcse", "property", "documents", "personnel"];
+    protected override void OnInitialized() => Live.AreasChanged += OnAreasAsync;
+
+    private async Task OnAreasAsync(IReadOnlySet<string> areas)
+    {
+        if (!areas.Overlaps(LiveAreas)) return;
+        await LoadFiguresAsync();
+        StateHasChanged();
+    }
 }

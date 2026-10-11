@@ -1,6 +1,8 @@
 @page "/catalog"
 @layout AppLayout
 @attribute [Authorize]
+@inject LiveRefresh Live
+@implements IDisposable
 @inject CatalogAdminService CatalogSvc
 @inject AuthenticationStateProvider AuthStateProvider
 @inject ModalService Modal
@@ -11,6 +13,13 @@
 
 <PageHeader Title="Catalog" Subtitle="The supplies offices can request in AMS Supplies: names, prices, photos and low-stock levels.">
     <Actions>
+        @if (_items?.Any(i => !string.IsNullOrEmpty(i.ImagePath)) == true)
+        {
+            <button type="button" class="btn btn-light" @onclick="ShrinkPhotosAsync" disabled="@_shrinking" title="Make saved photos smaller so AMS Supplies loads faster">
+                @if (_shrinking) { <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> } else { <i class="bi bi-image me-1" aria-hidden="true"></i> }
+                Optimize photos
+            </button>
+        }
         <button type="button" class="btn btn-light" @onclick="() => _listsOpen = true"><i class="bi bi-tags me-1" aria-hidden="true"></i> Categories and suppliers</button>
         <button type="button" class="btn btn-accent" @onclick="OpenAdd"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i> Add item</button>
     </Actions>
@@ -61,7 +70,13 @@
                                         else { <i class="bi @(i.Category?.Icon ?? "bi-box-seam")" aria-hidden="true"></i> }
                                     </span>
                                 </td>
-                                <td><span class="cell-strong">@i.ItemName</span><span class="cell-sub">@(i.StockNo + (string.IsNullOrWhiteSpace(i.Specifications) ? "" : ", " + i.Specifications))</span></td>
+                                <td>
+                                    <span class="cell-strong">@i.ItemName</span><span class="cell-sub">@(i.StockNo + (string.IsNullOrWhiteSpace(i.Specifications) ? "" : ", " + i.Specifications))</span>
+                                    @if (i.DaysToExpiry is int days)
+                                    {
+                                        <span class="cell-sub"><span class="exp-tag @Expiry.Css(days)"><i class="bi @Expiry.Icon(days)" aria-hidden="true"></i>@Expiry.Text(i)</span></span>
+                                    }
+                                </td>
                                 <td class="is-muted">@(i.Category?.CategoryName ?? "None")</td>
                                 <td class="t-num text-nowrap">₱@i.UnitPrice.ToString("N2") <span class="cell-sub d-inline">/ @i.UnitOfMeasure</span></td>
                                 <td class="t-num">@i.StockOnHand.ToString("N0")</td>
@@ -126,6 +141,39 @@
                 <label class="form-label" for="i-sup">Supplier</label>
                 <Picker TValue="int" Id="i-sup" Options="SupplierOptions" @bind-Value="_form.SupplierId" />
             </div>
+            <div class="col-12">
+                <div class="perish-box">
+                    <div class="choice-row" role="radiogroup" aria-labelledby="i-perish-label">
+                        <span class="form-label m-0" id="i-perish-label">Perishable?</span>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="i-perish" id="i-perish-yes" checked="@_form.IsPerishable" @onchange="() => _form.IsPerishable = true" />
+                            <label class="form-check-label" for="i-perish-yes">Yes</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="i-perish" id="i-perish-no" checked="@(!_form.IsPerishable)" @onchange="() => _form.IsPerishable = false" />
+                            <label class="form-check-label" for="i-perish-no">No</label>
+                        </div>
+                    </div>
+                    @if (_form.IsPerishable)
+                    {
+                        <div class="row g-3 mt-0">
+                            <div class="col-sm-6">
+                                <label class="form-label" for="i-mfd">MFD (manufacturing date) <span class="text-muted-2 fw-normal">optional</span></label>
+                                <DatePicker Id="i-mfd" @bind-Value="_form.ManufacturedOn" Max="MfdMax" Placeholder="Not shown on the pack" />
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label" for="i-exp">EXP (expiration date)</label>
+                                <DatePicker Id="i-exp" @bind-Value="_form.ExpiresOn" Min="_form.ManufacturedOn?.AddDays(1)" Placeholder="Select the expiration date" />
+                            </div>
+                        </div>
+                        <p class="form-text mb-0 mt-2">Offices see the MFD and EXP in AMS Supplies. Update them when a new batch arrives.</p>
+                    }
+                    else
+                    {
+                        <p class="form-text mb-0 mt-1">Choose Yes for supplies with an expiration date, such as printer ink, toner or glue.</p>
+                    }
+                </div>
+            </div>
             @if (_form.ItemId != 0)
             {
                 <div class="col-12">
@@ -137,7 +185,7 @@
                         </span>
                         <div class="flex-grow-1">
                             <InputFile id="i-photo" class="form-control" OnChange="OnPhotoSelected" accept=".jpg,.jpeg,.png,.webp" />
-                            <div class="form-text">JPG, PNG or WebP, under 2 MB. A square photo on a plain background looks best.</div>
+                            <div class="form-text">JPG, PNG or WebP. Big photos are made smaller automatically. A square photo on a plain background looks best.</div>
                             @if (_hasPhoto)
                             {
                                 <button type="button" class="btn btn-link text-danger px-0 small" @onclick="RemovePhotoAsync">Remove photo</button>
@@ -218,7 +266,10 @@
     private int _categoryFilter;
     private uint _userId;
 
-    private bool _formOpen, _saving, _listsOpen, _hasPhoto;
+    private bool _formOpen, _saving, _listsOpen, _hasPhoto, _shrinking;
+
+    /// MFD can't be after today, nor on/after the EXP.
+    private DateTime MfdMax => _form.ExpiresOn is { } exp && exp.Date.AddDays(-1) < PhTime.Now.Date ? exp.Date.AddDays(-1) : PhTime.Now.Date;
     private long _photoVersion;
     private ItemForm _form = new();
     private string? _formError;
@@ -272,6 +323,7 @@
             ItemId = i.ItemId, StockNo = i.StockNo, ItemName = i.ItemName, Specifications = i.Specifications,
             UnitOfMeasure = i.UnitOfMeasure, CategoryId = i.CategoryId ?? 0, SupplierId = i.SupplierId ?? 0,
             UnitPrice = i.UnitPrice, ReorderLevel = i.ReorderLevel,
+            IsPerishable = i.IsPerishable, ManufacturedOn = i.ManufacturedOn, ExpiresOn = i.ExpiresOn,
         };
         _hasPhoto = !string.IsNullOrEmpty(i.ImagePath);
         _photoVersion = DateTime.UtcNow.Ticks;
@@ -297,19 +349,58 @@
         finally { _saving = false; }
     }
 
+    // Photos saved before they were shrunk on upload can be several MB each. This makes a
+    // smaller copy of each one in the browser and saves it in place of the original.
+    private async Task ShrinkPhotosAsync()
+    {
+        var withPhoto = (_items ?? []).Where(i => !string.IsNullOrEmpty(i.ImagePath)).ToList();
+        _shrinking = true;
+        int shrunk = 0, fine = 0, failed = 0;
+        try
+        {
+            foreach (var i in withPhoto)
+            {
+                try
+                {
+                    await using var data = await JS.InvokeAsync<IJSStreamReference>("amsPhotos.shrink",
+                        $"/catalog/image/{i.ItemId}?v={DateTime.UtcNow.Ticks}", CatalogAdminService.PhotoMaxSide, 0.82);
+                    if (data.Length == 0) { fine++; continue; }   // already small
+                    await using var stream = await data.OpenReadStreamAsync(CatalogAdminService.MaxImageBytes);
+                    using var ms = new MemoryStream();
+                    await stream.CopyToAsync(ms);
+                    var bytes = ms.ToArray();
+                    var r = await CatalogSvc.SetImageAsync(i.ItemId, bytes, CatalogAdminService.DetectImageType(bytes) ?? "image/webp");
+                    if (r.Ok) shrunk++; else failed++;
+                }
+                catch (Exception ex)
+                {
+                    Log.LogWarning(ex, "Optimizing the photo of item {ItemId} failed", i.ItemId);
+                    failed++;
+                }
+            }
+        }
+        finally { _shrinking = false; }
+        await LoadAsync();
+        var message = $"{shrunk} photo(s) made smaller, {fine} already small" + (failed > 0 ? $", {failed} could not be changed." : ".");
+        await JS.InvokeVoidAsync("showToast", message, failed > 0 ? "danger" : "success");
+    }
+
     private async Task OnPhotoSelected(InputFileChangeEventArgs e)
     {
         _formError = null;
         if (!CatalogAdminService.ImageTypes.Contains(e.File.ContentType)) { _formError = "Use a JPG, PNG or WebP image."; return; }
-        if (e.File.Size > CatalogAdminService.MaxImageBytes) { _formError = "The photo must be smaller than 2 MB."; return; }
+        if (e.File.Size > CatalogAdminService.MaxOriginalBytes) { _formError = "The photo must be smaller than 25 MB."; return; }
 
         _saving = true;
         try
         {
-            await using var stream = e.File.OpenReadStream(CatalogAdminService.MaxImageBytes);
+            // Shrink it in the browser first, so only a small copy is uploaded and stored.
+            var file = await e.File.RequestImageFileAsync("image/webp", CatalogAdminService.PhotoMaxSide, CatalogAdminService.PhotoMaxSide);
+            await using var stream = file.OpenReadStream(CatalogAdminService.MaxImageBytes);
             using var ms = new MemoryStream();
             await stream.CopyToAsync(ms);
-            var r = await CatalogSvc.SetImageAsync(_form.ItemId, ms.ToArray(), e.File.ContentType);
+            var bytes = ms.ToArray();
+            var r = await CatalogSvc.SetImageAsync(_form.ItemId, bytes, CatalogAdminService.DetectImageType(bytes) ?? file.ContentType);
             if (!r.Ok) { _formError = r.Message; return; }
             _hasPhoto = true;
             _photoVersion = DateTime.UtcNow.Ticks;
@@ -375,4 +466,17 @@
         if (!r.Ok) await Modal.WarningAsync("Couldn't rename", r.Message);
         await LoadAsync();
     }
+
+    // Live: when catalog change on either website, reload without a refresh.
+    private static readonly string[] LiveAreas = ["catalog"];
+    protected override void OnInitialized() => Live.AreasChanged += OnAreasAsync;
+
+    private async Task OnAreasAsync(IReadOnlySet<string> areas)
+    {
+        if (!areas.Overlaps(LiveAreas)) return;
+        await LoadAsync();
+        StateHasChanged();
+    }
+
+    public void Dispose() => Live.AreasChanged -= OnAreasAsync;
 }

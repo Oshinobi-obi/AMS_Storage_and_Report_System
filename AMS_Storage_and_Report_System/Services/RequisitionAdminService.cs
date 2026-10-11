@@ -1,9 +1,10 @@
 // RequisitionAdminService.cs — the AMS side of the RIS workflow:
 //   PendingApproval → (approve) ApprovedForIssuance → (release) Issued
 //                   ↘ (reject)  Rejected
-// Approval deducts warehouse stock and the office's APP-CSE in one transaction,
-// using the same row locks as the AMS Supplies portal, so the two sites can't
-// double-spend the same stock or balance.
+// Approval commits the office's APP-CSE and reserves the warehouse stock (nothing leaves
+// the stockroom yet). The stock on hand goes down only when AMS marks the RIS as issued,
+// i.e. when the items are actually handed over. Row locks keep two approvals from
+// promising the same pieces, and match the AMS Supplies portal's locks.
 
 using System.Data;
 using AMS_Storage_and_Report_System.Data;
@@ -37,8 +38,11 @@ public sealed class QueueRow
 }
 
 /// What AMS needs to see beside each line before approving.
-public sealed record LineContext(int StockOnHand, int ReorderLevel, int? Allocated, int? AlreadyIssued, int OtherPending)
+public sealed record LineContext(int StockOnHand, int ReorderLevel, int? Allocated, int? AlreadyIssued, int OtherPending, int Reserved = 0)
 {
+    /// On hand minus what other approved requisitions are still waiting to pick up.
+    public int Available => Math.Max(StockOnHand - Reserved, 0);
+
     /// APP-CSE left for this line once this request is counted (null = item not in APP-CSE).
     public int? RemainingIncludingThis(int requested) =>
         Allocated is null ? null : Allocated.Value - (AlreadyIssued ?? 0) - OtherPending - requested;
@@ -122,6 +126,7 @@ public sealed class RequisitionAdminService(IDbContextFactory<AppDbContext> dbFa
             .GroupBy(i => i.ItemId)
             .Select(g => new { g.Key, Qty = g.Sum(i => i.RequestedQty) })
             .ToDictionaryAsync(x => x.Key, x => x.Qty);
+        var reserved = await ReservedByItemAsync(db, itemIds, exceptRisId: ris.RisId);
 
         return itemIds.Distinct().ToDictionary(id => id, id =>
         {
@@ -129,8 +134,34 @@ public sealed class RequisitionAdminService(IDbContextFactory<AppDbContext> dbFa
             var hasAlloc = alloc.TryGetValue(id, out var a);
             return new LineContext(s.StockOnHand, s.ReorderLevel,
                 hasAlloc ? a.AllocatedQty : null, hasAlloc ? a.IssuedQty : null,
-                otherPending.GetValueOrDefault(id));
+                otherPending.GetValueOrDefault(id), reserved.GetValueOrDefault(id));
         });
+    }
+
+    // ── Reserved stock (approved, waiting for pickup) ──────────────────
+    /// Lines of approved requisitions whose items are still in the stockroom.
+    /// Requisitions approved before stock moved to "issue time" already had their stock taken
+    /// at approval (they have an ISSUE movement), so they are not counted again.
+    private static IQueryable<RisItem> AwaitingPickup(AppDbContext db) =>
+        db.RisItems.Where(i => i.IssuedQty > 0
+            && db.RisTransactions.Any(r => r.RisId == i.RisId && r.Status == RisStatus.Approved)
+            && !db.StockMovements.Any(m => m.RisId == i.RisId && m.ItemId == i.ItemId && m.MovementType == "ISSUE"));
+
+    private static async Task<Dictionary<int, int>> ReservedByItemAsync(AppDbContext db, IReadOnlyCollection<int>? itemIds = null, int? exceptRisId = null)
+    {
+        var q = AwaitingPickup(db);
+        if (itemIds is not null) q = q.Where(i => itemIds.Contains(i.ItemId));
+        if (exceptRisId is not null) q = q.Where(i => i.RisId != exceptRisId);
+        return await q.GroupBy(i => i.ItemId)
+            .Select(g => new { g.Key, Qty = g.Sum(i => i.IssuedQty ?? 0) })
+            .ToDictionaryAsync(x => x.Key, x => x.Qty);
+    }
+
+    /// Reserved quantity per item, for the Inventory page.
+    public async Task<Dictionary<int, int>> ReservedByItemAsync()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return await ReservedByItemAsync(db);
     }
 
     public async Task<List<RoPersonnel>> PersonnelOfOfficeAsync(int officeId)
@@ -147,7 +178,7 @@ public sealed class RequisitionAdminService(IDbContextFactory<AppDbContext> dbFa
             .OrderBy(p => p.FullName).ToListAsync();
     }
 
-    // ── Approve: deduct stock + APP-CSE, all or nothing ────────────────
+    // ── Approve: commit APP-CSE + reserve stock, all or nothing ────────
     public async Task<OpResult> ApproveAsync(uint adminUserId, int risId, IReadOnlyDictionary<int, LineDecision> decisions,
                                              int? approvedByPersonnelId, int? issuedByPersonnelId)
     {
@@ -179,27 +210,27 @@ public sealed class RequisitionAdminService(IDbContextFactory<AppDbContext> dbFa
                 : d.Remarks.Trim()[..Math.Min(d.Remarks.Trim().Length, 255)];
             if (d.IssueQty == 0) continue;
 
-            var stockOk = await db.Database.ExecuteSqlInterpolatedAsync($@"
-                UPDATE supply_items SET stock_on_hand = stock_on_hand - {d.IssueQty}
-                 WHERE item_id = {line.ItemId} AND stock_on_hand >= {d.IssueQty}");
-            if (stockOk == 0) { problems.Add($"{line.StockNo}: not enough in the warehouse for {d.IssueQty}."); continue; }
+            // Reserve only: the stock on hand is not touched until the RIS is marked as issued.
+            // Locking the item row stops two approvals from promising the same pieces.
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT item_id FROM supply_items WHERE item_id = {line.ItemId} FOR UPDATE");
+            var onHand = (int)await db.Database
+                .SqlQuery<long>($"SELECT CAST(stock_on_hand AS SIGNED) AS Value FROM supply_items WHERE item_id = {line.ItemId}")
+                .SingleAsync();
+            var reservedElsewhere = (await ReservedByItemAsync(db, [line.ItemId], exceptRisId: ris.RisId)).GetValueOrDefault(line.ItemId);
+            var available = Math.Max(onHand - reservedElsewhere, 0);
+            if (available < d.IssueQty)
+            {
+                problems.Add(reservedElsewhere > 0
+                    ? $"{line.StockNo}: only {available} available ({onHand} on hand, {reservedElsewhere} already approved for pickup by other offices)."
+                    : $"{line.StockNo}: not enough in the warehouse for {d.IssueQty} (on hand: {onHand}).");
+                continue;
+            }
 
             var quotaOk = await db.Database.ExecuteSqlInterpolatedAsync($@"
                 UPDATE app_cse_allocations SET issued_qty = issued_qty + {d.IssueQty}
                  WHERE office_id = {ris.OfficeId} AND item_id = {line.ItemId}
                    AND fiscal_year = {ris.FiscalYear} AND issued_qty + {d.IssueQty} <= allocated_qty");
             if (quotaOk == 0) { problems.Add($"{line.StockNo}: more than the office's remaining APP-CSE."); continue; }
-
-            var balanceAfter = (int)await db.Database
-                .SqlQuery<long>($"SELECT CAST(stock_on_hand AS SIGNED) AS Value FROM supply_items WHERE item_id = {line.ItemId}")
-                .SingleAsync();
-
-            db.StockMovements.Add(new StockMovement
-            {
-                ItemId = line.ItemId, MovementType = "ISSUE", Quantity = d.IssueQty, BalanceAfter = balanceAfter,
-                UnitCost = line.UnitCost, ReferenceType = "RIS", ReferenceNo = ris.RisNo,
-                RisId = ris.RisId, OfficeId = ris.OfficeId, PerformedBy = adminUserId, CreatedAt = now,
-            });
         }
 
         if (problems.Count > 0)
@@ -228,7 +259,7 @@ public sealed class RequisitionAdminService(IDbContextFactory<AppDbContext> dbFa
         await db.SaveChangesAsync();
         await tx.CommitAsync();
         log.LogInformation("RIS {RisNo} approved by user {UserId}", ris.RisNo, adminUserId);
-        return OpResult.Success($"{ris.RisNo} is approved for issuance.");
+        return OpResult.Success($"{ris.RisNo} is approved. The stock is reserved and will be deducted when you mark it as issued.");
     }
 
     // ── Reject (the pending reservation is released automatically) ────
@@ -291,7 +322,7 @@ public sealed class RequisitionAdminService(IDbContextFactory<AppDbContext> dbFa
         await using var tx = await db.Database.BeginTransactionAsync();
         await db.Database.ExecuteSqlInterpolatedAsync($"SELECT ris_id FROM ris_transactions WHERE ris_id = {risId} FOR UPDATE");
 
-        var ris = await db.RisTransactions.FirstOrDefaultAsync(r => r.RisId == risId);
+        var ris = await db.RisTransactions.Include(r => r.Items).FirstOrDefaultAsync(r => r.RisId == risId);
         if (ris is null) return OpResult.Fail("This requisition no longer exists.");
         if (ris.Status != RisStatus.Approved)
             return OpResult.Fail($"Only approved requisitions can be released. {ris.RisNo} is {RisStatus.Label(ris.Status).ToLowerInvariant()}.");
@@ -299,6 +330,44 @@ public sealed class RequisitionAdminService(IDbContextFactory<AppDbContext> dbFa
         if (ris.ApprovedAt is { } approvedAt && issuedOn.Date < approvedAt.Date) return OpResult.Fail("The release date can't be before the approval date.");
 
         var now = PhTime.Now;
+
+        // The items leave the stockroom now: deduct the stock on hand and log it on each stock card.
+        // Lines that already have an ISSUE movement were approved before this change, when stock
+        // was taken at approval, so they are not deducted twice.
+        var alreadyDeducted = await db.StockMovements
+            .Where(m => m.RisId == risId && m.MovementType == "ISSUE").Select(m => m.ItemId).ToListAsync();
+        var shortages = new List<string>();
+        foreach (var line in ris.Items.Where(i => i.IssuedQty > 0).OrderBy(i => i.ItemId))   // fixed order → no deadlocks
+        {
+            if (alreadyDeducted.Contains(line.ItemId)) continue;
+            var qty = line.IssuedQty!.Value;
+            var stockOk = await db.Database.ExecuteSqlInterpolatedAsync($@"
+                UPDATE supply_items SET stock_on_hand = stock_on_hand - {qty}
+                 WHERE item_id = {line.ItemId} AND stock_on_hand >= {qty}");
+            if (stockOk == 0)
+            {
+                var onHand = (int)await db.Database
+                    .SqlQuery<long>($"SELECT CAST(stock_on_hand AS SIGNED) AS Value FROM supply_items WHERE item_id = {line.ItemId}")
+                    .SingleAsync();
+                shortages.Add($"{line.StockNo}: needs {qty} {line.UnitOfMeasure}, but Inventory shows only {onHand}.");
+                continue;
+            }
+            var balanceAfter = (int)await db.Database
+                .SqlQuery<long>($"SELECT CAST(stock_on_hand AS SIGNED) AS Value FROM supply_items WHERE item_id = {line.ItemId}")
+                .SingleAsync();
+            db.StockMovements.Add(new StockMovement
+            {
+                ItemId = line.ItemId, MovementType = "ISSUE", Quantity = qty, BalanceAfter = balanceAfter,
+                UnitCost = line.UnitCost, ReferenceType = "RIS", ReferenceNo = ris.RisNo,
+                RisId = ris.RisId, OfficeId = ris.OfficeId, PerformedBy = adminUserId, CreatedAt = now,
+            });
+        }
+        if (shortages.Count > 0)
+        {
+            await tx.RollbackAsync();
+            return OpResult.Fail("Nothing was saved. The stockroom count is lower than this RIS. Correct it in Inventory (stock in), then try again:", shortages);
+        }
+
         ris.Status = RisStatus.Issued;
         ris.ReceivedByPersonnelId = receivedByPersonnelId;
         if (issuedByPersonnelId is not null) ris.IssuedByPersonnelId = issuedByPersonnelId;
@@ -322,6 +391,6 @@ public sealed class RequisitionAdminService(IDbContextFactory<AppDbContext> dbFa
 
         await db.SaveChangesAsync();
         await tx.CommitAsync();
-        return OpResult.Success($"{ris.RisNo} is marked as issued.");
+        return OpResult.Success($"{ris.RisNo} is marked as issued. The stock on hand was deducted.");
     }
 }

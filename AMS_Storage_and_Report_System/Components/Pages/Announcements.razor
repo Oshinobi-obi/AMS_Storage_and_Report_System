@@ -1,0 +1,216 @@
+@page "/announcements"
+@layout AppLayout
+@attribute [Authorize]
+@inject LiveRefresh Live
+@implements IDisposable
+@inject AdminExtrasService Extras
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ModalService Modal
+@inject IJSRuntime JS
+@inject ILogger<Announcements> Log
+
+<PageTitle>Announcements | AMS StockWatch</PageTitle>
+
+<PageHeader Title="Announcements" Subtitle="Notices shown as a banner to every office on AMS Supplies, between the dates you set.">
+    <Actions>
+        <button type="button" class="btn btn-accent" @onclick="OpenAdd" disabled="@_error"><i class="bi bi-megaphone me-1" aria-hidden="true"></i> New announcement</button>
+    </Actions>
+</PageHeader>
+
+<div class="wrap page-body">
+    @if (_error)
+    {
+        <div class="empty-state">
+            <i class="bi bi-database-exclamation" aria-hidden="true"></i>
+            <h2>Announcements aren't set up yet</h2>
+            <p>Run the database update <code>008_announcements.sql</code>, then reload this page.</p>
+        </div>
+    }
+    else if (_items is null)
+    {
+        <div class="panel"><div class="loading">Loading…</div></div>
+    }
+    else if (_items.Count == 0)
+    {
+        <div class="empty-state">
+            <i class="bi bi-megaphone" aria-hidden="true"></i>
+            <h2>No announcements yet</h2>
+            <p>Post a notice like "No issuance on Friday" or "Submit your APP-CSE by November 15". Offices see it at the top of AMS Supplies.</p>
+            <button type="button" class="btn btn-primary" @onclick="OpenAdd">New announcement</button>
+        </div>
+    }
+    else
+    {
+        <div class="ann-list">
+            @foreach (var a in _items)
+            {
+                var state = a.StateAt(PhTime.Now);
+                <article class="@($"ann-card ann-{a.Level} {(state == "Live" ? "" : "is-dim")}")" @key="a.AnnouncementId">
+                    <div class="ann-card-main">
+                        <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                            <span class="badge-pill @StateBadge(state)">@state</span>
+                            <span class="badge-pill badge-grey">@LevelLabel(a.Level)</span>
+                        </div>
+                        <h2 class="ann-title">@a.Title</h2>
+                        <p class="ann-message">@a.Message</p>
+                        <p class="small text-muted-2 mb-0">
+                            From @a.StartsAt.ToString("MMM d, yyyy h:mm tt") @(a.EndsAt is { } e ? $"until {e:MMM d, yyyy h:mm tt}" : "until turned off")
+                        </p>
+                    </div>
+                    <div class="ann-card-actions">
+                        <button type="button" class="act" @onclick="() => OpenEdit(a)"><i class="bi bi-pencil" aria-hidden="true"></i>Edit</button>
+                        <button type="button" class="act is-danger" @onclick="() => DeleteAsync(a)"><i class="bi bi-trash" aria-hidden="true"></i>Delete</button>
+                    </div>
+                </article>
+            }
+        </div>
+    }
+</div>
+
+<Dialog Show="_formOpen" Title="@(_form.AnnouncementId == 0 ? "New announcement" : "Edit announcement")" Icon="bi-megaphone" Size="lg" Busy="_saving" OnClose="() => _formOpen = false">
+    <ChildContent>
+        <div class="field">
+            <label class="form-label" for="an-title">Title</label>
+            <input id="an-title" class="form-control" maxlength="150" autocomplete="off" @bind="_form.Title" placeholder="No issuance on Friday, October 9" />
+        </div>
+        <div class="field">
+            <label class="form-label" for="an-msg">Message</label>
+            <textarea id="an-msg" class="form-control" rows="3" maxlength="1000" autocomplete="off" @bind="_form.Message"
+                      placeholder="The warehouse is closed for the quarterly inventory. Requisitions approved this week can be picked up on Monday."></textarea>
+        </div>
+        <div class="row g-3">
+            <div class="col-sm-4">
+                <label class="form-label" for="an-level">Importance</label>
+                <Picker TValue="string" Id="an-level" Options="LevelOptions" @bind-Value="_form.Level" />
+            </div>
+            <div class="col-sm-4">
+                <label class="form-label" for="an-start">Show from</label>
+                <DatePicker Id="an-start" @bind-Value="_form.StartsAt" ShowTime="true" />
+            </div>
+            <div class="col-sm-4">
+                <label class="form-label" for="an-end">Until <span class="text-muted-2 fw-normal">(optional)</span></label>
+                <DatePicker Id="an-end" @bind-Value="_form.EndsAt" ShowTime="true" Min="_form.StartsAt" Placeholder="Until turned off" />
+            </div>
+        </div>
+        <div class="form-check form-switch mt-3">
+            <input class="form-check-input" type="checkbox" role="switch" id="an-active" @bind="_form.IsActive" />
+            <label class="form-check-label" for="an-active">@(_form.IsActive ? "On: offices will see it in its date range" : "Off: hidden from offices")</label>
+        </div>
+        <p class="small text-muted-2 mt-2 mb-0">Times are Philippine time. Offices can close a notice; it stays closed on their computer.</p>
+        @if (_formError is not null)
+        {
+            <div class="form-error" role="alert"><i class="bi bi-exclamation-circle" aria-hidden="true"></i>@_formError</div>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-light" @onclick="() => _formOpen = false" disabled="@_saving">Cancel</button>
+        <button type="button" class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">@(_form.AnnouncementId == 0 ? "Post announcement" : "Save changes")</button>
+    </Footer>
+</Dialog>
+
+@code {
+    private static readonly IReadOnlyList<PickOption<string>> LevelOptions =
+    [
+        new("info", "Information", "A general notice"),
+        new("warning", "Important", "Changes to schedules or procedures"),
+        new("urgent", "Urgent", "Needs action from offices now"),
+    ];
+
+    private List<Announcement>? _items;
+    private Announcement _form = new();
+    private bool _error, _formOpen, _saving;
+    private string? _formError;
+    private uint _userId;
+
+    private static string LevelLabel(string level) => level switch { "warning" => "Important", "urgent" => "Urgent", _ => "Information" };
+    private static string StateBadge(string state) => state switch { "Live" => "badge-ok", "Scheduled" => "badge-navy", _ => "badge-grey" };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        uint.TryParse(user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out _userId);
+        try { _items = await Extras.AnnouncementsAsync(); }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Announcements failed to load");
+            _error = true;
+        }
+    }
+
+    private void OpenAdd()
+    {
+        var now = PhTime.Now;
+        _form = new Announcement { Level = "info", IsActive = true, StartsAt = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0) };
+        _formError = null;
+        _formOpen = true;
+    }
+
+    private void OpenEdit(Announcement a)
+    {
+        _form = new Announcement
+        {
+            AnnouncementId = a.AnnouncementId, Title = a.Title, Message = a.Message, Level = a.Level,
+            StartsAt = a.StartsAt, EndsAt = a.EndsAt, IsActive = a.IsActive,
+        };
+        _formError = null;
+        _formOpen = true;
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        try
+        {
+            var r = await Extras.SaveAnnouncementAsync(_form, _userId);
+            if (!r.Ok) { _formError = r.Message; return; }
+            _formOpen = false;
+            _items = await Extras.AnnouncementsAsync();
+            await JS.InvokeVoidAsync("showToast", r.Message, "success");
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task DeleteAsync(Announcement a)
+    {
+        var ok = await Modal.ConfirmAsync($"Delete \"{a.Title}\"?", "Offices will no longer see it. To hide it only for now, edit it and turn it off instead.", "Delete", "Cancel", ModalVariant.Danger);
+        if (!ok) return;
+        var r = await Extras.DeleteAnnouncementAsync(a.AnnouncementId, _userId);
+        _items = await Extras.AnnouncementsAsync();
+        await JS.InvokeVoidAsync("showToast", r.Message, "danger");
+    }
+
+    // Live: when announcements change on either website, reload without a refresh.
+    private static readonly string[] LiveAreas = ["announcements"];
+    protected override void OnInitialized()
+    {
+        Live.AreasChanged += OnAreasAsync;
+        _ = KeepStatesFreshAsync(_cts.Token);
+    }
+
+    // "Scheduled" becomes "Live" (and "Live" becomes "Ended") as the clock passes the dates,
+    // so redraw every 30 seconds. No database query needed for that.
+    private readonly CancellationTokenSource _cts = new();
+
+    private async Task KeepStatesFreshAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        try { while (await timer.WaitForNextTickAsync(ct)) await InvokeAsync(StateHasChanged); }
+        catch (OperationCanceledException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task OnAreasAsync(IReadOnlySet<string> areas)
+    {
+        if (!areas.Overlaps(LiveAreas)) return;
+        if (_error) return;
+        _items = await Extras.AnnouncementsAsync();
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        Live.AreasChanged -= OnAreasAsync;
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

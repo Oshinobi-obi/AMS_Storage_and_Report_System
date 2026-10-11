@@ -57,11 +57,11 @@
         <section class="panel">
             <header class="panel-head">
                 <h2>Offices</h2>
-                <span class="meta">Responsibility center codes are printed on the RIS and the RSMI.</span>
+                <span class="meta">Responsibility center codes are printed on the RIS and RSMI. "APP-CSE sheet" is needed only when the office's sheet in the APP-CSE workbook has another name.</span>
             </header>
             <div class="table-wrap">
                 <table class="data-table">
-                    <thead><tr><th>Office</th><th style="width: 220px">Responsibility center code</th><th>Can request supplies</th><th></th></tr></thead>
+                    <thead><tr><th>Office</th><th style="width: 200px">Responsibility center code</th><th style="width: 160px">APP-CSE sheet</th><th>Can request supplies</th><th></th></tr></thead>
                     <tbody>
                         @foreach (var o in _offices)
                         {
@@ -69,6 +69,7 @@
                             <tr @key="o.OfficeId">
                                 <td><span class="cell-strong">@o.OfficeAcronym</span><span class="cell-sub">@o.OfficeName</span></td>
                                 <td><input class="form-control form-control-sm" maxlength="30" autocomplete="off" aria-label="@($"Responsibility center code of {o.OfficeAcronym}")" @bind="row.Rc" /></td>
+                                <td><input class="form-control form-control-sm" maxlength="50" autocomplete="off" placeholder="@o.OfficeAcronym" aria-label="@($"APP-CSE sheet name of {o.OfficeAcronym}")" @bind="row.Sheet" /></td>
                                 <td>
                                     <div class="form-check form-switch m-0">
                                         <input class="form-check-input" type="checkbox" role="switch" id="@($"can-{o.OfficeId}")" @bind="row.Can" />
@@ -76,7 +77,7 @@
                                     </div>
                                 </td>
                                 <td class="text-end">
-                                    @if (row.Rc != (o.ResponsibilityCenterCode ?? "") || row.Can != o.CanRequisition)
+                                    @if (row.Rc != (o.ResponsibilityCenterCode ?? "") || row.Can != o.CanRequisition || row.Sheet != (o.AppCseSheet ?? ""))
                                     {
                                         <button type="button" class="btn btn-sm btn-primary" @onclick="() => SaveOfficeAsync(o, row)">Save</button>
                                     }
@@ -91,7 +92,7 @@
 </div>
 
 @code {
-    private sealed class OfficeEdit { public string Rc { get; set; } = ""; public bool Can { get; set; } }
+    private sealed class OfficeEdit { public string Rc { get; set; } = ""; public bool Can { get; set; } public string Sheet { get; set; } = ""; }
 
     private SettingsForm? _form;
     private List<Office> _offices = [];
@@ -116,7 +117,7 @@
     private async Task LoadOfficesAsync()
     {
         _offices = await SettingsSvc.OfficesAsync();
-        _officeEdits = _offices.ToDictionary(o => o.OfficeId, o => new OfficeEdit { Rc = o.ResponsibilityCenterCode ?? "", Can = o.CanRequisition });
+        _officeEdits = _offices.ToDictionary(o => o.OfficeId, o => new OfficeEdit { Rc = o.ResponsibilityCenterCode ?? "", Can = o.CanRequisition, Sheet = o.AppCseSheet ?? "" });
     }
 
     private async Task SaveAsync()
@@ -144,7 +145,7 @@
                 "Its account can still log in, but it won't be able to submit requisitions.", "Save", "Cancel", ModalVariant.Warning);
             if (!ok) return;
         }
-        var r = await SettingsSvc.SaveOfficeAsync(o.OfficeId, row.Rc, row.Can, _userId);
+        var r = await SettingsSvc.SaveOfficeAsync(o.OfficeId, row.Rc, row.Can, row.Sheet, _userId);
         if (!r.Ok) { await Modal.WarningAsync("Couldn't save", r.Message); return; }
         await LoadOfficesAsync();
         await JS.InvokeVoidAsync("showToast", r.Message, "success");

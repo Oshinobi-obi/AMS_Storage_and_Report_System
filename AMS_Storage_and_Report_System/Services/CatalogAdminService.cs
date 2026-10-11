@@ -18,12 +18,28 @@ public sealed class ItemForm
     public int SupplierId { get; set; }
     public decimal UnitPrice { get; set; }
     public int ReorderLevel { get; set; } = 10;
+    public bool IsPerishable { get; set; }
+    public DateTime? ManufacturedOn { get; set; }
+    public DateTime? ExpiresOn { get; set; }
 }
 
 public sealed class CatalogAdminService(IDbContextFactory<AppDbContext> dbFactory)
 {
     public const int MaxImageBytes = 2 * 1024 * 1024;
     public static readonly string[] ImageTypes = ["image/jpeg", "image/png", "image/webp"];
+
+    /// Photos are shrunk in the browser to fit this many pixels before they are saved
+    /// (a 3 MB phone photo becomes about 50 to 150 KB), so the catalog loads fast everywhere.
+    public const int PhotoMaxSide = 1000;
+    /// The original may be big: only the shrunk copy is uploaded and stored.
+    public const long MaxOriginalBytes = 25 * 1024 * 1024;
+
+    /// The real format, read from the file's first bytes.
+    public static string? DetectImageType(byte[] b) =>
+        b.Length >= 12 && b[0] == 'R' && b[1] == 'I' && b[2] == 'F' && b[3] == 'F' && b[8] == 'W' && b[9] == 'E' && b[10] == 'B' && b[11] == 'P' ? "image/webp"
+        : b.Length >= 3 && b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF ? "image/jpeg"
+        : b.Length >= 8 && b[0] == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G' ? "image/png"
+        : null;
 
     // ── Items ───────────────────────────────────────────────────────────
     public async Task<List<SupplyItem>> ItemsAsync()
@@ -45,6 +61,12 @@ public sealed class CatalogAdminService(IDbContextFactory<AppDbContext> dbFactor
         if (unit.Length == 0) return OpResult.Fail("Enter the unit of measure, for example pc, ream or box.");
         if (f.UnitPrice < 0) return OpResult.Fail("The unit price can't be negative.");
         if (f.ReorderLevel < 0) return OpResult.Fail("The low-stock level can't be negative.");
+        if (f.IsPerishable)
+        {
+            if (f.ExpiresOn is null) return OpResult.Fail("Enter the expiration date (EXP), or choose No for Perishable.");
+            if (f.ManufacturedOn is { } mfd && mfd.Date > PhTime.Now.Date) return OpResult.Fail("The manufacturing date (MFD) can't be in the future.");
+            if (f.ManufacturedOn is { } m && m.Date >= f.ExpiresOn.Value.Date) return OpResult.Fail("The expiration date (EXP) must be after the manufacturing date (MFD).");
+        }
 
         await using var db = await dbFactory.CreateDbContextAsync();
         if (await db.SupplyItems.AnyAsync(i => i.StockNo == stockNo && i.ItemId != f.ItemId))
@@ -60,6 +82,9 @@ public sealed class CatalogAdminService(IDbContextFactory<AppDbContext> dbFactor
         item.SupplierId = f.SupplierId == 0 ? null : f.SupplierId;
         item.UnitPrice = Math.Round(f.UnitPrice, 2);
         item.ReorderLevel = f.ReorderLevel;
+        item.IsPerishable = f.IsPerishable;
+        item.ManufacturedOn = f.IsPerishable ? f.ManufacturedOn?.Date : null;   // "No" clears the dates
+        item.ExpiresOn = f.IsPerishable ? f.ExpiresOn?.Date : null;
         if (f.ItemId == 0) db.SupplyItems.Add(item);
 
         db.UserActivities.Add(new UserActivity
@@ -85,6 +110,7 @@ public sealed class CatalogAdminService(IDbContextFactory<AppDbContext> dbFactor
     // ── Photos ──────────────────────────────────────────────────────────
     public async Task<OpResult> SetImageAsync(int itemId, byte[] content, string contentType)
     {
+        contentType = DetectImageType(content) ?? contentType;
         if (!ImageTypes.Contains(contentType)) return OpResult.Fail("Use a JPG, PNG or WebP image.");
         if (content.Length == 0 || content.Length > MaxImageBytes) return OpResult.Fail("The photo must be smaller than 2 MB.");
 
@@ -153,7 +179,7 @@ public sealed class CatalogAdminService(IDbContextFactory<AppDbContext> dbFactor
         s.ContactNo = string.IsNullOrWhiteSpace(phone) ? null : phone.Trim();
         if (id == 0) db.Suppliers.Add(s);
         await db.SaveChangesAsync();
-        return OpResult.Success("Supplier saved.");
+        return OpResult.Success("Supplier saved.") with { Id = s.SupplierId };
     }
 
     // ── Suggestions from offices ───────────────────────────────────────

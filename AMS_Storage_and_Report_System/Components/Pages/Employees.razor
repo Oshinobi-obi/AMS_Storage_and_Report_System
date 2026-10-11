@@ -1,6 +1,8 @@
 @page "/employees"
 @layout AppLayout
 @attribute [Authorize]
+@inject LiveRefresh Live
+@implements IDisposable
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject ModalService Modal
 @inject IJSRuntime JS
@@ -360,4 +362,17 @@
         return string.Concat(officeName.Split([' ', ',', '-'], StringSplitOptions.RemoveEmptyEntries)
             .Where(w => !skip.Contains(w)).Select(w => char.ToUpperInvariant(w[0])));
     }
+
+    // Live: when personnel change on either website, reload without a refresh.
+    private static readonly string[] LiveAreas = ["personnel"];
+    protected override void OnInitialized() => Live.AreasChanged += OnAreasAsync;
+
+    private async Task OnAreasAsync(IReadOnlySet<string> areas)
+    {
+        if (!areas.Overlaps(LiveAreas)) return;
+        await LoadAsync();
+        StateHasChanged();
+    }
+
+    public void Dispose() => Live.AreasChanged -= OnAreasAsync;
 }

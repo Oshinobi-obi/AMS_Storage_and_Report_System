@@ -26,6 +26,11 @@ public class AppDbContext : DbContext
     public DbSet<ItemImage> ItemImages => Set<ItemImage>();
     public DbSet<SupplySuggestion> SupplySuggestions => Set<SupplySuggestion>();
     public DbSet<AppCseUpload> AppCseUploads => Set<AppCseUpload>();
+    public DbSet<PropertyItem> PropertyItems => Set<PropertyItem>();
+    public DbSet<Announcement> Announcements => Set<Announcement>();
+    public DbSet<SeDelivery> SeDeliveries => Set<SeDelivery>();
+    public DbSet<SeDeliveryLine> SeDeliveryLines => Set<SeDeliveryLine>();
+    public DbSet<SeNumberSeries> SeNumberSeries => Set<SeNumberSeries>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -63,6 +68,7 @@ public class AppDbContext : DbContext
             entity.Property(o => o.OfficeName).HasColumnName("office_name");
             entity.Property(o => o.OfficeAcronym).HasColumnName("office_acronym");
             entity.Property(o => o.ResponsibilityCenterCode).HasColumnName("responsibility_center_code");
+            entity.Property(o => o.AppCseSheet).HasColumnName("appcse_sheet");
             entity.Property(o => o.CanRequisition).HasColumnName("can_requisition");
             entity.Property(o => o.IsActive).HasColumnName("is_active");
         });
@@ -135,6 +141,10 @@ public class AppDbContext : DbContext
             e.Property(x => x.StockOnHand).HasColumnName("stock_on_hand");
             e.Property(x => x.ReorderLevel).HasColumnName("reorder_level");
             e.Property(x => x.IsActive).HasColumnName("is_active");
+            e.Property(x => x.IsPerishable).HasColumnName("is_perishable");
+            e.Property(x => x.ManufacturedOn).HasColumnName("manufactured_on").HasColumnType("date");
+            e.Property(x => x.ExpiresOn).HasColumnName("expires_on").HasColumnType("date");
+            e.Ignore(x => x.DaysToExpiry);
             e.HasOne(x => x.Category).WithMany().HasForeignKey(x => x.CategoryId);
             e.HasOne(x => x.Supplier).WithMany().HasForeignKey(x => x.SupplierId);
         });
@@ -323,6 +333,97 @@ public class AppDbContext : DbContext
             e.Property(x => x.SizeBytes).HasColumnName("size_bytes");
             e.Property(x => x.UploadedBy).HasColumnName("uploaded_by");
             e.Property(x => x.UploadedAt).HasColumnName("uploaded_at");
+        });
+
+        modelBuilder.Entity<PropertyItem>(e =>
+        {
+            e.ToTable("property_items");
+            e.HasKey(x => x.PropertyId);
+            e.Property(x => x.PropertyId).HasColumnName("property_id");
+            e.Property(x => x.PropertyNo).HasColumnName("property_no");
+            e.Property(x => x.Description).HasColumnName("description");
+            e.Property(x => x.Classification).HasColumnName("classification");
+            e.Property(x => x.PropertyTypeId).HasColumnName("property_type_id");
+            e.Property(x => x.Quantity).HasColumnName("quantity");
+            e.Property(x => x.UnitCost).HasColumnName("unit_cost");
+            e.Property(x => x.AcquiredOn).HasColumnName("acquired_on");
+            e.Property(x => x.OfficeId).HasColumnName("office_id");
+            e.Property(x => x.PersonnelId).HasColumnName("personnel_id");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.DocumentId).HasColumnName("document_id");
+            e.Property(x => x.Remarks).HasColumnName("remarks");
+            e.Property(x => x.CreatedBy).HasColumnName("created_by");
+            e.Ignore(x => x.TotalCost);
+            e.HasOne(x => x.Office).WithMany().HasForeignKey(x => x.OfficeId);
+            e.HasOne(x => x.Personnel).WithMany().HasForeignKey(x => x.PersonnelId);
+            e.HasOne(x => x.PropertyType).WithMany().HasForeignKey(x => x.PropertyTypeId);
+        });
+
+        modelBuilder.Entity<Announcement>(e =>
+        {
+            e.ToTable("announcements");
+            e.HasKey(x => x.AnnouncementId);
+            e.Property(x => x.AnnouncementId).HasColumnName("announcement_id");
+            e.Property(x => x.Title).HasColumnName("title");
+            e.Property(x => x.Message).HasColumnName("message");
+            e.Property(x => x.Level).HasColumnName("level");
+            e.Property(x => x.StartsAt).HasColumnName("starts_at");
+            e.Property(x => x.EndsAt).HasColumnName("ends_at");
+            e.Property(x => x.IsActive).HasColumnName("is_active");
+            e.Property(x => x.CreatedBy).HasColumnName("created_by");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        // SPLV / SPHV deliveries (011_semi_expendable_deliveries.sql)
+        modelBuilder.Entity<SeDelivery>(e =>
+        {
+            e.ToTable("se_deliveries");
+            e.HasKey(x => x.DeliveryId);
+            e.Property(x => x.DeliveryId).HasColumnName("delivery_id");
+            e.Property(x => x.Category).HasColumnName("category");
+            e.Property(x => x.DeliveredOn).HasColumnName("delivered_on").HasColumnType("date");
+            e.Property(x => x.SupplierId).HasColumnName("supplier_id");
+            e.Property(x => x.SupplierName).HasColumnName("supplier_name");
+            e.Property(x => x.EndUserType).HasColumnName("end_user_type");
+            e.Property(x => x.ReferenceNo).HasColumnName("reference_no");
+            e.Property(x => x.Remarks).HasColumnName("remarks");
+            e.Property(x => x.TotalAmount).HasColumnName("total_amount");
+            e.Property(x => x.CreatedBy).HasColumnName("created_by");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasMany(x => x.Lines).WithOne().HasForeignKey(l => l.DeliveryId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<SeDeliveryLine>(e =>
+        {
+            e.ToTable("se_delivery_items");
+            e.HasKey(x => x.LineId);
+            e.Property(x => x.LineId).HasColumnName("line_id");
+            e.Property(x => x.DeliveryId).HasColumnName("delivery_id");
+            e.Property(x => x.LineNo).HasColumnName("line_no");
+            e.Property(x => x.Description).HasColumnName("description");
+            e.Property(x => x.Unit).HasColumnName("unit");
+            e.Property(x => x.Quantity).HasColumnName("quantity");
+            e.Property(x => x.UnitCost).HasColumnName("unit_cost");
+            e.Property(x => x.OfficeId).HasColumnName("office_id");
+            e.Property(x => x.PersonnelId).HasColumnName("personnel_id");
+            e.Property(x => x.EndUser).HasColumnName("end_user");
+            e.Property(x => x.Category).HasColumnName("category");
+            e.Property(x => x.DocType).HasColumnName("doc_type");
+            e.Property(x => x.DocYear).HasColumnName("doc_year");
+            e.Property(x => x.SeqStart).HasColumnName("seq_start");
+            e.Property(x => x.SeqEnd).HasColumnName("seq_end");
+            e.Property(x => x.DocNo).HasColumnName("doc_no");
+            e.Ignore(x => x.TotalCost);
+        });
+
+        modelBuilder.Entity<SeNumberSeries>(e =>
+        {
+            e.ToTable("se_number_series");
+            e.HasKey(x => new { x.DocYear, x.Category, x.DocType });
+            e.Property(x => x.DocYear).HasColumnName("doc_year");
+            e.Property(x => x.Category).HasColumnName("category");
+            e.Property(x => x.DocType).HasColumnName("doc_type");
+            e.Property(x => x.LastSeq).HasColumnName("last_seq");
         });
 
         modelBuilder.Entity<SystemSetting>(e =>

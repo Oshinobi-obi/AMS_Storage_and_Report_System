@@ -72,14 +72,14 @@ stateDiagram-v2
     [*] --> PendingApproval: Office submits RIS<br/>(APP-CSE reserved)
     PendingApproval --> Rejected: AMS rejects, with a reason
     PendingApproval --> Cancelled: Office cancels
-    PendingApproval --> ApprovedForIssuance: AMS approves<br/>(stock + APP-CSE deducted,<br/>stock card updated)
-    ApprovedForIssuance --> Issued: Signed RIS (PDF) attached,<br/>receiver recorded
+    PendingApproval --> ApprovedForIssuance: AMS approves<br/>(APP-CSE used,<br/>stock reserved)
+    ApprovedForIssuance --> Issued: Signed RIS (PDF) attached,<br/>stock deducted, stock card updated
     Rejected --> [*]
     Cancelled --> [*]
     Issued --> [*]
 ```
 
-Approval runs in one database transaction with row locks shared with the office portal, so two people can never issue the same stock or the same APP-CSE balance twice.
+Approval runs in one database transaction with row locks shared with the office portal, so two people can never promise the same stock or the same APP-CSE balance twice. The stock on hand goes down only when the items are handed over and the RIS is marked as issued; until then it shows as *reserved for pickup* in Inventory.
 
 ## Tech stack
 

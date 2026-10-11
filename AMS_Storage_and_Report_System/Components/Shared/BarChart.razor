@@ -1,0 +1,45 @@
+@* Horizontal bar graph. Bars are scaled to the largest value, grow in on load,
+   and show the value plus its share of the total. A bar with a link opens that list. *@
+@using System.Globalization
+
+@if (Total <= 0)
+{
+    <p class="chart-empty"><i class="bi bi-bar-chart" aria-hidden="true"></i>@EmptyText</p>
+}
+else
+{
+    <div class="bar-chart" role="list" aria-label="@Label">
+        @for (var i = 0; i < Items.Count; i++)
+        {
+            var p = Items[i];
+            var width = Max == 0 ? 0 : (double)(p.Value / Max) * 100;
+            var share = (double)(p.Value / Total) * 100;
+            <div class="bar-row" role="listitem" title="@p.Tooltip" style="--delay: @((i * 60).ToString(CultureInfo.InvariantCulture))ms">
+                <span class="bar-label" title="@(p.Tooltip ?? p.Label)">
+                    @if (p.Href is not null) { <a href="@p.Href">@p.Label</a> } else { @p.Label }
+                </span>
+                <span class="bar-track">
+                    <span class="bar-fill" style="width: @(Math.Max(width, p.Value > 0 ? 1.5 : 0).ToString("0.##", CultureInfo.InvariantCulture))%; background: @(p.Color ?? Color)"></span>
+                </span>
+                <span class="bar-value">
+                    <strong>@Format(p.Value)</strong>
+                    @if (ShowPercent) { <small>@share.ToString("0.#", CultureInfo.InvariantCulture)%</small> }
+                    @if (p.Note is not null) { <small>@p.Note</small> }
+                </span>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<AMS_Storage_and_Report_System.Services.ChartPoint> Items { get; set; } = [];
+    [Parameter] public string Label { get; set; } = "Bar graph";
+    [Parameter] public string EmptyText { get; set; } = "Nothing to show yet.";
+    [Parameter] public string Color { get; set; } = "var(--brand)";
+    [Parameter] public bool ShowPercent { get; set; } = true;
+    [Parameter] public bool Money { get; set; }
+
+    private decimal Total => Items.Sum(i => i.Value);
+    private decimal Max => Items.Count == 0 ? 0 : Items.Max(i => i.Value);
+    private string Format(decimal v) => Money ? "₱" + v.ToString("N2") : v.ToString("N0");
+}

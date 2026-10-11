@@ -1,0 +1,43 @@
+@* Donut (pie) chart with the total in the middle and a legend with counts and shares. *@
+@using System.Globalization
+
+<div class="pie-chart">
+    <svg viewBox="0 0 42 42" class="pie-svg" role="img" aria-label="@($"{Label}: {string.Join(", ", Items.Select(i => $"{i.Label} {i.Value:N0}"))}")">
+        <circle cx="21" cy="21" r="15.9155" fill="none" class="pie-track" stroke-width="6" />
+        @if (Total > 0)
+        {
+            var start = 0.0;
+            foreach (var p in Items.Where(i => i.Value > 0))
+            {
+                var pct = (double)(p.Value / Total) * 100;
+                <circle cx="21" cy="21" r="15.9155" fill="none" stroke="@p.Color" stroke-width="6" class="pie-slice"
+                        stroke-dasharray="@($"{pct.ToString("0.###", CultureInfo.InvariantCulture)} {(100 - pct).ToString("0.###", CultureInfo.InvariantCulture)}")"
+                        stroke-dashoffset="@((25 - start).ToString("0.###", CultureInfo.InvariantCulture))">
+                    <title>@p.Label: @p.Value.ToString("N0") (@pct.ToString("0.#", CultureInfo.InvariantCulture)%)</title>
+                </circle>
+                start += pct;
+            }
+        }
+        <text x="21" y="20.5" text-anchor="middle" class="pie-total">@Total.ToString("N0")</text>
+        <text x="21" y="26" text-anchor="middle" class="pie-caption">@Caption</text>
+    </svg>
+    <ul class="pie-legend">
+        @foreach (var p in Items)
+        {
+            var share = Total == 0 ? 0 : (double)(p.Value / Total) * 100;
+            <li>
+                <span class="pie-dot" style="background: @p.Color"></span>
+                <span class="pie-name">@if (p.Href is not null) { <a href="@p.Href">@p.Label</a> } else { @p.Label }</span>
+                <strong>@p.Value.ToString("N0")</strong>
+                <small>@share.ToString("0.#", CultureInfo.InvariantCulture)%</small>
+            </li>
+        }
+    </ul>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<AMS_Storage_and_Report_System.Services.ChartPoint> Items { get; set; } = [];
+    [Parameter] public string Label { get; set; } = "Pie chart";
+    [Parameter] public string Caption { get; set; } = "total";
+    private decimal Total => Items.Sum(i => i.Value);
+}
