@@ -1,8 +1,8 @@
-@* RisDocument.razor — Appendix 63 Requisition and Issue Slip, laid out like the AMS form
-   (RIS.xlsx): Bookman Old Style, "Division Office: <office>" on one line, 14 item rows, ruled Purpose box,
-   signature boxes with "Requested by:" etc. inside them.
-   Used for the cart preview (IsDraft), the office's printout, and the admin print page.
-   Styles: wwwroot/css/ris.css. *@
+@* This is the Requisition and Issue Slip (Appendix 63), laid out like the AMS form (RIS.xlsx):
+   Bookman Old Style, "Division Office: <office>" on one line, 14 item rows, a ruled Purpose box,
+   and signature boxes with "Requested by:" and the others inside them.
+   I use it for the cart preview (IsDraft), the office printout and the admin print page.
+   The styles are in wwwroot/css/ris.css. *@
 
 <article class="ris-sheet @(IsDraft ? "is-draft" : "")" aria-label="Requisition and Issue Slip">
     @if (IsDraft)
@@ -94,13 +94,13 @@
 @code {
     [Parameter, EditorRequired] public RisDocumentModel Model { get; set; } = default!;
     [Parameter] public bool IsDraft { get; set; }
-    /// Cart row hover → matching RIS row lights up in the split view.
+    /// When you hover a cart row, the same row on the RIS lights up.
     [Parameter] public int? HighlightItemId { get; set; }
-    /// The AMS form has 14 item rows; empty ones are drawn so it looks like the paper version.
+    /// The AMS form has 14 item rows, so I draw the empty ones too to match the paper.
     [Parameter] public int MinRows { get; set; } = 14;
 
     private RisSignatory?[] Signatories => [Model.RequestedBy, Model.ApprovedBy, Model.IssuedBy, Model.ReceivedBy];
 
-    /// The office that made the request, e.g. "Asset Management Section" (one office only, like the AMS form).
+    /// The office that made the request, like "Asset Management Section" (one office only, same as the AMS form).
     private string DivisionOffice => string.IsNullOrWhiteSpace(Model.Office) ? Model.Division : Model.Office;
 }

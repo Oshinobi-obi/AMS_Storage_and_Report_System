@@ -1,7 +1,7 @@
 namespace AMS_Storage_and_Report_System.Models;
 
-/// Must list every value of users.role. 'Office' accounts belong to the AMS Supplies
-/// portal; without it here, loading any user list would throw once offices exist.
+/// This has to list every value of users.role. 'Office' accounts are for e-SRS,
+/// and without it here, loading any user list would crash once there are office accounts.
 public enum UserRole
 {
     SuperAdmin,
@@ -19,7 +19,7 @@ public class User
     public string? ProfilePicturePath { get; set; }
     public string PasswordHash { get; set; } = string.Empty;
     public UserRole Role { get; set; }
-    public int? OfficeId { get; set; }   // same type as Office.OfficeId (FK must match)
+    public int? OfficeId { get; set; }   // same type as Office.OfficeId (the FK has to match)
     public bool IsActive { get; set; }
     public bool RequirePasswordChange { get; set; }
     public int FailedLoginAttempts { get; set; }

@@ -5,12 +5,13 @@
 @implements IDisposable
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject PropertyDocumentStorage Storage
+@inject PropertyDocumentLinks Links
 @inject AuthenticationStateProvider AuthStateProvider
 @inject ModalService Modal
 @inject IJSRuntime JS
 @inject ILogger<PropertyDocuments> Log
 
-<PageTitle>Property documents | AMS StockWatch</PageTitle>
+<PageTitle>Property documents | e-PINS</PageTitle>
 
 <PageHeader Title="Property documents" Subtitle="Signed PAR, ICS and return slips for Regional Office personnel.">
     <Actions>
@@ -48,6 +49,10 @@
                     <label class="form-label" for="f-ptype">Type of property</label>
                     <Picker TValue="int" Id="f-ptype" Options="@(PropertyTypeOptions("All types"))"
                             @bind-Value="_fPropertyTypeId" @bind-Value:after="RunFilterAsync" />
+                </div>
+                <div>
+                    <label class="form-label" for="f-equip">Equipment</label>
+                    <Picker TValue="string" Id="f-equip" Options="EquipmentFilterOptions" @bind-Value="_fEquip" @bind-Value:after="RunFilterAsync" />
                 </div>
                 <div>
                     <label class="form-label" for="f-person">RO personnel</label>
@@ -102,13 +107,13 @@
                                 <input class="form-check-input" type="checkbox" aria-label="Select all"
                                        checked="@(_selected.Count == _results.Count)" @onchange="ToggleAll" />
                             </th>
-                            <th>Document</th><th>Type of property</th><th>Office</th><th>RO personnel</th><th>Uploaded</th><th class="text-end">Actions</th>
+                            <th>Document</th><th>Type of property</th><th>Office</th><th>RO personnel</th><th>Date signed</th><th>Uploaded</th><th class="text-end">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var doc in _results)
+                        @foreach (var doc in _results.Page(_page))
                         {
-                            <tr @key="doc.DocumentId">
+                            <tr @key="doc.DocumentId" class="@(doc.ReturnedOn is not null ? "is-returned" : null)">
                                 <td class="cell-check">
                                     <input class="form-check-input" type="checkbox" aria-label="@($"Select {doc.OriginalFileName}")"
                                            checked="@_selected.Contains(doc.DocumentId)"
@@ -117,16 +122,73 @@
                                 <td>
                                     <span class="badge-pill @TypeBadge(doc.DocumentType)">@doc.DocumentType</span>
                                     <span class="cell-sub text-truncate" style="max-width: 260px" title="@doc.OriginalFileName">@doc.OriginalFileName</span>
+                                    @if (PropertyStatus.SplitEquipment(doc.EquipmentType) is { Count: > 0 } equip)
+                                    {
+                                        <span class="equip-note" title="@string.Join(", ", equip)"><i class="bi @EquipmentPicker.Icon(equip[0])" aria-hidden="true"></i>@string.Join(", ", equip)</span>
+                                    }
+                                    else if (doc.DocumentType is "PAR" or "ICS")
+                                    {
+                                        <button type="button" class="equip-note is-none" @onclick="() => OpenEditAsync(doc)"><i class="bi bi-pc-display" aria-hidden="true"></i>Set the equipment</button>
+                                    }
+                                    @if (doc.DocumentType is "PAR" or "ICS")
+                                    {
+                                        @if (_summaries.TryGetValue(doc.DocumentId, out var sum))
+                                        {
+                                            <span class="linked-note"><i class="bi bi-box-seam" aria-hidden="true"></i>@sum.Items @(sum.Items == 1 ? "item" : "items") · ₱@sum.Total.ToString("N2")</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="linked-note is-none"><i class="bi bi-box-seam" aria-hidden="true"></i>No property linked yet</span>
+                                        }
+                                    }
+                                    @if (doc.ReturnedOn is { } returned)
+                                    {
+                                        <span class="returned-note">
+                                            <i class="bi bi-arrow-return-left" aria-hidden="true"></i>Returned @returned.ToString("MMM d, yyyy")
+                                            @if (doc.ReturnSlipId is { } slipId)
+                                            {
+                                                <a href="/documents/view/@slipId" target="_blank" rel="noopener">Return slip</a>
+                                            }
+                                        </span>
+                                    }
                                 </td>
                                 <td>@doc.PropertyType?.TypeName</td>
                                 <td>@doc.Office?.OfficeAcronym</td>
                                 <td><span class="cell-strong">@doc.Personnel?.FullName</span><span class="cell-sub">@doc.Personnel?.Position</span></td>
+                                <td class="text-nowrap">
+                                    @if (doc.DateSigned is { } signed)
+                                    {
+                                        <span>@signed.ToString("MMM d, yyyy")</span>
+                                        <button type="button" class="act act-icon" title="Change the date signed" aria-label="@($"Change the date signed of {doc.OriginalFileName}")" @onclick="() => OpenDateSigned(doc)"><i class="bi bi-pencil" aria-hidden="true"></i></button>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="act act-set" title="Record when this document was signed" @onclick="() => OpenDateSigned(doc)"><i class="bi bi-calendar-plus" aria-hidden="true"></i>Set date</button>
+                                    }
+                                </td>
                                 <td class="text-nowrap">@doc.UploadedAt.ToString("MMM d, yyyy")</td>
-                                <td>
-                                    <div class="row-actions justify-content-end">
-                                        <a class="act" href="/documents/view/@doc.DocumentId" target="_blank" rel="noopener"><i class="bi bi-eye" aria-hidden="true"></i>View</a>
-                                        <a class="act" href="/documents/download/@doc.DocumentId"><i class="bi bi-download" aria-hidden="true"></i>Download</a>
-                                        <button type="button" class="act is-danger" @onclick="() => DeleteAsync(doc)"><i class="bi bi-trash3" aria-hidden="true"></i>Delete</button>
+                                <td class="cell-actions">
+                                    <div class="doc-row-actions">
+                                        @if (doc.DocumentType is "PAR" or "ICS")
+                                        {
+                                            var isReturned = doc.ReturnedOn is not null;
+                                            <button type="button" role="switch" aria-checked="@(isReturned ? "true" : "false")"
+                                                    class="act ret-switch @(isReturned ? "is-on" : "")"
+                                                    title="@(isReturned ? "Returned. Turn off if it wasn't returned." : "Turn on when the property is returned, then upload its Return Slip.")"
+                                                    @onclick="() => ToggleReturnedAsync(doc)">
+                                                <span class="ret-track" aria-hidden="true"><span class="ret-knob"></span></span>@(isReturned ? "Returned" : "Not returned")
+                                            </button>
+                                        }
+                                        <div class="icon-acts" role="group" aria-label="@($"Actions for {doc.OriginalFileName}")">
+                                            <a class="iact" href="/documents/view/@doc.DocumentId" target="_blank" rel="noopener" title="View" aria-label="@($"View {doc.OriginalFileName}")"><i class="bi bi-eye" aria-hidden="true"></i></a>
+                                            <a class="iact" href="/documents/download/@doc.DocumentId" title="Download" aria-label="@($"Download {doc.OriginalFileName}")"><i class="bi bi-download" aria-hidden="true"></i></a>
+                                            <button type="button" class="iact" title="Edit" aria-label="@($"Edit {doc.OriginalFileName}")" @onclick="() => OpenEditAsync(doc)"><i class="bi bi-pencil-square" aria-hidden="true"></i></button>
+                                            @if (doc.DocumentType is "PAR" or "ICS")
+                                            {
+                                                <button type="button" class="iact" title="Property on this @doc.DocumentType" aria-label="@($"Property on {doc.OriginalFileName}")" @onclick="() => OpenItemsAsync(doc)"><i class="bi bi-box-seam" aria-hidden="true"></i></button>
+                                            }
+                                            <button type="button" class="iact is-danger" title="Delete" aria-label="@($"Delete {doc.OriginalFileName}")" @onclick="() => DeleteAsync(doc)"><i class="bi bi-trash3" aria-hidden="true"></i></button>
+                                        </div>
                                     </div>
                                 </td>
                             </tr>
@@ -134,31 +196,52 @@
                     </tbody>
                 </table>
             </div>
+            <Pager Total="_results.Count" @bind-Page="_page" ResetKey="@($"{_fOfficeId}|{_fType}|{_fPropertyTypeId}|{_fPersonnelId}|{_fEquip}")" Label="Document pages" />
         }
     </section>
 </div>
 
-<Dialog Show="_uploadOpen" Title="Upload property document" Icon="bi-cloud-arrow-up" Busy="_uploading" OnClose="() => _uploadOpen = false">
+<Dialog Show="_uploadOpen" Title="@(_returnFor is null ? "Upload property document" : "Upload the return slip")" Icon="@(_returnFor is null ? "bi-cloud-arrow-up" : "bi-arrow-return-left")" Busy="_uploading" OnClose="() => _uploadOpen = false">
     <ChildContent>
+        @if (_returnFor is not null)
+        {
+            <div class="return-for">
+                <i class="bi bi-arrow-return-left" aria-hidden="true"></i>
+                <div>
+                    <strong>Returning the property on this @_returnFor.DocumentType</strong>
+                    <span>@_returnFor.Personnel?.FullName, @_returnFor.Office?.OfficeAcronym · @_returnFor.OriginalFileName</span>
+                    <span>It is marked as Returned once its signed Return Slip is uploaded.</span>
+                </div>
+            </div>
+        }
         <div class="field">
             <label class="form-label" for="u-office">Office</label>
-            <Picker TValue="int" Id="u-office" Options="@(OfficeOptions("Select an office"))"
+            <Picker TValue="int" Id="u-office" Options="@(OfficeOptions("Select an office"))" Disabled="@(_returnFor is not null)"
                     @bind-Value="_uOfficeId" @bind-Value:after="OnUploadOfficeChangedAsync" />
         </div>
         <div class="field">
             <label class="form-label" for="u-person">RO personnel</label>
-            <Picker TValue="int" Id="u-person" Disabled="@(_uOfficeId == 0 || _uPersonnel.Count == 0)"
+            <Picker TValue="int" Id="u-person" Disabled="@(_returnFor is not null || _uOfficeId == 0 || _uPersonnel.Count == 0)"
                     Options="@(PersonnelOptions(_uPersonnel, _uOfficeId == 0 ? "Choose an office first" : _uPersonnel.Count == 0 ? "No personnel in this office yet" : "Select a person"))"
-                    @bind-Value="_uPersonnelId" />
+                    @bind-Value="_uPersonnelId" @bind-Value:after="LoadUploadCandidatesAsync" />
         </div>
         <div class="field">
             <label class="form-label" for="u-type">Document</label>
-            <Picker TValue="string" Id="u-type" Options="@(DocTypeOptions("Select a document"))"
+            <Picker TValue="string" Id="u-type" Options="@(DocTypeOptions("Select a document"))" Disabled="@(_returnFor is not null)"
                     @bind-Value="_uType" @bind-Value:after="OnUploadTypeChanged" />
         </div>
-        <div class="field">
+        @if (_returnFor is null)
+        {
+            <div class="field">
+                <label class="form-label" for="u-equip">Equipment on this document</label>
+                <EquipmentPicker Id="u-equip" Multiple="true" Values="_uEquip" />
+                <div class="form-text">What the @(_uType == "" ? "document" : _uType) covers: Laptop, Printer, Office chair… Add each kind if it lists several. Not in the list? Choose "Other" and type it.</div>
+            </div>
+        }
+        <div class="row gx-3 field">
+        <div class="col-sm-6">
             <label class="form-label" for="u-ptype">Type of property</label>
-            <Picker TValue="int" Id="u-ptype" Disabled="@(_uType != "Return Slip")"
+            <Picker TValue="int" Id="u-ptype" Disabled="@(_uType != "Return Slip" || _returnFor is not null)"
                     Options="@(PropertyTypeOptions(_uType == "" ? "Select the document first" : "Select a type"))"
                     @bind-Value="_uPropertyTypeId" />
             <div class="form-text">
@@ -171,11 +254,30 @@
                 })
             </div>
         </div>
+        <div class="col-sm-6 mt-3 mt-sm-0">
+            <label class="form-label" for="u-signed">Date signed</label>
+            <DatePicker Id="u-signed" @bind-Value="_uDateSigned" Max="PhTime.Now.Date" Placeholder="Select the date signed" />
+            <div class="form-text">The date on the signed @(_uType == "" ? "document" : _uType).</div>
+        </div>
+        </div>
         <div class="field">
             <label class="form-label" for="u-file">PDF file</label>
             <InputFile id="u-file" class="form-control" OnChange="OnFileSelected" accept=".pdf,application/pdf" />
             <div class="form-text">Scanned copy signed by the AMS Chief and the end user. PDF only, up to 50 MB.</div>
         </div>
+        @if (_returnFor is null && _uType is "PAR" or "ICS" && _uPersonnelId != 0)
+        {
+            <div class="field">
+                <DocumentItemsPicker Candidates="_uCandidates" Selected="_uItems" Label="@($"Property on this {_uType}")"
+                                     PersonName="@_uPersonnel.FirstOrDefault(p => p.PersonnelId == _uPersonnelId)?.FullName"
+                                     PropertyTypeName="@(_uType == "PAR" ? "PPE" : "semi-expendable property")" />
+                <div class="form-text">Tick the items written on the @_uType. When it's returned, they change to Returned in the register.</div>
+            </div>
+        }
+        else if (_returnFor is not null && _returnSummary is { } rs)
+        {
+            <p class="form-text mb-3"><i class="bi bi-box-seam me-1" aria-hidden="true"></i>The @rs.Items @(rs.Items == 1 ? "item" : "items") on this @_returnFor.DocumentType (₱@rs.Total.ToString("N2")) will change to <strong>Returned</strong> in the property register.</p>
+        }
 
         @if (_uploadError is not null)
         {
@@ -186,7 +288,121 @@
         <button type="button" class="btn btn-light" @onclick="() => _uploadOpen = false" disabled="@_uploading">Cancel</button>
         <button type="button" class="btn btn-primary" @onclick="UploadAsync" disabled="@_uploading">
             @if (_uploading) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> <span>Uploading…</span> }
-            else { <span>Upload document</span> }
+            else { <span>@(_returnFor is null ? "Upload document" : "Upload and mark as returned")</span> }
+        </button>
+    </Footer>
+</Dialog>
+
+<Dialog Show="_dateDoc is not null" Title="Date signed" Icon="bi-calendar-check" Size="sm" Busy="_dateSaving" OnClose="() => _dateDoc = null">
+    <ChildContent>
+        @if (_dateDoc is not null)
+        {
+            <p class="mb-3">
+                <span class="badge-pill @TypeBadge(_dateDoc.DocumentType)">@_dateDoc.DocumentType</span>
+                <span class="ms-1">@_dateDoc.Personnel?.FullName</span>
+                <span class="cell-sub text-truncate" title="@_dateDoc.OriginalFileName">@_dateDoc.OriginalFileName</span>
+            </p>
+            <div class="field mb-0">
+                <label class="form-label" for="d-signed">Date signed</label>
+                <DatePicker Id="d-signed" @bind-Value="_dateValue" Max="PhTime.Now.Date" Placeholder="Select the date signed" />
+            </div>
+            @if (_dateError is not null)
+            {
+                <div class="form-error" role="alert"><i class="bi bi-exclamation-circle" aria-hidden="true"></i>@_dateError</div>
+            }
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-light" @onclick="() => _dateDoc = null" disabled="@_dateSaving">Cancel</button>
+        <button type="button" class="btn btn-primary" @onclick="SaveDateSignedAsync" disabled="@_dateSaving">Save date</button>
+    </Footer>
+</Dialog>
+
+<Dialog Show="_itemsDoc is not null" Title="@($"Property on this {_itemsDoc?.DocumentType}")" Icon="bi-box-seam" Size="lg" Busy="_itemsSaving" OnClose="() => _itemsDoc = null">
+    <ChildContent>
+        @if (_itemsDoc is not null)
+        {
+            <p class="mb-3">
+                <span class="badge-pill @TypeBadge(_itemsDoc.DocumentType)">@_itemsDoc.DocumentType</span>
+                <span class="ms-1 cell-strong d-inline">@_itemsDoc.Personnel?.FullName</span>, @_itemsDoc.Office?.OfficeAcronym
+                <span class="cell-sub text-truncate" title="@_itemsDoc.OriginalFileName">@_itemsDoc.OriginalFileName</span>
+            </p>
+            @if (_itemsDoc.ReturnedOn is not null)
+            {
+                <p class="form-text mb-3"><i class="bi bi-arrow-return-left me-1" aria-hidden="true"></i>This @_itemsDoc.DocumentType was returned, so items you add here are marked Returned.</p>
+            }
+            <DocumentItemsPicker Candidates="_itemsCandidates" Selected="_itemsSelected" Label="Tick the items written on the document"
+                                 PersonName="@_itemsDoc.Personnel?.FullName"
+                                 PropertyTypeName="@(_itemsDoc.DocumentType == "PAR" ? "PPE" : "semi-expendable property")"
+                                 EmptyHint="e-SRS shows no value for this document." />
+            @if (_itemsError is not null)
+            {
+                <div class="form-error" role="alert"><i class="bi bi-exclamation-circle" aria-hidden="true"></i>@_itemsError</div>
+            }
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-light" @onclick="() => _itemsDoc = null" disabled="@_itemsSaving">Cancel</button>
+        <button type="button" class="btn btn-primary" @onclick="SaveItemsAsync" disabled="@_itemsSaving">Save property</button>
+    </Footer>
+</Dialog>
+
+<Dialog Show="_editDoc is not null" Title="@($"Edit {_editDoc?.DocumentType}")" Icon="bi-pencil-square" Size="lg" Busy="_editSaving" OnClose="() => _editDoc = null">
+    <ChildContent>
+        @if (_editDoc is not null)
+        {
+            <p class="mb-3">
+                <span class="badge-pill @TypeBadge(_editDoc.DocumentType)">@_editDoc.DocumentType</span>
+                <span class="cell-sub text-truncate" title="@_editDoc.OriginalFileName">@_editDoc.OriginalFileName</span>
+            </p>
+            <div class="row g-3">
+                <div class="col-sm-6">
+                    <label class="form-label" for="e-office">Office</label>
+                    <Picker TValue="int" Id="e-office" Options="@(OfficeOptions("Select an office"))" @bind-Value="_eOfficeId" @bind-Value:after="OnEditOfficeChangedAsync" />
+                </div>
+                <div class="col-sm-6">
+                    <label class="form-label" for="e-person">RO personnel</label>
+                    <Picker TValue="int" Id="e-person" Disabled="@(_eOfficeId == 0 || _ePersonnel.Count == 0)"
+                            Options="@(PersonnelOptions(_ePersonnel, _eOfficeId == 0 ? "Choose an office first" : _ePersonnel.Count == 0 ? "No personnel in this office yet" : "Select a person"))"
+                            @bind-Value="_ePersonnelId" />
+                </div>
+                <div class="col-12">
+                    <label class="form-label" for="e-equip">Equipment on this document</label>
+                    <EquipmentPicker Id="e-equip" Multiple="true" Values="_eEquip" />
+                </div>
+                @if (_editDoc.DocumentType == "Return Slip")
+                {
+                    <div class="col-sm-6">
+                        <label class="form-label" for="e-ptype">Type of property</label>
+                        <Picker TValue="int" Id="e-ptype" Options="@(PropertyTypeOptions("Select a type"))" @bind-Value="_ePropertyTypeId" />
+                    </div>
+                }
+                <div class="col-sm-6">
+                    <label class="form-label" for="e-signed">Date signed</label>
+                    <DatePicker Id="e-signed" @bind-Value="_eDateSigned" Max="PhTime.Now.Date" Placeholder="Select the date signed" />
+                </div>
+                <div class="col-sm-6">
+                    <label class="form-label" for="e-file">Replace the PDF <span class="text-muted-2 fw-normal">(optional)</span></label>
+                    <InputFile id="e-file" class="form-control" OnChange="OnEditFileSelected" accept=".pdf,application/pdf" />
+                    <div class="form-text">Only if a better scan or the wrong file was uploaded.</div>
+                </div>
+            </div>
+            @if (_editDoc.ReturnedOn is null && _editDoc.DocumentType is "PAR" or "ICS" && _ePersonnelId != 0 && _ePersonnelId != _editDoc.PersonnelId && _summaries.TryGetValue(_editDoc.DocumentId, out var es))
+            {
+                <p class="form-text mt-3 mb-0"><i class="bi bi-arrow-left-right me-1" aria-hidden="true"></i>The @es.Items @(es.Items == 1 ? "item" : "items") on this @_editDoc.DocumentType move to the new person in the property register too.</p>
+            }
+            @if (_editError is not null)
+            {
+                <div class="form-error" role="alert"><i class="bi bi-exclamation-circle" aria-hidden="true"></i>@_editError</div>
+            }
+            <p class="small text-muted-2 mt-3 mb-0">To change the kind of document (PAR, ICS or Return Slip), delete it and upload it again.</p>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-light" @onclick="() => _editDoc = null" disabled="@_editSaving">Cancel</button>
+        <button type="button" class="btn btn-primary" @onclick="SaveEditAsync" disabled="@_editSaving">
+            @if (_editSaving) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
+            Save changes
         </button>
     </Footer>
 </Dialog>
@@ -207,6 +423,8 @@
     private Dictionary<string, int> _counts = new();
     private List<PropertyDocument>? _results;
     private readonly HashSet<int> _selected = [];
+    private int _page = 1;
+    private PropertyDocument? _returnFor;   // the PAR / ICS the Return Slip is being uploaded for
 
     private int _fOfficeId, _fPropertyTypeId, _fPersonnelId;
     private string _fType = "";
@@ -215,11 +433,25 @@
     private bool _uploadOpen, _uploading;
     private int _uOfficeId, _uPersonnelId, _uPropertyTypeId;
     private string _uType = "";
+    private DateTime? _uDateSigned;
     private List<RoPersonnel> _uPersonnel = [];
     private IBrowserFile? _file;
     private string? _uploadError;
+    private List<LinkCandidate>? _uCandidates;
+    private List<string> _uEquip = [];
+    private string _fEquip = "";
+    private List<string> _knownEquipment = [];
+    private readonly HashSet<int> _uItems = [];
+    private LinkedSummary? _returnSummary;   // the property on the PAR / ICS being returned
 
-    // Choices for the <Picker> dropdowns (first entry is the "all"/"select" choice)
+    private Dictionary<int, LinkedSummary> _summaries = new();
+    private PropertyDocument? _itemsDoc;
+    private List<LinkCandidate>? _itemsCandidates;
+    private HashSet<int> _itemsSelected = [];
+    private bool _itemsSaving;
+    private string? _itemsError;
+
+    // Options for the <Picker> dropdowns (the first one is "all" or "select")
     private IReadOnlyList<PickOption<int>> OfficeOptions(string first) =>
         [new(0, first), .. _offices.Select(o => new PickOption<int>(o.OfficeId, o.OfficeAcronym, o.OfficeName))];
 
@@ -232,7 +464,10 @@
     private static IReadOnlyList<PickOption<int>> PersonnelOptions(List<RoPersonnel> people, string first) =>
         [new(0, first), .. people.Select(p => new PickOption<int>(p.PersonnelId, p.FullName, p.Position))];
 
-    private bool HasFilters => _fOfficeId != 0 || _fType != "" || _fPropertyTypeId != 0 || _fPersonnelId != 0;
+    private bool HasFilters => _fOfficeId != 0 || _fType != "" || _fPropertyTypeId != 0 || _fPersonnelId != 0 || _fEquip != "";
+
+    private IReadOnlyList<PickOption<string>> EquipmentFilterOptions =>
+        [new("", "All equipment"), .. _knownEquipment.Select(e => new PickOption<string>(e, e))];
     private string BulkDownloadUrl => "/documents/download-bulk?ids=" + string.Join(",", _selected);
 
     private static string TypeBadge(string type) => type switch
@@ -269,9 +504,13 @@
         if (_fType != "") q = q.Where(d => d.DocumentType == _fType);
         if (_fPropertyTypeId != 0) q = q.Where(d => d.PropertyTypeId == _fPropertyTypeId);
         if (_fPersonnelId != 0) q = q.Where(d => d.PersonnelId == _fPersonnelId);
+        if (_fEquip != "") q = q.Where(d => d.EquipmentType != null && d.EquipmentType.Contains(_fEquip));
 
         _results = await q.OrderByDescending(d => d.UploadedAt).ToListAsync();
         _selected.IntersectWith(_results.Select(r => r.DocumentId));
+        _knownEquipment = (await db.PropertyDocuments.AsNoTracking().Where(d => d.EquipmentType != null).Select(d => d.EquipmentType).Distinct().ToListAsync())
+            .SelectMany(PropertyStatus.SplitEquipment).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(e => e).ToList();
+        _summaries = await Links.SummariesAsync(_results.Where(r => r.DocumentType is "PAR" or "ICS").Select(r => r.DocumentId).ToList());
     }
 
     private async Task OnFilterOfficeChangedAsync()
@@ -290,7 +529,7 @@
     private Task ClearFiltersAsync()
     {
         _fOfficeId = _fPropertyTypeId = _fPersonnelId = 0;
-        _fType = "";
+        _fType = _fEquip = "";
         _fPersonnel = [];
         return RunFilterAsync();
     }
@@ -310,7 +549,7 @@
         return await db.RoPersonnel.AsNoTracking().Where(p => p.OfficeId == officeId).OrderBy(p => p.FullName).ToListAsync();
     }
 
-    // ── Delete ──────────────────────────────────────────────────────────
+    // Delete
     private async Task DeleteAsync(PropertyDocument doc)
     {
         var ok = await Modal.ConfirmAsync("Delete this document?",
@@ -325,9 +564,13 @@
             if (row is not null)
             {
                 db.PropertyDocuments.Remove(row);
-                await db.SaveChangesAsync();                 // record first…
+                // If the Return Slip is deleted, there's no proof of the return anymore, so its PAR / ICS goes back to "not returned".
+                var returnedBy = await db.PropertyDocuments.Where(d => d.ReturnSlipId == row.DocumentId).ToListAsync();
+                foreach (var d in returnedBy) { d.ReturnSlipId = null; d.ReturnedOn = null; }
+                await Links.UndoReturnAsync(db, returnedBy.Select(d => d.DocumentId).ToList());   // their property is back with the person
+                await db.SaveChangesAsync();                 // record first...
                 var path = Path.Combine(Storage.RootPath, Path.GetFileName(row.FilePath));
-                if (File.Exists(path)) File.Delete(path);    // …then the file, so a failed save never orphans the record
+                if (File.Exists(path)) File.Delete(path);    // ...then the file, so a failed save never leaves a record without a file
             }
             _selected.Remove(doc.DocumentId);
             await LoadCountsAsync();
@@ -341,15 +584,21 @@
         }
     }
 
-    // ── Upload ──────────────────────────────────────────────────────────
+    // Upload
     private void OpenUpload()
     {
+        _returnFor = null;
         _uOfficeId = _fOfficeId;
         _uPersonnelId = _uPropertyTypeId = 0;
         _uType = "";
+        _uDateSigned = null;
         _uPersonnel = _fPersonnel;
         _file = null;
         _uploadError = null;
+        _uCandidates = null;
+        _uItems.Clear();
+        _uEquip = [];
+        _returnSummary = null;
         _uploadOpen = true;
     }
 
@@ -357,14 +606,27 @@
     {
         _uPersonnelId = 0;
         _uPersonnel = await PersonnelOfAsync(_uOfficeId);
+        await LoadUploadCandidatesAsync();
     }
 
-    private void OnUploadTypeChanged()
+    private async Task OnUploadTypeChanged()
     {
         _uploadError = null;
         _uPropertyTypeId = _uType == "Return Slip" ? 0 : AutoPropertyType(_uType);
         if (_uType is "PAR" or "ICS" && _uPropertyTypeId == 0)
             _uploadError = "The matching Type of Property isn't in the database. Check the property types list.";
+        await LoadUploadCandidatesAsync();
+    }
+
+    // The register items that can be put on the PAR / ICS being uploaded
+    private async Task LoadUploadCandidatesAsync()
+    {
+        _uItems.Clear();
+        _uCandidates = null;
+        if (_returnFor is not null || _uType is not ("PAR" or "ICS") || _uPersonnelId == 0) return;
+        var typeId = AutoPropertyType(_uType);
+        if (typeId == 0) return;
+        _uCandidates = await Links.CandidatesAsync(typeId, _uPersonnelId, null);
     }
 
     private int AutoPropertyType(string docType) => docType switch
@@ -400,6 +662,9 @@
             (_, 0, _, _, _) => "Select the RO personnel.",
             (_, _, "", _, _) => "Select the document.",
             (_, _, _, 0, _) => "Select the type of property.",
+            _ when _uDateSigned is null => "Select the date the document was signed.",
+            _ when _uDateSigned.Value.Date > PhTime.Now.Date => "The date signed can't be in the future.",
+            _ when _returnFor is null && _uType is "PAR" or "ICS" && _uEquip.Count == 0 => $"Choose the equipment on this {_uType} (Laptop, Printer, …).",
             (_, _, _, _, null) => "Attach the signed PDF.",
             _ => null,
         };
@@ -418,36 +683,313 @@
             uint.TryParse(user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out var userId);
 
             await using var db = await DbFactory.CreateDbContextAsync();
-            db.PropertyDocuments.Add(new PropertyDocument
+            await using var tx = await db.Database.BeginTransactionAsync();
+            var added = new PropertyDocument
             {
                 OfficeId = _uOfficeId,
                 DocumentType = _uType,
                 PropertyTypeId = _uPropertyTypeId,
                 PersonnelId = _uPersonnelId,
+                EquipmentType = _returnFor is not null ? _returnFor.EquipmentType : PropertyStatus.JoinEquipment(_uEquip),
                 FilePath = storedName,
                 OriginalFileName = Path.GetFileName(_file.Name),
+                DateSigned = _uDateSigned!.Value.Date,
                 UploadedBy = userId,
                 UploadedAt = PhTime.Now,
-            });
+            };
+            db.PropertyDocuments.Add(added);
             await db.SaveChangesAsync();
+
+            // The register items written on the PAR / ICS
+            var linked = 0;
+            if (_returnFor is null && _uType is "PAR" or "ICS" && _uItems.Count > 0)
+            {
+                (linked, _) = await Links.SetLinksAsync(db, added, _uItems);
+                await db.SaveChangesAsync();
+            }
+
+            // Uploaded from the "Returned" switch: I mark the PAR / ICS as returned on the date of the slip,
+            // and its property as Returned in the register.
+            var returned = _returnFor is not null ? await db.PropertyDocuments.FindAsync(_returnFor.DocumentId) : null;
+            var returnedItems = 0;
+            if (returned is not null)
+            {
+                returned.ReturnedOn = added.DateSigned;
+                returned.ReturnSlipId = added.DocumentId;
+                returnedItems = await Links.MarkReturnedAsync(db, returned.DocumentId);
+                await db.SaveChangesAsync();
+            }
+            await tx.CommitAsync();
 
             _uploadOpen = false;
             await LoadCountsAsync();
             await RunFilterAsync();
-            await Toast($"{_uType} uploaded.");
+            await Toast(returned is not null
+                ? $"Return slip uploaded. The {returned.DocumentType} is marked as returned" + (returnedItems > 0 ? $" and its {returnedItems} {(returnedItems == 1 ? "item is" : "items are")} now Returned in the register." : ".")
+                : linked > 0 ? $"{_uType} uploaded with {linked} {(linked == 1 ? "item" : "items")}." : $"{_uType} uploaded.");
+            _returnFor = null;
         }
         catch (Exception ex)
         {
             Log.LogError(ex, "Upload failed");
-            if (File.Exists(fullPath)) File.Delete(fullPath);   // no orphaned files
+            if (File.Exists(fullPath)) File.Delete(fullPath);   // no leftover files
             _uploadError = "The upload didn't finish. Check your connection and try again.";
         }
         finally { _uploading = false; }
     }
 
+    // Returned switch (PAR / ICS)
+    // On: opens the upload for the Return Slip, filled in from the PAR / ICS. The document is only marked
+    // as returned after the slip is uploaded. Off: asks first, and the uploaded slip stays in the list.
+    private async Task ToggleReturnedAsync(PropertyDocument doc)
+    {
+        if (doc.ReturnedOn is null)
+        {
+            _returnFor = doc;
+            _uOfficeId = doc.OfficeId;
+            _uPersonnel = await PersonnelOfAsync(doc.OfficeId);
+            _uPersonnelId = doc.PersonnelId;
+            _uType = "Return Slip";
+            _uPropertyTypeId = doc.PropertyTypeId;
+            _uDateSigned = null;
+            _file = null;
+            _uploadError = null;
+            _uCandidates = null;
+            _uItems.Clear();
+            _returnSummary = _summaries.GetValueOrDefault(doc.DocumentId);
+            _uploadOpen = true;
+            return;
+        }
+
+        var ok = await Modal.ConfirmAsync("Mark as not returned?",
+            $"The {doc.DocumentType} for {doc.Personnel?.FullName} will show as not returned, and its property goes back to the status it had before. Its Return Slip stays in the list; delete it there if it was uploaded by mistake.",
+            "Mark as not returned", "Cancel", ModalVariant.Warning);
+        if (!ok) return;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var row = await db.PropertyDocuments.FindAsync(doc.DocumentId);
+            if (row is not null)
+            {
+                row.ReturnedOn = null;
+                row.ReturnSlipId = null;
+                await Links.UndoReturnAsync(db, [row.DocumentId]);   // its property goes back to the status it had
+                await db.SaveChangesAsync();
+            }
+            await RunFilterAsync();
+            await Toast($"{doc.DocumentType} marked as not returned.");
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Clearing the return of document {Id} failed", doc.DocumentId);
+            await Modal.ErrorAsync("Couldn't save the change", "Check your connection and try again.");
+        }
+    }
+
+    // Edit a document
+    private PropertyDocument? _editDoc;
+    private int _eOfficeId, _ePersonnelId, _ePropertyTypeId;
+    private List<RoPersonnel> _ePersonnel = [];
+    private List<string> _eEquip = [];
+    private DateTime? _eDateSigned;
+    private IBrowserFile? _eFile;
+    private bool _editSaving;
+    private string? _editError;
+
+    private async Task OpenEditAsync(PropertyDocument doc)
+    {
+        _editDoc = doc;
+        _eOfficeId = doc.OfficeId;
+        _ePersonnel = await PersonnelOfAsync(doc.OfficeId);
+        _ePersonnelId = doc.PersonnelId;
+        _ePropertyTypeId = doc.PropertyTypeId;
+        _eEquip = PropertyStatus.SplitEquipment(doc.EquipmentType);
+        _eDateSigned = doc.DateSigned;
+        _eFile = null;
+        _editError = null;
+    }
+
+    private async Task OnEditOfficeChangedAsync()
+    {
+        _ePersonnelId = 0;
+        _ePersonnel = await PersonnelOfAsync(_eOfficeId);
+    }
+
+    private void OnEditFileSelected(InputFileChangeEventArgs e)
+    {
+        _editError = null;
+        _eFile = null;
+        if (!e.File.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) _editError = "Only PDF files can be uploaded.";
+        else if (e.File.Size > MaxFileSizeBytes) _editError = $"This file is {e.File.Size / 1024.0 / 1024.0:F1} MB. The limit is 50 MB.";
+        else _eFile = e.File;
+    }
+
+    private async Task SaveEditAsync()
+    {
+        if (_editDoc is null) return;
+        _editError = _eOfficeId == 0 ? "Select the office."
+            : _ePersonnelId == 0 ? "Select the RO personnel."
+            : _ePropertyTypeId == 0 ? "Select the type of property."
+            : _eDateSigned is null ? "Select the date the document was signed."
+            : _eDateSigned.Value.Date > PhTime.Now.Date ? "The date signed can't be in the future."
+            : _editDoc.DocumentType is "PAR" or "ICS" && _eEquip.Count == 0 ? $"Choose the equipment on this {_editDoc.DocumentType}."
+            : null;
+        if (_editError is not null) return;
+
+        _editSaving = true;
+        string? newName = null, oldName = null;
+        try
+        {
+            if (_eFile is not null)
+            {
+                newName = $"{Guid.NewGuid()}.pdf";
+                await using var target = new FileStream(Path.Combine(Storage.RootPath, newName), FileMode.CreateNew);
+                await using var source = _eFile.OpenReadStream(maxAllowedSize: MaxFileSizeBytes);
+                await source.CopyToAsync(target);
+            }
+
+            var user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+            uint.TryParse(user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out var userId);
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var row = await db.PropertyDocuments.FindAsync(_editDoc.DocumentId);
+            if (row is null) { _editDoc = null; await RunFilterAsync(); return; }
+
+            var personChanged = row.PersonnelId != _ePersonnelId || row.OfficeId != _eOfficeId;
+            row.OfficeId = _eOfficeId;
+            row.PersonnelId = _ePersonnelId;
+            if (row.DocumentType == "Return Slip") row.PropertyTypeId = _ePropertyTypeId;
+            row.EquipmentType = PropertyStatus.JoinEquipment(_eEquip);
+            row.DateSigned = _eDateSigned!.Value.Date;
+            if (newName is not null) { oldName = row.FilePath; row.FilePath = newName; row.OriginalFileName = Path.GetFileName(_eFile!.Name); }
+
+            var moved = 0;
+            if (personChanged && row.ReturnedOn is null && row.DocumentType is "PAR" or "ICS")
+            {
+                // The property on it moves with the document to the new person
+                var items = await db.PropertyItems.Where(i => i.DocumentId == row.DocumentId).ToListAsync();
+                foreach (var i in items) { i.PersonnelId = row.PersonnelId; i.OfficeId = row.OfficeId; }
+                moved = items.Count;
+            }
+            await Links.FillEquipmentAsync(db, row);
+            db.UserActivities.Add(new UserActivity { UserId = userId, ActivityType = "Update", Description = $"Edited {row.DocumentType} {row.OriginalFileName}", CreatedAt = PhTime.Now });
+            await db.SaveChangesAsync();
+            newName = null;   // saved, so keep the new file
+            if (oldName is not null)
+            {
+                var oldPath = Path.Combine(Storage.RootPath, Path.GetFileName(oldName));
+                if (File.Exists(oldPath)) File.Delete(oldPath);
+            }
+
+            var type = _editDoc.DocumentType;
+            _editDoc = null;
+            await RunFilterAsync();
+            await Toast(moved > 0 ? $"{type} saved. Its {moved} {(moved == 1 ? "item" : "items")} moved to the new person." : $"{type} saved.");
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Editing document {Id} failed", _editDoc?.DocumentId);
+            _editError = "Couldn't save the changes. Check your connection and try again.";
+        }
+        finally
+        {
+            if (newName is not null)
+            {
+                var p = Path.Combine(Storage.RootPath, newName);
+                if (File.Exists(p)) File.Delete(p);   // not saved, so remove the new file
+            }
+            _editSaving = false;
+        }
+    }
+
+    // Property on a PAR / ICS
+    private async Task OpenItemsAsync(PropertyDocument doc)
+    {
+        _itemsDoc = doc;
+        _itemsError = null;
+        _itemsCandidates = null;
+        _itemsSelected = await Links.LinkedIdsAsync(doc.DocumentId);
+        _itemsCandidates = await Links.CandidatesAsync(doc.PropertyTypeId, doc.PersonnelId, doc.DocumentId);
+    }
+
+    private async Task SaveItemsAsync()
+    {
+        if (_itemsDoc is null) return;
+        _itemsSaving = true;
+        _itemsError = null;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var row = await db.PropertyDocuments.FindAsync(_itemsDoc.DocumentId);
+            if (row is null) { _itemsDoc = null; await RunFilterAsync(); return; }
+            var (added, removed) = await Links.SetLinksAsync(db, row, _itemsSelected);
+            if (added + removed > 0)
+            {
+                var user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+                uint.TryParse(user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out var userId);
+                db.UserActivities.Add(new UserActivity
+                {
+                    UserId = userId, ActivityType = "Update", CreatedAt = PhTime.Now,
+                    Description = $"Property on {row.DocumentType} {row.OriginalFileName}: {added} added, {removed} removed",
+                });
+            }
+            await db.SaveChangesAsync();
+            var type = _itemsDoc.DocumentType;
+            _itemsDoc = null;
+            await RunFilterAsync();
+            await Toast(added + removed == 0 ? "No changes." : $"Property on the {type} saved.");
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Saving the property on document {Id} failed", _itemsDoc?.DocumentId);
+            _itemsError = "Couldn't save. Check your connection and try again.";
+        }
+        finally { _itemsSaving = false; }
+    }
+
+    // Date signed (also sets it for documents uploaded before I added this)
+    private PropertyDocument? _dateDoc;
+    private DateTime? _dateValue;
+    private bool _dateSaving;
+    private string? _dateError;
+
+    private void OpenDateSigned(PropertyDocument doc)
+    {
+        _dateDoc = doc;
+        _dateValue = doc.DateSigned;
+        _dateError = null;
+    }
+
+    private async Task SaveDateSignedAsync()
+    {
+        if (_dateDoc is null) return;
+        _dateError = _dateValue is null ? "Select the date the document was signed."
+                   : _dateValue.Value.Date > PhTime.Now.Date ? "The date signed can't be in the future." : null;
+        if (_dateError is not null) return;
+
+        _dateSaving = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var row = await db.PropertyDocuments.FindAsync(_dateDoc.DocumentId);
+            if (row is null) { _dateDoc = null; await RunFilterAsync(); return; }
+            row.DateSigned = _dateValue!.Value.Date;
+            await db.SaveChangesAsync();
+            _dateDoc = null;
+            await RunFilterAsync();
+            await Toast("Date signed saved.");
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Saving the date signed of document {Id} failed", _dateDoc?.DocumentId);
+            _dateError = "Couldn't save the date. Check your connection and try again.";
+        }
+        finally { _dateSaving = false; }
+    }
+
     private ValueTask Toast(string text, string type = "success") => JS.InvokeVoidAsync("showToast", text, type);
 
-    // Live: when documents, personnel change on either website, reload without a refresh.
+    // Live update: when documents or personnel change on either website, reload without refreshing.
     private static readonly string[] LiveAreas = ["documents", "personnel"];
     protected override void OnInitialized() => Live.AreasChanged += OnAreasAsync;
 

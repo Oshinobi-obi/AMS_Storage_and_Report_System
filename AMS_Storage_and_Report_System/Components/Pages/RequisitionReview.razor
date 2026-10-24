@@ -9,7 +9,7 @@
 @inject LiveRefresh Live
 @implements IDisposable
 
-<PageTitle>@(_ris?.RisNo ?? "Requisition") | AMS StockWatch</PageTitle>
+<PageTitle>@(_ris?.RisNo ?? "Requisition") | e-PINS</PageTitle>
 
 <PageHeader Title="@(_ris is null ? "Requisition" : $"RIS {_ris.RisNo}")"
             Subtitle="@(_ris is null ? null : $"{_ris.OfficeName}, submitted {_ris.RequestedAt:MMMM d, yyyy 'at' h:mm tt}")">
@@ -51,7 +51,7 @@
                 break;
             case RisStatus.Approved:
                 <div class="callout"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
-                    <p><strong>Approved @_ris.ApprovedAt?.ToString("MMMM d, yyyy"), waiting for pickup.</strong> The office prints the RIS from the portal, signs it and brings it here. When they arrive, sign it, hand over the items, scan the signed slip to PDF and mark it as issued. The stock stays reserved and is deducted from Inventory when you mark it as issued.</p></div>
+                    <p><strong>Approved @_ris.ApprovedAt?.ToString("MMMM d, yyyy"), waiting for pickup.</strong> The office prints the RIS from the portal, signs it and brings it here. When they arrive, sign it, hand over the items, scan the signed slip to PDF and mark it as issued. The stock stays reserved and is deducted from Supplies inventory when you mark it as issued.</p></div>
                 break;
             case RisStatus.Issued:
                 <div class="callout" style="background:var(--ok-tint);border-color:#b7e0c6"><i class="bi bi-check2-circle" style="color:var(--ok)" aria-hidden="true"></i>
@@ -115,7 +115,7 @@
                                                 }
                                                 else
                                                 {
-                                                    <span class="badge-pill badge-bad">Not in APP</span>
+                                                    <span class="@(_appCseRequired ? "badge-pill badge-bad" : "text-muted-2")">@(_appCseRequired ? "Not in APP" : "—")</span>
                                                 }
                                             </td>
                                         }
@@ -314,6 +314,7 @@
     }
 
     private RisTransaction? _ris;
+    private bool _appCseRequired = true;
     private bool _loading = true;
     private uint _userId;
     private Dictionary<int, LineContext> _context = new();
@@ -346,6 +347,7 @@
     {
         _ris = await Requisitions.GetAsync(RisId);
         if (_ris is null) return;
+        _appCseRequired = await Requisitions.AppCseRequiredAsync();
 
         _signatories = await Requisitions.AmsPersonnelAsync();
         _officePeople = await Requisitions.PersonnelOfOfficeAsync(_ris.OfficeId);
@@ -357,7 +359,7 @@
         if (_ris.Status == RisStatus.Pending)
         {
             _context = await Requisitions.LineContextAsync(_ris);
-            // Default: issue what was asked for, limited by what's in the warehouse.
+            // By default, issue what was asked for, but only up to what's in the warehouse.
             _decisions = _ris.Items.ToDictionary(i => i.RisItemId, i => new Decision
             {
                 IssueQty = Math.Clamp(_context.GetValueOrDefault(i.ItemId)?.Available ?? 0, 0, i.RequestedQty),
@@ -410,6 +412,7 @@
 
         await LoadAsync();
         await JS.InvokeVoidAsync("showToast", $"{_ris?.RisNo} approved. Release the items, then mark it as issued.", "success");
+        try { await JS.InvokeVoidAsync("amsMotion.success", "Approved"); } catch (JSException) { }
     }
 
     private async Task RejectAsync()
@@ -482,5 +485,6 @@
         _signedFile = null;
         await LoadAsync();
         await JS.InvokeVoidAsync("showToast", $"{_ris?.RisNo} is issued. The signed RIS is saved for both AMS and the office.", "success");
+        try { await JS.InvokeVoidAsync("amsMotion.success", "Items issued"); } catch (JSException) { }
     }
 }

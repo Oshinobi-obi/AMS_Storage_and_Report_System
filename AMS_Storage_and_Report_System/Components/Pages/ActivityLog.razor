@@ -4,7 +4,7 @@
 @inject AdminExtrasService Extras
 @inject AuthenticationStateProvider AuthStateProvider
 
-<PageTitle>Activity log | AMS StockWatch</PageTitle>
+<PageTitle>Activity log | e-PINS</PageTitle>
 
 <PageHeader Title="Activity log" Subtitle="Who did what and when, on both websites: sign-ins, approvals, issuances, changes and deletions.">
     <Actions>
@@ -63,26 +63,17 @@
                         </tbody>
                     </table>
                 </div>
-                <div class="panel-body border-top d-flex justify-content-between align-items-center flex-wrap gap-2">
-                    <span class="text-muted-2">Showing the newest @_rows.Count.ToString("N0")</span>
-                    @if (_more)
-                    {
-                        <button type="button" class="btn btn-outline-primary" @onclick="LoadMoreAsync" disabled="@_loading">
-                            @if (_loading) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
-                            Show @AdminExtrasService.PageSize more
-                        </button>
-                    }
-                </div>
+                <Pager Total="_total" Page="_page" PageChanged="GoToPageAsync" Label="Activity log pages" />
             }
         </section>
     }
 </div>
 
 @code {
-    private bool _isSuperAdmin, _more, _loading;
+    private bool _isSuperAdmin;
     private ActivityFilter _filter = new();
     private List<ActivityRow>? _rows;
-    private int _take = AdminExtrasService.PageSize;
+    private int _page = 1, _total;
     private List<User> _users = [];
     private List<string> _types = [];
     private CancellationTokenSource? _debounce;
@@ -114,11 +105,11 @@
 
     private async Task ReloadAsync()
     {
-        _take = AdminExtrasService.PageSize;
-        (_rows, _more) = await Extras.ActivityAsync(_filter, _take);
+        _page = 1;
+        (_rows, _total) = await Extras.ActivityAsync(_filter, _page);
     }
 
-    // Wait until typing pauses before searching
+    // Wait until they stop typing before searching
     private async Task SearchChangedAsync()
     {
         _debounce?.Cancel();
@@ -128,14 +119,10 @@
         await ReloadAsync();
     }
 
-    private async Task LoadMoreAsync()
+    // The log can get long, so I read each page from the database separately.
+    private async Task GoToPageAsync(int page)
     {
-        _loading = true;
-        try
-        {
-            _take += AdminExtrasService.PageSize;
-            (_rows, _more) = await Extras.ActivityAsync(_filter, _take);
-        }
-        finally { _loading = false; }
+        _page = page;
+        (_rows, _total) = await Extras.ActivityAsync(_filter, _page);
     }
 }

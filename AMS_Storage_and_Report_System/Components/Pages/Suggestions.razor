@@ -7,9 +7,9 @@
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IJSRuntime JS
 
-<PageTitle>Suggestions | AMS StockWatch</PageTitle>
+<PageTitle>Suggestions | e-PINS</PageTitle>
 
-<PageHeader Title="Supply suggestions" Subtitle="Items that offices asked AMS to carry, from the “Suggest a supply” button in AMS Supplies." />
+<PageHeader Title="Supply suggestions" Subtitle="Items that offices asked AMS to carry, from the “Suggest a supply” button in e-SRS." />
 
 <div class="wrap page-body">
     <div class="stat-grid">
@@ -37,7 +37,7 @@
                 <table class="data-table">
                     <thead><tr><th>Item suggested</th><th>From</th><th class="t-num">Per year</th><th>Received</th><th>Status</th><th></th></tr></thead>
                     <tbody>
-                        @foreach (var s in Visible)
+                        @foreach (var s in Visible.Page(_pRows))
                         {
                             <tr @key="s.SuggestionId">
                                 <td><span class="cell-strong">@s.ItemName</span>@if (!string.IsNullOrWhiteSpace(s.Description)) {<span class="cell-sub">@s.Description</span>}</td>
@@ -51,6 +51,7 @@
                     </tbody>
                 </table>
             </div>
+            <Pager Total="Visible.Count()" @bind-Page="_pRows" ResetKey="@_filter" Label="Suggestion pages" />
         }
     </section>
 </div>
@@ -92,6 +93,7 @@
 </Dialog>
 
 @code {
+    private int _pRows = 1;
     private sealed record Filter(string Key, string Label, string Icon, string Tone);
     private static readonly Filter[] Filters =
     [
@@ -152,7 +154,7 @@
         finally { _saving = false; }
     }
 
-    // Live: when suggestions change on either website, reload without a refresh.
+    // Live update: when suggestions change on either website, reload without refreshing.
     private static readonly string[] LiveAreas = ["suggestions"];
     protected override void OnInitialized() => Live.AreasChanged += OnAreasAsync;
 

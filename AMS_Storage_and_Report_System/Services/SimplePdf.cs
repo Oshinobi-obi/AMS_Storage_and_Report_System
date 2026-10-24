@@ -1,7 +1,7 @@
-// SimplePdf.cs — a small PDF writer for reports (text, lines, shaded boxes, tables).
-// Uses the standard Helvetica fonts every PDF reader has, so nothing needs to be installed
+// This is my small PDF writer for the reports (text, lines, shaded boxes, tables).
+// It uses the standard Helvetica fonts that every PDF reader has, so nothing has to be installed
 // on the server and no extra package is needed. Pages are A4 (portrait or landscape).
-// Coordinates are in points (1/72 inch) from the TOP-left corner of the page.
+// Positions are in points (1/72 inch) from the TOP left corner of the page.
 
 using System.Globalization;
 using System.IO.Compression;
@@ -36,10 +36,10 @@ public sealed class SimplePdf
     private static string N(float v) => v.ToString("0.##", CultureInfo.InvariantCulture);
     private float Y(float top) => PageHeight - top;
 
-    // ── Drawing ─────────────────────────────────────────────────────────
+    // Drawing
     public enum Align { Left, Center, Right }
 
-    /// Draws one line of text; `top` is the baseline position from the top of the page.
+    /// Draws one line of text. `top` is the baseline position from the top of the page.
     public void Text(float x, float top, string text, float size = 10, bool bold = false, Align align = Align.Left,
                      (float R, float G, float B)? color = null)
     {
@@ -57,14 +57,14 @@ public sealed class SimplePdf
         P.Append($"{N(width)} w {N(gray)} G {N(x1)} {N(Y(top1))} m {N(x2)} {N(Y(top2))} l S\n");
     }
 
-    /// A filled rectangle (colour 0–1 each) and/or its border.
+    /// A filled box (each color from 0 to 1) and/or its border.
     public void Box(float x, float top, float w, float h, (float R, float G, float B)? fill = null, float border = 0)
     {
         if (fill is var (r, g, b)) P.Append($"{N(r)} {N(g)} {N(b)} rg {N(x)} {N(Y(top + h))} {N(w)} {N(h)} re f\n");
         if (border > 0) P.Append($"{N(border)} w 0 G {N(x)} {N(Y(top + h))} {N(w)} {N(h)} re S\n");
     }
 
-    /// Splits text into lines that fit `width`; words longer than a line are broken.
+    /// Splits text into lines that fit `width`. Words longer than a line get broken.
     public static List<string> Wrap(string text, float width, float size, bool bold = false)
     {
         var lines = new List<string>();
@@ -90,15 +90,15 @@ public sealed class SimplePdf
         return lines;
     }
 
-    // ── Output ──────────────────────────────────────────────────────────
-    public byte[] Save(string title = "", string author = "AMS StockWatch")
+    // Output
+    public byte[] Save(string title = "", string author = "e-PINS")
     {
         if (_pages.Count == 0) NewPage();
         var objects = new List<byte[]>();
         int Add(byte[] body) { objects.Add(body); return objects.Count; }
         byte[] A(string s) => Encoding.ASCII.GetBytes(s);
 
-        // 1 catalog, 2 pages, 3 font, 4 bold font, 5 info — fixed numbers; pages follow
+        // 1 catalog, 2 pages, 3 font, 4 bold font, 5 info are fixed numbers, the pages come after
         objects.Add([]); objects.Add([]);
         Add(A("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"));
         Add(A("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>"));
@@ -143,7 +143,7 @@ public sealed class SimplePdf
     private static byte[] Info(string title, string author)
     {
         var now = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
-        var s = $"<< /Title ({Escape(title)}) /Author ({Escape(author)}) /Producer (AMS StockWatch) /CreationDate (D:{now}Z) >>";
+        var s = $"<< /Title ({Escape(title)}) /Author ({Escape(author)}) /Producer (e-PINS) /CreationDate (D:{now}Z) >>";
         return Win1252(s);
     }
 
@@ -155,7 +155,7 @@ public sealed class SimplePdf
         return all;
     }
 
-    // ── Text encoding and widths (Helvetica, WinAnsi) ───────────────────
+    // Text encoding and widths (Helvetica, WinAnsi)
     private static readonly Dictionary<char, byte> Cp1252Extra = new()
     {
         ['€'] = 0x80, ['‚'] = 0x82, ['„'] = 0x84, ['…'] = 0x85, ['†'] = 0x86, ['‡'] = 0x87, ['‰'] = 0x89,
@@ -174,7 +174,7 @@ public sealed class SimplePdf
         return bytes;
     }
 
-    /// Characters Helvetica can't show are replaced (₱ → PHP).
+    /// Characters Helvetica can't show are replaced (₱ becomes PHP).
     private static string Clean(string s) => s.Replace("₱", "PHP ").Replace("\t", " ");
 
     private static string Escape(string s)
@@ -188,7 +188,7 @@ public sealed class SimplePdf
         return sb.ToString();
     }
 
-    // Advance widths (1/1000 em) for ASCII 32–126
+    // Character widths (1/1000 em) for ASCII 32 to 126
     private static readonly short[] Regular =
     [
         278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,

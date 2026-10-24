@@ -6,10 +6,11 @@
 @inject AuthenticationStateProvider AuthStateProvider
 @inject ModalService Modal
 @inject IJSRuntime JS
+@inject SeasonState Season
 
-<PageTitle>Settings | AMS StockWatch</PageTitle>
+<PageTitle>Settings | e-PINS</PageTitle>
 
-<PageHeader Title="Settings" Subtitle="Values printed on every Requisition and Issue Slip, and office details used by AMS Supplies." />
+<PageHeader Title="Settings" Subtitle="The seasonal theme, values printed on every Requisition and Issue Slip, and office details used by e-SRS." />
 
 <div class="wrap page-body">
     @if (_form is null)
@@ -18,6 +19,54 @@
     }
     else
     {
+        <section class="panel">
+            <header class="panel-head">
+                <h2>Seasonal theme</h2>
+                <span class="meta">Dresses up the top bar, the page headers and the sidebar of e-PINS and e-SRS for everyone. Everything else stays the same.</span>
+            </header>
+            <div class="panel-body">
+                <div class="season-picks" role="radiogroup" aria-label="Seasonal theme">
+                    @foreach (var opt in SeasonOptions)
+                    {
+                        var on = _season == opt.Code;
+                        <button type="button" role="radio" aria-checked="@(on ? "true" : "false")" class="season-pick @(on ? "is-on" : "")"
+                                disabled="@_seasonSaving" @onclick="() => SetSeasonAsync(opt)">
+                            <span class="season-swatch" data-swatch="@opt.Code"><i class="bi @opt.Icon" aria-hidden="true"></i></span>
+                            <span class="season-pick-text"><strong>@opt.Name</strong><small>@opt.Note</small></span>
+                            @if (on) { <i class="bi bi-check-circle-fill season-check" aria-hidden="true"></i> }
+                        </button>
+                    }
+                </div>
+                <p class="small text-muted-2 mb-0 mt-3">
+                    <strong>Automatic</strong> changes the theme by itself through the year, on the dates under each theme, and uses the standard look in between.
+                    @(Seasons.ByDate(PhTime.Now) is { } today ? $"Today it shows {today.Name}." : "Today it shows the standard look.")
+                </p>
+            </div>
+        </section>
+
+        <section class="panel">
+            <header class="panel-head">
+                <h2>Requisition rules</h2>
+                <span class="meta">How e-SRS checks what offices may request.</span>
+            </header>
+            <div class="panel-body">
+                <div class="setting-switch">
+                    <div class="form-check form-switch">
+                        <input @key="_appCseKey" class="form-check-input" type="checkbox" role="switch" id="require-appcse"
+                               checked="@_appCseRequired" disabled="@_appCseSaving" @onchange="ToggleAppCseAsync" />
+                        <label class="form-check-label" for="require-appcse">
+                            <strong>Require APP-CSE for requisitions</strong>
+                        </label>
+                    </div>
+                    <p class="small text-muted-2 mb-0 mt-1">
+                        @(_appCseRequired
+                            ? "On: offices can only request items in their Annual Procurement Plan (APP-CSE), within their remaining balance."
+                            : "Off: offices can request any catalog item in any quantity. AMS still checks warehouse stock when approving.")
+                    </p>
+                </div>
+            </div>
+        </section>
+
         <section class="panel">
             <header class="panel-head"><h2>Requisition and Issue Slip</h2></header>
             <div class="panel-body">
@@ -57,19 +106,29 @@
         <section class="panel">
             <header class="panel-head">
                 <h2>Offices</h2>
-                <span class="meta">Responsibility center codes are printed on the RIS and RSMI. "APP-CSE sheet" is needed only when the office's sheet in the APP-CSE workbook has another name.</span>
+                <span class="meta">The RIS code (01 ORD, 02 ARD, …) is written in the RIS No. column of the RSMI. Responsibility center codes are printed on the RIS. "APP-CSE sheet" is needed only when the office's sheet in the APP-CSE workbook has another name. "Uses APP-CSE of" lets a unit request on its division's APP-CSE (e.g. LRPO on ESSD's).</span>
             </header>
             <div class="table-wrap">
                 <table class="data-table">
-                    <thead><tr><th>Office</th><th style="width: 200px">Responsibility center code</th><th style="width: 160px">APP-CSE sheet</th><th>Can request supplies</th><th></th></tr></thead>
+                    <thead><tr><th>Office</th><th style="width: 100px">RIS code</th><th style="width: 200px">Responsibility center code</th><th style="width: 160px">APP-CSE sheet</th><th style="width: 150px">Uses APP-CSE of</th><th>Can request supplies</th><th></th></tr></thead>
                     <tbody>
-                        @foreach (var o in _offices)
+                        @foreach (var o in _offices.Page(_pOffices))
                         {
                             var row = _officeEdits[o.OfficeId];
                             <tr @key="o.OfficeId">
                                 <td><span class="cell-strong">@o.OfficeAcronym</span><span class="cell-sub">@o.OfficeName</span></td>
+                                <td><input class="form-control form-control-sm" maxlength="5" inputmode="numeric" autocomplete="off" placeholder="—" aria-label="@($"RIS code of {o.OfficeAcronym}")" @bind="row.Code" /></td>
                                 <td><input class="form-control form-control-sm" maxlength="30" autocomplete="off" aria-label="@($"Responsibility center code of {o.OfficeAcronym}")" @bind="row.Rc" /></td>
                                 <td><input class="form-control form-control-sm" maxlength="50" autocomplete="off" placeholder="@o.OfficeAcronym" aria-label="@($"APP-CSE sheet name of {o.OfficeAcronym}")" @bind="row.Sheet" /></td>
+                                <td>
+                                    <select class="form-select form-select-sm" aria-label="@($"Whose APP-CSE {o.OfficeAcronym} uses")" @bind="row.AppCseOf">
+                                        <option value="0">Its own</option>
+                                        @foreach (var other in _offices.Where(x => x.OfficeId != o.OfficeId && x.AppCseOfficeId == null))
+                                        {
+                                            <option value="@other.OfficeId">@other.OfficeAcronym</option>
+                                        }
+                                    </select>
+                                </td>
                                 <td>
                                     <div class="form-check form-switch m-0">
                                         <input class="form-check-input" type="checkbox" role="switch" id="@($"can-{o.OfficeId}")" @bind="row.Can" />
@@ -77,7 +136,7 @@
                                     </div>
                                 </td>
                                 <td class="text-end">
-                                    @if (row.Rc != (o.ResponsibilityCenterCode ?? "") || row.Can != o.CanRequisition || row.Sheet != (o.AppCseSheet ?? ""))
+                                    @if (row.Rc != (o.ResponsibilityCenterCode ?? "") || row.Can != o.CanRequisition || row.Sheet != (o.AppCseSheet ?? "") || row.Code != (o.RisCode ?? "") || row.AppCseOf != (o.AppCseOfficeId ?? 0))
                                     {
                                         <button type="button" class="btn btn-sm btn-primary" @onclick="() => SaveOfficeAsync(o, row)">Save</button>
                                     }
@@ -87,12 +146,28 @@
                     </tbody>
                 </table>
             </div>
+            <Pager Total="_offices.Count" @bind-Page="_pOffices" Label="Office pages" />
         </section>
     }
 </div>
 
 @code {
-    private sealed class OfficeEdit { public string Rc { get; set; } = ""; public bool Can { get; set; } public string Sheet { get; set; } = ""; }
+    private int _pOffices = 1;
+    private sealed class OfficeEdit { public string Rc { get; set; } = ""; public bool Can { get; set; } public string Sheet { get; set; } = ""; public string Code { get; set; } = ""; public int AppCseOf { get; set; } }
+
+    private sealed record SeasonOption(string Code, string Name, string Note, string Icon);
+    private static readonly IReadOnlyList<SeasonOption> SeasonOptions =
+    [
+        new("off", "Off", "Standard DepEd NCR blue", "bi-circle"),
+        new("auto", "Automatic", "Follows the calendar", "bi-calendar2-heart"),
+        .. Seasons.All.Select(s => new SeasonOption(s.Code, s.Name, s.When, s.Icon)),
+    ];
+    private string _season = "off";
+    private bool _seasonSaving;
+    private bool _appCseRequired = true;
+    private bool _appCseSaving;
+    // This is bumped to redraw the switch so it goes back to the saved value after Cancel or a failed save
+    private int _appCseKey;
 
     private SettingsForm? _form;
     private List<Office> _offices = [];
@@ -112,12 +187,58 @@
             _people = await db.RoPersonnel.AsNoTracking().OrderBy(p => p.FullName).ToListAsync();
         await LoadOfficesAsync();
         _form = await SettingsSvc.LoadAsync();
+        _season = await SettingsSvc.SeasonAsync();
+        _appCseRequired = await SettingsSvc.RequireAppCseAsync();
+    }
+
+    private async Task SetSeasonAsync(SeasonOption opt)
+    {
+        if (opt.Code == _season) return;
+        var ok = await Modal.ConfirmAsync(opt.Code == "off" ? "Turn off the seasonal theme?" : $"Use the {opt.Name} theme?",
+            opt.Code == "off" ? "e-PINS and e-SRS go back to the standard DepEd NCR blue for everyone."
+                : opt.Code == "auto" ? "The theme will change by itself through the year, for everyone using e-PINS and e-SRS."
+                : $"Everyone using e-PINS and e-SRS will see it on the top bar, the page headers and the sidebar.",
+            opt.Code == "off" ? "Turn off" : "Use this theme", "Cancel", ModalVariant.Info);
+        if (!ok) return;
+        _seasonSaving = true;
+        try
+        {
+            var r = await SettingsSvc.SaveSeasonAsync(opt.Code, _userId);
+            if (!r.Ok) { await Modal.WarningAsync("Couldn't save", r.Message); return; }
+            _season = opt.Code;
+            Season.Remember(opt.Code);
+            await JS.InvokeVoidAsync("amsSeason.set", Seasons.Resolve(opt.Code, PhTime.Now));   // this page changes now, the others within a few seconds
+            await JS.InvokeVoidAsync("showToast", r.Message, "success");
+        }
+        finally { _seasonSaving = false; }
+    }
+
+    private async Task ToggleAppCseAsync(ChangeEventArgs e)
+    {
+        var want = e.Value is true;
+        if (want == _appCseRequired) return;
+        var ok = await Modal.ConfirmAsync(
+            want ? "Require APP-CSE again?" : "Turn off the APP-CSE requirement?",
+            want ? "Offices will only be able to request items in their APP-CSE, within their balance."
+                 : "Offices will be able to request any catalog item in any quantity, even items not in their APP-CSE. AMS still checks warehouse stock when approving.",
+            want ? "Require APP-CSE" : "Turn it off", "Cancel", want ? ModalVariant.Info : ModalVariant.Warning);
+        // This is the Cancel part: the browser already flipped the switch, so redraw it from the saved value
+        if (!ok) { _appCseKey++; return; }
+        _appCseSaving = true;
+        try
+        {
+            var r = await SettingsSvc.SaveRequireAppCseAsync(want, _userId);
+            if (!r.Ok) { _appCseKey++; await Modal.WarningAsync("Couldn't save", r.Message); return; }
+            _appCseRequired = want;
+            await JS.InvokeVoidAsync("showToast", r.Message, "success");
+        }
+        finally { _appCseSaving = false; }
     }
 
     private async Task LoadOfficesAsync()
     {
         _offices = await SettingsSvc.OfficesAsync();
-        _officeEdits = _offices.ToDictionary(o => o.OfficeId, o => new OfficeEdit { Rc = o.ResponsibilityCenterCode ?? "", Can = o.CanRequisition, Sheet = o.AppCseSheet ?? "" });
+        _officeEdits = _offices.ToDictionary(o => o.OfficeId, o => new OfficeEdit { Rc = o.ResponsibilityCenterCode ?? "", Can = o.CanRequisition, Sheet = o.AppCseSheet ?? "", Code = o.RisCode ?? "", AppCseOf = o.AppCseOfficeId ?? 0 });
     }
 
     private async Task SaveAsync()
@@ -145,7 +266,7 @@
                 "Its account can still log in, but it won't be able to submit requisitions.", "Save", "Cancel", ModalVariant.Warning);
             if (!ok) return;
         }
-        var r = await SettingsSvc.SaveOfficeAsync(o.OfficeId, row.Rc, row.Can, row.Sheet, _userId);
+        var r = await SettingsSvc.SaveOfficeAsync(o.OfficeId, row.Rc, row.Can, row.Sheet, row.Code, row.AppCseOf, _userId);
         if (!r.Ok) { await Modal.WarningAsync("Couldn't save", r.Message); return; }
         await LoadOfficesAsync();
         await JS.InvokeVoidAsync("showToast", r.Message, "success");

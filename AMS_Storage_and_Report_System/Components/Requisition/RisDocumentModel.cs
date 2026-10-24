@@ -1,7 +1,7 @@
 namespace AMS_Storage_and_Report_System.Components.Requisition;
 
-/// One model drives the live cart preview, the admin review screen and the print/PDF.
-/// Build it from the cart (draft) or from ris_transactions + ris_items (submitted).
+/// I use one model for the cart preview, the admin review screen and the print/PDF.
+/// It's built from the cart (draft) or from ris_transactions and ris_items (submitted).
 public sealed record RisDocumentModel
 {
     public required string EntityName { get; init; }
@@ -9,7 +9,7 @@ public sealed record RisDocumentModel
     public required string Division { get; init; }
     public required string Office { get; init; }
     public string? ResponsibilityCenterCode { get; init; }
-    public string? RisNo { get; init; }              // null while still a cart
+    public string? RisNo { get; init; }              // null while it's still a cart
     public string? Purpose { get; init; }
     public string? Status { get; init; }
     public IReadOnlyList<RisLine> Lines { get; init; } = [];

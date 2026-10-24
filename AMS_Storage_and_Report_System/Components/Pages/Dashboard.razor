@@ -8,7 +8,7 @@
 @inject SupplyDashboardService SupplySvc
 @implements IDisposable
 
-<PageTitle>Dashboard | AMS StockWatch</PageTitle>
+<PageTitle>Dashboard | e-PINS</PageTitle>
 
 <PageHeader Title="@Greeting" Subtitle="@($"{PhTime.Now:dddd, MMMM d, yyyy}. Here's what needs attention today.")" />
 
@@ -22,29 +22,29 @@
         @if (_supplyTablesMissing)
         {
             <div class="callout"><i class="bi bi-database-exclamation" aria-hidden="true"></i>
-                <p>Requisition and inventory figures will appear once the AMS Supplies database update (<code>001_requisition_portal.sql</code>) has been run.</p></div>
+                <p>Requisition and inventory figures will appear once the e-SRS database update (<code>001_requisition_portal.sql</code>) has been run.</p></div>
         }
 
         <div class="stat-grid">
             <a class="stat" href="/requisitions">
                 <span class="stat-icon is-gold"><i class="bi bi-inbox" aria-hidden="true"></i></span>
-                <span><span class="stat-value">@_pendingRis</span><span class="stat-label">Requisitions waiting for approval</span></span>
+                <span><span class="stat-tag is-ris"><i class="bi bi-file-earmark-text" aria-hidden="true"></i>Requisition and Issue Slip</span><span class="stat-value">@_pendingRis</span><span class="stat-label">Requisitions waiting for approval</span></span>
             </a>
             <a class="stat" href="/inventory?stock=low">
                 <span class="stat-icon is-warn"><i class="bi bi-exclamation-circle" aria-hidden="true"></i></span>
-                <span><span class="stat-value">@_lowStock</span><span class="stat-label">Items low on stock</span></span>
+                <span><span class="stat-tag is-supplies"><i class="bi bi-box-seam" aria-hidden="true"></i>Supplies Inventory</span><span class="stat-value">@_lowStock</span><span class="stat-label">Items low on stock</span></span>
             </a>
             <a class="stat" href="/inventory?stock=out">
                 <span class="stat-icon is-bad"><i class="bi bi-x-circle" aria-hidden="true"></i></span>
-                <span><span class="stat-value">@_outOfStock</span><span class="stat-label">Items out of stock</span></span>
+                <span><span class="stat-tag is-supplies"><i class="bi bi-box-seam" aria-hidden="true"></i>Supplies Inventory</span><span class="stat-value">@_outOfStock</span><span class="stat-label">Items out of stock</span></span>
             </a>
             <a class="stat" href="/property-documents">
                 <span class="stat-icon"><i class="bi bi-folder2-open" aria-hidden="true"></i></span>
-                <span><span class="stat-value">@_documents</span><span class="stat-label">Property documents on file</span></span>
+                <span><span class="stat-tag is-property"><i class="bi bi-boxes" aria-hidden="true"></i>Property</span><span class="stat-value">@_documents</span><span class="stat-label">Property documents on file</span></span>
             </a>
             <a class="stat" href="/employees">
                 <span class="stat-icon is-ok"><i class="bi bi-people" aria-hidden="true"></i></span>
-                <span><span class="stat-value">@_personnel</span><span class="stat-label">RO personnel in @_offices offices</span></span>
+                <span><span class="stat-tag is-people"><i class="bi bi-people" aria-hidden="true"></i>Employees</span><span class="stat-value">@_personnel</span><span class="stat-label">RO personnel in @_offices offices</span></span>
             </a>
         </div>
 
@@ -52,7 +52,7 @@
             <div class="col-lg-6">
                 <section class="panel h-100">
                     <header class="panel-head">
-                        <h2>Waiting for approval</h2>
+                        <div class="panel-title"><span class="stat-tag is-ris"><i class="bi bi-file-earmark-text" aria-hidden="true"></i>Requisition and Issue Slip</span><h2>Waiting for approval</h2></div>
                         <a class="act" href="/requisitions">Open queue <i class="bi bi-chevron-right" aria-hidden="true"></i></a>
                     </header>
                     @if (_pending.Count == 0)
@@ -67,7 +67,7 @@
                                 <tbody>
                                     @foreach (var r in _pending)
                                     {
-                                        <tr>
+                                        <tr @key="r.RisId" class="@(_fresh.Contains(r.RisId) ? "is-fresh" : null)">
                                             <td class="cell-strong text-nowrap"><a href="/requisitions/@r.RisId">@r.RisNo</a></td>
                                             <td>@r.OfficeAcronym</td>
                                             <td class="t-num">@r.ItemCount</td>
@@ -84,7 +84,7 @@
             <div class="col-lg-6">
                 <section class="panel h-100">
                     <header class="panel-head">
-                        <h2>Needs restocking</h2>
+                        <div class="panel-title"><span class="stat-tag is-supplies"><i class="bi bi-box-seam" aria-hidden="true"></i>Supplies Inventory</span><h2>Needs restocking</h2></div>
                         <a class="act" href="/inventory?stock=low">View inventory <i class="bi bi-chevron-right" aria-hidden="true"></i></a>
                     </header>
                     @if (_restock.Count == 0)
@@ -123,7 +123,7 @@
             </div>
         </div>
 
-        @* ── Office supplies: stock levels and most requested ──────────── *@
+        @* Office supplies: stock levels and most requested *@
         <div class="section-title">
             <h2><i class="bi bi-box-seam" aria-hidden="true"></i>Office supplies</h2>
             @if (!_supplyTablesMissing)
@@ -170,7 +170,7 @@
             </div>
         }
 
-        @* ── Property dashboard ───────────────────────────────────────── *@
+        @* Property dashboard *@
         <div class="section-title">
             <h2><i class="bi bi-boxes" aria-hidden="true"></i>Property</h2>
             <a class="act" href="/property-register">Open property register <i class="bi bi-chevron-right" aria-hidden="true"></i></a>
@@ -362,9 +362,20 @@
 
     private async Task OnLiveAsync(IReadOnlyList<RisEvent> _)
     {
+        var before = _pending?.Select(r => r.RisId).ToHashSet();
         await LoadFiguresAsync();
+        // A requisition that just came in gets a short gold highlight.
+        _fresh = before is null || _pending is null ? [] : _pending.Select(r => r.RisId).Where(id => !before.Contains(id)).ToHashSet();
         StateHasChanged();
+        if (_fresh.Count > 0)
+        {
+            await Task.Delay(4000);
+            _fresh = [];
+            StateHasChanged();
+        }
     }
+
+    private HashSet<long> _fresh = [];
 
     public void Dispose()
     {
@@ -376,12 +387,12 @@
     {
         await using var db = await DbFactory.CreateDbContextAsync();
 
-        // Records that exist in every version of the database
+        // Records that are in every version of the database
         _documents = await db.PropertyDocuments.LongCountAsync();
         _personnel = await db.RoPersonnel.LongCountAsync();
         _offices = await db.RoPersonnel.Select(p => p.OfficeId).Distinct().LongCountAsync();
 
-        // Supply tables come from the AMS Supplies portal update
+        // The supply tables come from the e-SRS update
         try
         {
             _pendingRis = await Count(db, $"SELECT COUNT(*) AS Value FROM ris_transactions WHERE status = 'PendingApproval'");
@@ -418,7 +429,7 @@
         try { _property = await PropertySvc.DashboardAsync(Since); }
         catch (Exception ex)
         {
-            _property = null;   // register table not created yet
+            _property = null;   // register table isn't made yet
             if (!ex.GetBaseException().Message.Contains("doesn't exist")) Log.LogError(ex, "Property dashboard failed");
         }
     }
@@ -426,7 +437,7 @@
     private static Task<long> Count(AppDbContext db, FormattableString sql) =>
         db.Database.SqlQuery<long>(sql).SingleAsync();
 
-    // Live: when catalog, appcse, property, documents, personnel change on either website, reload without a refresh.
+    // Live update: when the catalog, APP-CSE, property, documents or personnel change on either website, reload without refreshing.
     private static readonly string[] LiveAreas = ["catalog", "appcse", "property", "documents", "personnel"];
     protected override void OnInitialized() => Live.AreasChanged += OnAreasAsync;
 

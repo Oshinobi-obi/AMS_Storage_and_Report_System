@@ -16,27 +16,27 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ── Connection string (User Secrets in development; never in appsettings.json) ──
+// Connection string (User Secrets in development, never in appsettings.json)
 var connectionString = builder.Configuration.GetConnectionString("Default");
 if (string.IsNullOrWhiteSpace(connectionString))
     throw new InvalidOperationException(
         "ConnectionStrings:Default is empty. Run in the project folder: " +
         "dotnet user-secrets set \"ConnectionStrings:Default\" \"server=localhost;port=3306;database=ams_stockwatch;user=...;password=...;\"");
 
-// ── Data Protection keys (cookies, antiforgery) stored in MySQL ─────────────────
+// Data Protection keys (for cookies and antiforgery) saved in MySQL
 var dataProtection = builder.Services.AddDataProtection()
     .SetApplicationName("AMS_StockWatch")
     .AddKeyManagementOptions(o => o.XmlRepository = new MySqlXmlRepository(connectionString));
-// Encrypt the stored keys with Windows DPAPI on your own PC/server. Shared hosts often
-// don't allow it, so it can be switched off with "DataProtection:UseDpapi": false.
+// I encrypt the saved keys with Windows DPAPI on my own PC or server. Shared hosts usually
+// don't allow it, so it can be turned off with "DataProtection:UseDpapi": false.
 if (OperatingSystem.IsWindows() && builder.Configuration.GetValue("DataProtection:UseDpapi", true))
     dataProtection.ProtectKeysWithDpapi(protectToLocalMachine: true);
 
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents(o => o.DetailedErrors = builder.Environment.IsDevelopment())
+    .AddInteractiveServerComponents(o => o.DetailedErrors = builder.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("DetailedErrors"))
     .AddHubOptions(o => o.MaximumReceiveMessageSize = 50 * 1024 * 1024);   // PDF uploads
 
-// One short-lived DbContext per operation (Blazor Server circuits are long-lived).
+// One short-lived DbContext per operation (Blazor Server circuits stay open a long time).
 var serverVersion = ServerVersion.Parse("8.0.46-mysql");
 builder.Services.AddDbContextFactory<AppDbContext>(o => o.UseMySql(connectionString, serverVersion));
 
@@ -51,7 +51,10 @@ builder.Services.AddScoped<ReportService>();
 builder.Services.AddScoped<SupplyDashboardService>();
 builder.Services.AddScoped<SemiExpendableService>();
 builder.Services.AddScoped<SettingsService>();
+builder.Services.AddSingleton<SeasonState>();
 builder.Services.AddScoped<PropertyService>();
+builder.Services.AddScoped<PropertyDocumentLinks>();
+builder.Services.AddScoped<PersonnelBirthdays>();
 builder.Services.AddScoped<AdminExtrasService>();
 // Live updates: one database watcher for the server, one relay per browser tab
 builder.Services.AddSingleton<AMS_Storage_and_Report_System.Services.Live.RisEventFeed>();
@@ -65,25 +68,25 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.AccessDeniedPath = "/dashboard";
         options.Cookie.Name = "ams_stockwatch_auth";
         options.Cookie.HttpOnly = true;
-        // Secure-only cookies need HTTPS. "Auth:AllowHttpCookies": true is a TEMPORARY switch for a
-        // server without an SSL certificate yet. Set it back to false once the site has HTTPS.
+        // Secure-only cookies need HTTPS. "Auth:AllowHttpCookies": true is only TEMPORARY for a
+        // server that has no SSL certificate yet. Set it back to false once the site has HTTPS.
         options.Cookie.SecurePolicy = builder.Environment.IsDevelopment() || builder.Configuration.GetValue("Auth:AllowHttpCookies", false)
             ? CookieSecurePolicy.SameAsRequest
             : CookieSecurePolicy.Always;
         options.Cookie.SameSite = SameSiteMode.Lax;   // Strict drops the cookie when the site is opened from a link
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
         options.SlidingExpiration = true;
-        // Re-check the account every 5 minutes: deactivated / reset / changed password = signed out
+        // Check the account again every 5 minutes: deactivated, reset or changed password means logged out
         options.Events.OnValidatePrincipal = SessionGuard.ValidatePrincipalAsync;
     });
 builder.Services.AddAuthorization();
 builder.Services.AddCascadingAuthenticationState();
-// Open pages re-check the account every 5 minutes too
+// Open pages also check the account every 5 minutes
 builder.Services.AddScoped<AuthenticationStateProvider, RevalidatingAuthStateProvider>();
 
-// ── Sign-in rate limit per computer (IP address) ────────────────────────────
-// 40 attempts per 5 minutes: plenty for a whole office behind one internet connection,
-// far too few for automated password guessing. Each account also locks after 5 wrong tries.
+// Login rate limit per computer (IP address)
+// 40 tries per 5 minutes is enough for a whole office on one internet connection,
+// but way too few for a password guessing bot. Each account also locks after 5 wrong tries.
 builder.Services.AddRateLimiter(o =>
 {
     o.AddPolicy("login", http => System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
@@ -104,6 +107,8 @@ builder.Services.AddRateLimiter(o =>
 
 
 builder.Services.AddSingleton<PropertyDocumentStorage>();
+builder.Services.AddSingleton<DeliveryDocumentStorage>();
+builder.Services.AddScoped<DeliveryService>();
 builder.Services.AddSingleton<ProfilePictureStorage>();
 
 var app = builder.Build();
@@ -121,7 +126,7 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Pages show personal data; don't let the browser cache them.
+// The pages show personal data, so the browser shouldn't cache them.
 app.Use(async (context, next) =>
 {
     context.Response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate";
@@ -130,11 +135,11 @@ app.Use(async (context, next) =>
     await next();
 });
 
-// ── Security headers on every response ──────────────────────────────────────
+// Security headers on every response
 app.Use(async (context, next) =>
 {
     var h = context.Response.Headers;
-    h["X-Content-Type-Options"] = "nosniff";                         // browsers must not guess file types
+    h["X-Content-Type-Options"] = "nosniff";                         // browsers shouldn't guess file types
     h["X-Frame-Options"] = "SAMEORIGIN";                             // other websites can't show this site in a frame
     h["Content-Security-Policy"] = "frame-ancestors 'self'";
     h["Referrer-Policy"] = "strict-origin-when-cross-origin";
@@ -146,8 +151,8 @@ app.Use(async (context, next) =>
 app.UseAntiforgery();
 
 app.MapStaticAssets();
-// ── Live-update status (open /live/status while signed in) ──────────────────
-// Shows whether the 5-second watcher is running and the last error it met, if any.
+// Live update status (open /live/status while logged in)
+// Shows if the 5-second watcher is running and the last error, if there is one.
 app.MapGet("/live/status", (AMS_Storage_and_Report_System.Services.Live.RisEventFeed feed) =>
 {
     static string? Ph(DateTime? utc) => utc is { } u ? AMS_Storage_and_Report_System.Services.PhTime.FromUtc(u).ToString("yyyy-MM-dd hh:mm:ss tt") : null;
@@ -168,7 +173,7 @@ app.MapGet("/live/status", (AMS_Storage_and_Report_System.Services.Live.RisEvent
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-// ── Sign in / out ───────────────────────────────────────────────────────────
+// Log in / out
 static string SafeLocal(string? url) =>
     !string.IsNullOrEmpty(url) && url.StartsWith('/') && !url.StartsWith("//") && !url.StartsWith("/\\") ? url : "/dashboard";
 
@@ -220,7 +225,7 @@ app.MapPost("/account/logout", async (HttpContext http) =>
     return Results.LocalRedirect("/login?signedOut=true");
 });
 
-// Re-issues the cookie after the profile, picture or password changes.
+// Makes a new cookie after the profile, picture or password changes.
 app.MapGet("/account/refresh-session", async (HttpContext http, IDbContextFactory<AppDbContext> dbFactory, string? returnUrl) =>
 {
     var username = http.User.Identity?.Name;
@@ -247,7 +252,7 @@ app.MapGet("/account/refresh-session", async (HttpContext http, IDbContextFactor
     return Results.LocalRedirect(string.IsNullOrEmpty(returnUrl) ? "/profile" : SafeLocal(returnUrl));
 }).RequireAuthorization();
 
-// ── Property documents (PDF) ────────────────────────────────────────────────
+// Property documents (PDF)
 var docStorage = app.Services.GetRequiredService<PropertyDocumentStorage>();
 var pictureStorage = app.Services.GetRequiredService<ProfilePictureStorage>();
 
@@ -274,40 +279,93 @@ app.MapGet("/documents/download/{id:int}", async (int id, IDbContextFactory<AppD
     return path is null ? Results.NotFound() : Results.File(path, "application/pdf", doc!.OriginalFileName);
 }).RequireAuthorization();
 
-app.MapGet("/documents/download-bulk", async (string? ids, IDbContextFactory<AppDbContext> dbFactory) =>
+// The public My accountability page of e-SRS reads the PDFs through here, because the two
+// sites keep their files separate. I only answer a caller that sends the secret word in
+// "Integration:Key" (the same in the appsettings of both sites). With no key set, this returns "not found".
+app.MapGet("/integration/property-documents/{id:int}", async (int id, HttpContext http, IConfiguration config, IDbContextFactory<AppDbContext> dbFactory) =>
+{
+    var key = config["Integration:Key"];
+    var sent = http.Request.Headers["X-AMS-Key"].ToString();
+    if (string.IsNullOrWhiteSpace(key) || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+            System.Text.Encoding.UTF8.GetBytes(sent), System.Text.Encoding.UTF8.GetBytes(key)))
+        return Results.NotFound();
+    await using var db = await dbFactory.CreateDbContextAsync();
+    var doc = await db.PropertyDocuments.FindAsync(id);
+    var path = doc is null ? null : DocPath(doc);
+    return path is null ? Results.NotFound() : Results.File(File.OpenRead(path), "application/pdf");
+});
+
+app.MapGet("/documents/download-bulk", async (string? ids, IDbContextFactory<AppDbContext> dbFactory, ILogger<Program> log) =>
 {
     var idList = (ids ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
         .Select(s => int.TryParse(s, out var n) ? n : (int?)null)
         .Where(n => n is not null).Select(n => n!.Value)
-        .Distinct().Take(200).ToList();
+        .Distinct().Take(300).ToList();
     if (idList.Count == 0) return Results.BadRequest("No documents selected.");
 
     await using var db = await dbFactory.CreateDbContextAsync();
-    var docs = await db.PropertyDocuments.Where(d => idList.Contains(d.DocumentId)).ToListAsync();
+    var docs = await db.PropertyDocuments.AsNoTracking().Include(d => d.Personnel)
+        .Where(d => idList.Contains(d.DocumentId)).OrderBy(d => d.DocumentId).ToListAsync();
+    var found = docs.Select(d => (Doc: d, Path: DocPath(d))).ToList();
+    var missing = found.Where(f => f.Path is null).Select(f => f.Doc).ToList();
+    if (missing.Count > 0)
+        log.LogWarning("Bulk download: {Missing} of {Total} PDFs not found in {Root}", missing.Count, found.Count, docStorage.RootPath);
+    if (found.All(f => f.Path is null))
+        return Results.Text($"None of the {found.Count} selected PDF files were found on the server (folder: {docStorage.RootPath}). " +
+                            "Check Storage:PropertyDocumentsPath in appsettings, or upload the documents again.", "text/plain", statusCode: 404);
 
-    var memoryStream = new MemoryStream();
-    using (var archive = new ZipArchive(memoryStream, ZipArchiveMode.Create, leaveOpen: true))
+    // I build it in a temp file, not in memory, so hundreds of big scans don't make the site run out of memory.
+    // PDFs are already compressed, so saving them as they are is faster and just as small.
+    var tempPath = Path.Combine(Path.GetTempPath(), $"ams-docs-{Guid.NewGuid():N}.zip");
+    var zipFile = new FileStream(tempPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 81920, FileOptions.DeleteOnClose);
+    try
     {
-        var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var doc in docs)
+        using (var archive = new ZipArchive(zipFile, ZipArchiveMode.Create, leaveOpen: true))
         {
-            var path = DocPath(doc);
-            if (path is null) continue;
-            // Two files with the same original name would overwrite each other in the zip.
-            var entryName = Path.GetFileName(doc.OriginalFileName);
-            if (!usedNames.Add(entryName))
-                entryName = $"{Path.GetFileNameWithoutExtension(entryName)} ({doc.DocumentId}){Path.GetExtension(entryName)}";
-            var entry = archive.CreateEntry(entryName);
-            await using var entryStream = entry.Open();
-            await using var fileStream = File.OpenRead(path);
-            await fileStream.CopyToAsync(entryStream);
+            var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (doc, path) in found.Where(f => f.Path is not null))
+            {
+                // Two files with the same name would overwrite each other in the zip.
+                var entryName = Path.GetFileName(doc.OriginalFileName);
+                if (string.IsNullOrWhiteSpace(entryName)) entryName = $"document-{doc.DocumentId}.pdf";
+                if (!usedNames.Add(entryName))
+                    entryName = $"{Path.GetFileNameWithoutExtension(entryName)} ({doc.DocumentId}){Path.GetExtension(entryName)}";
+                var entry = archive.CreateEntry(entryName, CompressionLevel.NoCompression);
+                using var entryStream = entry.Open();
+                using var fileStream = File.OpenRead(path!);
+                fileStream.CopyTo(entryStream);
+            }
+            if (missing.Count > 0)
+            {
+                var note = archive.CreateEntry("_files-not-found.txt");
+                using var w = new StreamWriter(note.Open());
+                w.WriteLine($"{missing.Count} of the selected documents have no PDF file on the server:");
+                foreach (var d in missing) w.WriteLine($"- {d.DocumentType} {d.OriginalFileName} ({d.Personnel?.FullName})");
+            }
         }
+        zipFile.Position = 0;
+        return Results.File(zipFile, "application/zip", $"property-documents-{PhTime.Now:yyyyMMdd}.zip");
     }
-    memoryStream.Position = 0;
-    return Results.File(memoryStream, "application/zip", $"property-documents-{PhTime.Now:yyyyMMdd}.zip");
+    catch
+    {
+        await zipFile.DisposeAsync();
+        throw;
+    }
 }).RequireAuthorization();
 
-// ── Signed RIS (PDF uploaded at issuance) ───────────────────────────────────
+// Delivery documents: DR, Sales Invoice and IAR scanned into one PDF (Reports > Deliveries)
+app.MapGet("/deliveries/{id:int}/document", async (int id, bool? download, IDbContextFactory<AppDbContext> dbFactory, DeliveryDocumentStorage storage) =>
+{
+    await using var db = await dbFactory.CreateDbContextAsync();
+    var d = await db.SupplyDeliveries.AsNoTracking().FirstOrDefaultAsync(x => x.DeliveryId == id);
+    var path = d is null ? null : storage.PathOf(d);
+    if (path is null) return Results.NotFound();
+    var name = $"Delivery {d!.ReferenceNo} {d.ReceivedOn:yyyy-MM-dd}.pdf";
+    foreach (var c in Path.GetInvalidFileNameChars()) name = name.Replace(c, '-');
+    return download == true ? Results.File(path, "application/pdf", name) : Results.File(path, "application/pdf");
+}).RequireAuthorization();
+
+// Signed RIS (PDF uploaded when issued)
 app.MapGet("/requisitions/{id:int}/signed", async (int id, bool? download, IDbContextFactory<AppDbContext> dbFactory) =>
 {
     await using var db = await dbFactory.CreateDbContextAsync();
@@ -319,7 +377,7 @@ app.MapGet("/requisitions/{id:int}/signed", async (int id, bool? download, IDbCo
         : Results.File(copy.Content, "application/pdf");
 }).RequireAuthorization();
 
-// ── Catalog photos (admin preview) ──────────────────────────────────────────
+// Catalog photos (admin preview)
 app.MapGet("/catalog/image/{id:int}", async (int id, IDbContextFactory<AppDbContext> dbFactory) =>
 {
     await using var db = await dbFactory.CreateDbContextAsync();
@@ -327,7 +385,7 @@ app.MapGet("/catalog/image/{id:int}", async (int id, IDbContextFactory<AppDbCont
     return img is null ? Results.NotFound() : Results.File(img.Content, img.ContentType);
 }).RequireAuthorization();
 
-// ── Excel downloads ─────────────────────────────────────────────────────────
+// Excel downloads
 const string Xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 app.MapGet("/exports/app-cse-template", async (int year, AppCseService svc) =>
@@ -382,7 +440,7 @@ app.MapGet("/exports/stock-card/{id:int}", async (int id, ReportService reports)
         ? Results.File(file, Xlsx, $"stock-card-{id}.xlsx")
         : Results.NotFound()).RequireAuthorization();
 
-// ── Profile pictures ────────────────────────────────────────────────────────
+// Profile pictures
 app.MapGet("/api/profile-picture/{fileName}", (string fileName) =>
 {
     var path = pictureStorage.ResolveSafe(fileName);

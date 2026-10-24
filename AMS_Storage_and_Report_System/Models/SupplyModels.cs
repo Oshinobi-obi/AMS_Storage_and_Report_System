@@ -1,7 +1,7 @@
 namespace AMS_Storage_and_Report_System.Models;
 
-// Tables created by the AMS Supplies portal update (Database/001_requisition_portal.sql).
-// Unsigned MySQL ids are mapped to int to match Office/RoPersonnel in this project.
+// These tables come from the e-SRS update (Database/001_requisition_portal.sql).
+// The unsigned MySQL ids are mapped to int to match Office/RoPersonnel in this project.
 
 public static class RisStatus
 {
@@ -45,12 +45,17 @@ public class SupplyItem
     public int StockOnHand { get; set; }
     public int ReorderLevel { get; set; }
     public bool IsActive { get; set; }
-    /// Has an expiration date (printer ink, toner, glue...). EXP is required, MFD is optional.
+    /// The item expires (printer ink, toner, glue...). EXP is required, MFD is optional.
     public bool IsPerishable { get; set; }
     public DateTime? ManufacturedOn { get; set; }
     public DateTime? ExpiresOn { get; set; }
+    /// MFD / EXP shown as month and year only. I save a month-only EXP as the last day of the month.
+    public bool MfdMonthOnly { get; set; }
+    public bool ExpMonthOnly { get; set; }
+    /// Colors the offices can choose in e-SRS, like "Black|#1f2937;Blue|#1d4ed8" (see ItemColors).
+    public string? ColorOptions { get; set; }
 
-    /// Days until expiry (negative = already expired); null when the item doesn't expire.
+    /// Days until it expires (negative means already expired), null if the item doesn't expire.
     public int? DaysToExpiry => IsPerishable && ExpiresOn is { } e ? (e.Date - Services.PhTime.Now.Date).Days : null;
 
     public ItemCategory? Category { get; set; }
@@ -74,7 +79,7 @@ public class Supplier
     public bool IsActive { get; set; } = true;
 }
 
-/// Item photo shown on the AMS Supplies catalog (table item_images).
+/// Item photo shown in the e-SRS catalog (table item_images).
 public class ItemImage
 {
     public int ItemId { get; set; }
@@ -211,13 +216,15 @@ public class StockMovement
     public string? ReferenceType { get; set; }
     public string? ReferenceNo { get; set; }
     public int? RisId { get; set; }
+    /// RECEIPT lines: the delivery they came with (table supply_deliveries).
+    public int? DeliveryId { get; set; }
     public int? OfficeId { get; set; }
     public string? Remarks { get; set; }
     public uint PerformedBy { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 
-/// The wet-signed RIS scanned to PDF by AMS at issuance (table ris_signed_copies).
+/// The RIS with the real signatures, scanned to PDF by AMS when issued (table ris_signed_copies).
 public class RisSignedCopy
 {
     public int RisId { get; set; }
@@ -232,4 +239,18 @@ public class SystemSetting
 {
     public string SettingKey { get; set; } = "";
     public string SettingValue { get; set; } = "";
+}
+
+/// A delivery received in Supplies inventory, with the scanned DR, Sales Invoice and IAR (one PDF).
+public class SupplyDelivery
+{
+    public int DeliveryId { get; set; }
+    public string ReferenceNo { get; set; } = "";
+    public DateTime ReceivedOn { get; set; }
+    public string? Supplier { get; set; }
+    public string? Remarks { get; set; }
+    public string? FilePath { get; set; }
+    public string? OriginalFileName { get; set; }
+    public uint RecordedBy { get; set; }
+    public DateTime RecordedAt { get; set; }
 }

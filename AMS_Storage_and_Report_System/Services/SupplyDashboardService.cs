@@ -1,8 +1,8 @@
-// SupplyDashboardService.cs — office-supply figures for the dashboard and its Excel report:
-//   • stock level of every item (on hand, reserved for pickup, low-stock level)
-//   • the most requested supplies for a period
-//   • requisitions by status
-// The Excel report has the same figures as tables, each with a real Excel chart.
+// This gets the office supply numbers for the dashboard and its Excel report:
+//   stock level of every item (on hand, reserved for pickup, low-stock level)
+//   the most requested supplies for a period
+//   requisitions by status
+// The Excel report has the same numbers as tables, each with a real Excel chart.
 
 using AMS_Storage_and_Report_System.Data;
 using AMS_Storage_and_Report_System.Models;
@@ -19,7 +19,7 @@ public sealed record StockLevelRow(int ItemId, string StockNo, string Item, stri
     public int Available => Math.Max(OnHand - Reserved, 0);
     public StockLevel Level => OnHand <= 0 ? StockLevel.Out : OnHand <= ReorderLevel ? StockLevel.Low : StockLevel.Ok;
     public string LevelLabel => Level switch { StockLevel.Out => "Out of stock", StockLevel.Low => "Low stock", _ => "In stock" };
-    /// On hand compared with the low-stock level (1.0 = exactly at the level). Used to sort "closest to running out".
+    /// On hand compared to the low-stock level (1.0 means exactly at the level). I sort "closest to running out" with this.
     public double Cover => ReorderLevel <= 0 ? (OnHand <= 0 ? 0 : double.MaxValue) : (double)OnHand / ReorderLevel;
     public decimal Value => OnHand * UnitPrice;
 }
@@ -31,10 +31,10 @@ public sealed record StatusCount(string Label, int Count, string Color);
 
 public sealed class SupplyDashboardService(IDbContextFactory<AppDbContext> dbFactory, RequisitionAdminService requisitions)
 {
-    // Status colours: the same green / amber / red as the badges in Inventory.
+    // Status colors: the same green, amber and red as the badges in Inventory.
     public const string OkColor = "#1E9E5A", LowColor = "#E0A400", OutColor = "#D63A3A", Brand = "#0B2FA8";
 
-    /// "all", "year", "quarter" or "month" → the start date (null = all time) and a label for reports.
+    /// "all", "year", "quarter" or "month" gives the start date (null means all time) and a label for the reports.
     public static (DateTime? Since, string Label) Period(string? key)
     {
         var now = PhTime.Now;
@@ -63,7 +63,7 @@ public sealed class SupplyDashboardService(IDbContextFactory<AppDbContext> dbFac
     }
 
     /// Ranked by how many requisitions asked for the item (cancelled ones don't count),
-    /// then by quantity. Counting requisitions keeps reams, boxes and pieces comparable.
+    /// then by quantity. Counting requisitions makes reams, boxes and pieces comparable.
     public async Task<List<RequestedRow>> MostRequestedAsync(DateTime? since, int take = 10)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -111,7 +111,7 @@ public sealed class SupplyDashboardService(IDbContextFactory<AppDbContext> dbFac
         ];
     }
 
-    // ── Excel report ────────────────────────────────────────────────────
+    // Excel report
     public async Task<byte[]> ExcelAsync(DateTime? since, string periodLabel, string entityName)
     {
         var stock = await StockLevelsAsync();
@@ -122,7 +122,7 @@ public sealed class SupplyDashboardService(IDbContextFactory<AppDbContext> dbFac
 
         using var wb = new XLWorkbook();
 
-        // ── Summary ──
+        // Summary
         var sum = wb.Worksheets.Add("Summary");
         sum.Cell(1, 1).Value = "OFFICE SUPPLIES REPORT";
         sum.Cell(1, 1).Style.Font.SetBold().Font.SetFontSize(16).Font.SetFontColor(navy);
@@ -162,7 +162,7 @@ public sealed class SupplyDashboardService(IDbContextFactory<AppDbContext> dbFac
             FromCol: 3, FromRow: 22, ToCol: 10, ToRow: 38, PointColors: status.Select(s => s.Color).ToList()));
         sum.Column(1).Width = 22; sum.Column(2).Width = 14;
 
-        // ── Stock levels ──
+        // Stock levels
         var st = wb.Worksheets.Add("Stock levels");
         var sr = Header(st, 1, "Stock No.", "Item", "Category", "Unit", "On hand", "Reserved for pickup", "Available", "Low-stock level", "Status", "Unit price", "Value on hand");
         var firstStock = sr;
@@ -177,7 +177,7 @@ public sealed class SupplyDashboardService(IDbContextFactory<AppDbContext> dbFac
             sr++;
         }
         st.Columns(1, 11).AdjustToContents(1, Math.Max(sr, 2), 8, 50);
-        // Chart: the 15 items closest to running out (the sheet is sorted that way)
+        // Chart: the 15 items closest to running out (the sheet is already sorted that way)
         var watch = Math.Min(15, stock.Count);
         if (watch > 0)
         {
@@ -193,7 +193,7 @@ public sealed class SupplyDashboardService(IDbContextFactory<AppDbContext> dbFac
         }
         if (sr > firstStock) st.Range(firstStock - 1, 1, sr - 1, 11).SetAutoFilter();
 
-        // ── Most requested ──
+        // Most requested
         var mr = wb.Worksheets.Add("Most requested");
         mr.Cell(1, 1).Value = $"Most requested office supplies, {periodLabel}";
         mr.Cell(1, 1).Style.Font.SetBold().Font.SetFontSize(13).Font.SetFontColor(navy);

@@ -8,9 +8,9 @@
 @inject IJSRuntime JS
 @inject ILogger<Account> Log
 
-<PageTitle>Accounts | AMS StockWatch</PageTitle>
+<PageTitle>Accounts | e-PINS</PageTitle>
 
-<PageHeader Title="Accounts" Subtitle="Sign-in accounts for AMS staff and for the offices that use the AMS Supplies portal.">
+<PageHeader Title="Accounts" Subtitle="Sign-in accounts for AMS staff and for the offices that use the e-SRS portal.">
     <Actions>
         @if (_isSuperAdmin)
         {
@@ -70,7 +70,7 @@
                     <table class="data-table">
                         <thead><tr><th>Account</th><th>Role</th><th>Status</th><th>Last sign-in</th><th class="text-end">Actions</th></tr></thead>
                         <tbody>
-                            @foreach (var u in Visible)
+                            @foreach (var u in Visible.Page(_pUsers))
                             {
                                 <tr class="@(u.IsActive ? "" : "is-dim")" @key="u.UserId">
                                     <td>
@@ -127,12 +127,13 @@
                         </tbody>
                     </table>
                 </div>
+                <Pager Total="Visible.Count()" @bind-Page="_pUsers" ResetKey="@($"{_scope}|{_search}")" Label="Account pages" />
             }
         </section>
     }
 </div>
 
-@* ── Add account ── *@
+@* Add account *@
 <Dialog Show="_addOpen" Title="Add account" Icon="bi-person-plus" Busy="_saving" OnClose="() => _addOpen = false">
     <ChildContent>
         <div class="field">
@@ -188,7 +189,7 @@
     </Footer>
 </Dialog>
 
-@* ── Reset password ── *@
+@* Reset password *@
 <Dialog Show="_resetUser is not null" Title="@($"Reset password for {_resetUser?.Name}")" Icon="bi-key" Variant="warning"
         Busy="_saving" OnClose="() => _resetUser = null">
     <ChildContent>
@@ -223,7 +224,7 @@
     </Footer>
 </Dialog>
 
-@* ── Show a new password once ── *@
+@* Show the new password once *@
 <Dialog Show="_issued is not null" Title="Password ready" Icon="bi-check-circle" Variant="success" OnClose="() => _issued = null">
     <ChildContent>
         <p class="am-message">Give this password to <strong>@_issued?.Name</strong> in person or through a private message. It won't be shown again.</p>
@@ -238,7 +239,7 @@
     </Footer>
 </Dialog>
 
-@* ── Activity ── *@
+@* Activity *@
 <Dialog Show="_activityUser is not null" Title="@($"Activity of {_activityUser?.Name}")" Icon="bi-clock-history" Size="lg" DismissOnBackdrop="true" OnClose="() => _activityUser = null">
     <ChildContent>
         @if (_activities is null)
@@ -255,7 +256,7 @@
                 <table class="data-table">
                     <thead><tr><th>When</th><th>Activity</th><th>Details</th><th>IP address</th></tr></thead>
                     <tbody>
-                        @foreach (var a in _activities)
+                        @foreach (var a in _activities.Page(_pActs))
                         {
                             <tr>
                                 <td class="text-nowrap">@a.CreatedAt.ToString("MMM d, yyyy h:mm tt")</td>
@@ -267,7 +268,8 @@
                     </tbody>
                 </table>
             </div>
-            <p class="small text-muted-2 mt-2 mb-0">Latest 50 entries.</p>
+            <Pager Total="_activities.Count" @bind-Page="_pActs" ResetKey="@_activityUser?.UserId.ToString()" Label="Activity pages" />
+            <p class="small text-muted-2 mt-2 mb-0">Latest 200 entries.</p>
         }
     </ChildContent>
     <Footer>
@@ -276,6 +278,8 @@
 </Dialog>
 
 @code {
+    private int _pActs = 1;
+    private int _pUsers = 1;
     private sealed record IssuedPassword(string Name, string Username, string Password);
 
     private bool _loading = true, _isSuperAdmin;
@@ -298,7 +302,7 @@
     [
         new("Admin", "AMS Admin", "Uses this site"),
         new("SuperAdmin", "AMS Super Admin", "Uses this site and can manage accounts"),
-        new("Office", "Office account", "Requests supplies through the AMS Supplies portal"),
+        new("Office", "Office account", "Requests supplies through the e-SRS portal"),
     ];
 
     private IReadOnlyList<PickOption<int>> OfficeChoices =>
@@ -356,7 +360,7 @@
         _offices = await db.Offices.AsNoTracking().OrderBy(o => o.OfficeAcronym).ToListAsync();
     }
 
-    // ── Add ─────────────────────────────────────────────────────────────
+    // Add
     private void OpenAdd()
     {
         _nRole = "Admin"; _nFullName = _nUsername = _nEmail = _nPassword = "";
@@ -411,7 +415,7 @@
         finally { _saving = false; }
     }
 
-    // ── Reset password ─────────────────────────────────────────────────
+    // Reset password
     private void OpenReset(User u)
     {
         _resetUser = u; _resetPassword = ""; _showResetPass = false; _resetRequireChange = true; _formError = null;
@@ -454,10 +458,10 @@
     {
         if (_issued is null) return;
         try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", _issued.Password); _copied = true; }
-        catch { /* clipboard blocked; the password is still on screen */ }
+        catch { /* clipboard is blocked, but the password is still on screen */ }
     }
 
-    // ── Deactivate / re-enable ─────────────────────────────────────────
+    // Deactivate / enable again
     private async Task SetActiveAsync(User target, bool active)
     {
         var ok = active
@@ -486,7 +490,7 @@
         }
     }
 
-    // ── Activity ────────────────────────────────────────────────────────
+    // Activity
     private async Task ShowActivityAsync(User u)
     {
         _activityUser = u;
@@ -494,7 +498,7 @@
         await using var db = await DbFactory.CreateDbContextAsync();
         _activities = await db.UserActivities.AsNoTracking()
             .Where(a => a.UserId == u.UserId)
-            .OrderByDescending(a => a.CreatedAt).Take(50).ToListAsync();
+            .OrderByDescending(a => a.CreatedAt).Take(200).ToListAsync();
     }
 
     private Task LogAsync(AppDbContext db, string type, string description)

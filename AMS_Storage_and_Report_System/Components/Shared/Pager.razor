@@ -1,0 +1,107 @@
+@* These are the page buttons at the bottom right of a table, 10 rows at a time.
+     @foreach (var r in Visible.Page(_page)) { ... }        (Paging.cs)
+     <Pager Total="Visible.Count" @bind-Page="_page" ResetKey="@($"{_search}|{_status}")" />
+   ResetKey: when the filters change, the table goes back to page 1.
+   When the page changes, the buttons stay in the same spot on screen even if the new page is
+   shorter or longer, so you can click "next" again without looking for it. *@
+@inject IJSRuntime JS
+
+@if (Total > 0)
+{
+    <nav class="pager no-print" aria-label="@Label" @ref="_nav">
+        <span class="pager-info">@From.ToString("N0")–@To.ToString("N0") of @Total.ToString("N0")</span>
+        @if (Pages > 1)
+        {
+            <div class="pager-buttons">
+                <button type="button" class="pager-btn" disabled="@(Current == 1)" aria-label="Previous page" title="Previous page" @onclick="() => GoAsync(Current - 1)">
+                    <i class="bi bi-chevron-left" aria-hidden="true"></i>
+                </button>
+                @foreach (var n in Numbers())
+                {
+                    var num = n;
+                    if (num == 0)
+                    {
+                        <span class="pager-gap" aria-hidden="true">…</span>
+                    }
+                    else
+                    {
+                        <button type="button" class="pager-btn @(num == Current ? "is-current" : "")" aria-label="@($"Page {num}")"
+                                aria-current="@(num == Current ? "page" : null)" @onclick="() => GoAsync(num)">@(num)</button>
+                    }
+                }
+                <button type="button" class="pager-btn" disabled="@(Current == Pages)" aria-label="Next page" title="Next page" @onclick="() => GoAsync(Current + 1)">
+                    <i class="bi bi-chevron-right" aria-hidden="true"></i>
+                </button>
+            </div>
+        }
+    </nav>
+}
+
+@code {
+    [Parameter] public int Total { get; set; }
+    [Parameter] public int Page { get; set; } = 1;
+    [Parameter] public EventCallback<int> PageChanged { get; set; }
+    [Parameter] public int PageSize { get; set; } = Paging.Size;
+    [Parameter] public string? ResetKey { get; set; }
+    [Parameter] public string Label { get; set; } = "Table pages";
+    /// Rows on each page, for tables where the pages aren't all the same size (like Employees,
+    /// which keeps each office on one page). Leave it empty for the normal 10 per page.
+    [Parameter] public IReadOnlyList<int>? PageSizes { get; set; }
+
+    private ElementReference _nav;
+    private double? _keepTop;   // where the buttons were on screen before the page changed
+    private string? _lastKey;
+    private bool _keySeen;
+
+    private bool Uneven => PageSizes is { Count: > 0 };
+    private int Pages => Uneven ? PageSizes!.Count : Math.Max(1, (Total + PageSize - 1) / PageSize);
+    private int Current => Math.Clamp(Page, 1, Pages);
+    private int From => Total == 0 ? 0 : Uneven ? PageSizes!.Take(Current - 1).Sum() + 1 : (Current - 1) * PageSize + 1;
+    private int To => Uneven ? PageSizes!.Take(Current).Sum() : Math.Min(Total, Current * PageSize);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // New filters go back to page 1. A page past the end (rows were deleted) goes to the last page.
+        var reset = _keySeen && ResetKey != _lastKey;
+        _lastKey = ResetKey;
+        _keySeen = true;
+        var target = reset ? 1 : Current;
+        if (target != Page && PageChanged.HasDelegate) await PageChanged.InvokeAsync(target);
+    }
+
+    // 1 ... 4 5 6 ... 20 (0 is the "..." gap)
+    private IEnumerable<int> Numbers()
+    {
+        if (Pages <= 7)
+        {
+            for (var i = 1; i <= Pages; i++) yield return i;
+            yield break;
+        }
+        var start = Math.Max(2, Current - 1);
+        var end = Math.Min(Pages - 1, Current + 1);
+        if (Current <= 3) { start = 2; end = 4; }
+        if (Current >= Pages - 2) { start = Pages - 3; end = Pages - 1; }
+        yield return 1;
+        if (start > 2) yield return 0;
+        for (var i = start; i <= end; i++) yield return i;
+        if (end < Pages - 1) yield return 0;
+        yield return Pages;
+    }
+
+    private async Task GoAsync(int page)
+    {
+        page = Math.Clamp(page, 1, Pages);
+        if (page == Current) return;
+        try { _keepTop = await JS.InvokeAsync<double>("amsPager.top", _nav); }
+        catch (JSDisconnectedException) { } catch (InvalidOperationException) { } catch (JSException) { }
+        await PageChanged.InvokeAsync(page);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_keepTop is not { } top) return;
+        _keepTop = null;
+        try { await JS.InvokeVoidAsync("amsPager.keep", _nav, top); }
+        catch (JSDisconnectedException) { } catch (InvalidOperationException) { } catch (JSException) { }
+    }
+}

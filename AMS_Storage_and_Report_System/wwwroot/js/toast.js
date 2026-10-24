@@ -1,4 +1,4 @@
-// showToast("Saved.", "success" | "danger") — short message at the bottom of the screen.
+// showToast("Saved.", "success" | "danger") shows a short message at the bottom of the screen.
 window.showToast = function (message, type) {
     const container = document.getElementById('toast-container');
     if (!container) return;

@@ -1,0 +1,110 @@
+@* This is the equipment picker (Laptop, Printer, Office chair...) from PropertyStatus.EquipmentTypes, or typed in.
+   One:      <EquipmentPicker Id="p-equip" @bind-Value="_form.EquipmentType" />
+   Several:  <EquipmentPicker Id="u-equip" Multiple="true" Values="_equipment" />   (a PAR can cover a set) *@
+
+<div class="equip-picker">
+    @if (Multiple && Values.Count > 0)
+    {
+        <div class="equip-chips">
+            @foreach (var v in Values)
+            {
+                var name = v;
+                <span class="equip-chip">
+                    <i class="bi @Icon(name)" aria-hidden="true"></i>@name
+                    <button type="button" aria-label="@($"Remove {name}")" @onclick="() => RemoveAsync(name)"><i class="bi bi-x" aria-hidden="true"></i></button>
+                </span>
+            }
+        </div>
+    }
+    <Picker TValue="string" Id="@Id" Options="Options" Value="@PickerValue" ValueChanged="OnPickAsync" Disabled="Disabled" />
+    @if (_other)
+    {
+        <div class="equip-other">
+            <input class="form-control" maxlength="80" autocomplete="off" placeholder="Type the equipment, e.g. Label printer"
+                   aria-label="Other equipment" @bind="_otherText" @bind:event="oninput" @onkeydown="OnOtherKeyAsync" />
+            <button type="button" class="btn btn-outline-primary" @onclick="AddOtherAsync" disabled="@string.IsNullOrWhiteSpace(_otherText)">@(Multiple ? "Add" : "Use")</button>
+        </div>
+    }
+</div>
+
+@code {
+    private const string OtherKey = "__other";
+
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+    [Parameter] public bool Multiple { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    // One
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    // Several
+    [Parameter] public List<string> Values { get; set; } = [];
+    [Parameter] public EventCallback ValuesChanged { get; set; }
+    [Parameter] public string? Placeholder { get; set; }
+
+    private bool _other;
+    private string _otherText = "";
+
+    private bool IsListed(string? v) => PropertyStatus.EquipmentTypes.Any(e => string.Equals(e.Name, v, StringComparison.OrdinalIgnoreCase));
+
+    protected override void OnParametersSet()
+    {
+        // A value that isn't in the list was typed, so I show it in the "Other" box.
+        if (!Multiple && !string.IsNullOrWhiteSpace(Value) && !IsListed(Value) && !_other) { _other = true; _otherText = Value!; }
+    }
+
+    private string PickerValue => Multiple ? "" : _other ? OtherKey : (PropertyStatus.EquipmentTypes.FirstOrDefault(e => string.Equals(e.Name, Value, StringComparison.OrdinalIgnoreCase)).Name ?? "");
+
+    private IReadOnlyList<PickOption<string>> Options =>
+        [new("", Placeholder ?? (Multiple ? (Values.Count == 0 ? "Choose the equipment" : "Add another equipment") : "Not set")),
+         .. PropertyStatus.EquipmentTypes.Where(e => !Multiple || !Values.Contains(e.Name, StringComparer.OrdinalIgnoreCase))
+                                         .Select(e => new PickOption<string>(e.Name, e.Name, e.Classification)),
+         new(OtherKey, "Other (type it)", "Not in the list")];
+
+    private async Task OnPickAsync(string v)
+    {
+        if (v == OtherKey) { _other = true; if (Multiple) _otherText = ""; return; }
+        _other = false;
+        if (Multiple)
+        {
+            if (v != "" && !Values.Contains(v, StringComparer.OrdinalIgnoreCase)) { Values.Add(v); await ValuesChanged.InvokeAsync(); }
+        }
+        else await ValueChanged.InvokeAsync(v == "" ? null : v);
+    }
+
+    private async Task AddOtherAsync()
+    {
+        var t = _otherText.Trim();
+        if (t.Length == 0) return;
+        if (Multiple)
+        {
+            if (!Values.Contains(t, StringComparer.OrdinalIgnoreCase)) Values.Add(t);
+            _otherText = ""; _other = false;
+            await ValuesChanged.InvokeAsync();
+        }
+        else await ValueChanged.InvokeAsync(t);
+    }
+
+    private async Task OnOtherKeyAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await AddOtherAsync();
+    }
+
+    private async Task RemoveAsync(string v)
+    {
+        Values.RemoveAll(x => string.Equals(x, v, StringComparison.OrdinalIgnoreCase));
+        await ValuesChanged.InvokeAsync();
+    }
+
+    public static string Icon(string? equipment) => PropertyStatus.ClassificationOf(equipment) switch
+    {
+        "ICT Equipment" => "bi-pc-display",
+        "Office Equipment" => "bi-printer",
+        "Communication Equipment" => "bi-telephone",
+        "Furniture and Fixtures" => "bi-lamp",
+        "Technical and Scientific Equipment" => "bi-camera",
+        "Disaster Response and Rescue Equipment" => "bi-fire",
+        "Motor Vehicles" => "bi-car-front",
+        "Books" => "bi-book",
+        _ => "bi-box",
+    };
+}

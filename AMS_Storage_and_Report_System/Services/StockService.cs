@@ -1,6 +1,6 @@
-// StockService.cs — everything that changes the warehouse count outside of RIS:
-// deliveries (receipts) and corrections (adjustments). Each change is written to the
-// stock ledger (stock_movements), which is also the Stock Card for that item.
+// This handles everything that changes the warehouse count outside of the RIS:
+// deliveries (receipts) and corrections (adjustments). Every change is written to the
+// stock ledger (stock_movements), which is also the Stock Card of that item.
 
 using System.Data;
 using AMS_Storage_and_Report_System.Data;
@@ -21,9 +21,10 @@ public sealed record StockCardRow(DateTime Date, string Type, string? Reference,
 
 public sealed class StockService(IDbContextFactory<AppDbContext> dbFactory)
 {
-    /// Records a delivery (e.g. from PS-DBM) with its IAR/DR number.
-    public async Task<OpResult> ReceiveAsync(uint userId, string reference, DateTime receivedOn, string? remarks,
-                                             IReadOnlyList<ReceiptLine> lines, bool updatePrices)
+    /// Records a delivery (like from PS-DBM) with its IAR/DR number and its scanned documents
+    /// (DR, Sales Invoice and IAR in one PDF, already saved by DeliveryDocumentStorage as `storedFile`).
+    public async Task<OpResult> ReceiveAsync(uint userId, string reference, DateTime receivedOn, string? supplier, string? remarks,
+                                             IReadOnlyList<ReceiptLine> lines, bool updatePrices, string? storedFile, string? originalFileName)
     {
         reference = reference.Trim();
         if (reference.Length is 0 or > 50) return OpResult.Fail("Enter the IAR or delivery receipt number (up to 50 characters).");
@@ -38,6 +39,17 @@ public sealed class StockService(IDbContextFactory<AppDbContext> dbFactory)
         await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted);
         var at = receivedOn.Date == PhTime.Now.Date ? PhTime.Now : receivedOn.Date.AddHours(12);
 
+        var delivery = new SupplyDelivery
+        {
+            ReferenceNo = reference, ReceivedOn = receivedOn.Date,
+            Supplier = string.IsNullOrWhiteSpace(supplier) ? null : supplier.Trim()[..Math.Min(supplier.Trim().Length, 200)],
+            Remarks = string.IsNullOrWhiteSpace(remarks) ? null : remarks.Trim()[..Math.Min(remarks.Trim().Length, 500)],
+            FilePath = storedFile, OriginalFileName = originalFileName is null ? null : Path.GetFileName(originalFileName),
+            RecordedBy = userId, RecordedAt = PhTime.Now,
+        };
+        db.SupplyDeliveries.Add(delivery);
+        await db.SaveChangesAsync();
+
         foreach (var l in valid.OrderBy(l => l.ItemId))
         {
             var rows = updatePrices && l.UnitCost > 0
@@ -50,7 +62,7 @@ public sealed class StockService(IDbContextFactory<AppDbContext> dbFactory)
                 ItemId = l.ItemId, MovementType = "RECEIPT", Quantity = l.Quantity,
                 BalanceAfter = await BalanceAsync(db, l.ItemId),
                 UnitCost = l.UnitCost > 0 ? l.UnitCost : null,
-                ReferenceType = "IAR", ReferenceNo = reference,
+                ReferenceType = "IAR", ReferenceNo = reference, DeliveryId = delivery.DeliveryId,
                 Remarks = string.IsNullOrWhiteSpace(remarks) ? null : remarks.Trim(),
                 PerformedBy = userId, CreatedAt = at,
             });
@@ -61,7 +73,7 @@ public sealed class StockService(IDbContextFactory<AppDbContext> dbFactory)
         return OpResult.Success($"Delivery {reference} recorded. {valid.Count} item(s) added to the warehouse count.");
     }
 
-    /// Corrects the count after a physical inventory, damage, expiry, etc.
+    /// Fixes the count after a physical inventory, damage, expiry and so on.
     public async Task<OpResult> AdjustAsync(uint userId, int itemId, bool increase, int quantity, string reason)
     {
         reason = reason.Trim();

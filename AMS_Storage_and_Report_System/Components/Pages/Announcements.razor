@@ -9,9 +9,9 @@
 @inject IJSRuntime JS
 @inject ILogger<Announcements> Log
 
-<PageTitle>Announcements | AMS StockWatch</PageTitle>
+<PageTitle>Announcements | e-PINS</PageTitle>
 
-<PageHeader Title="Announcements" Subtitle="Notices shown as a banner to every office on AMS Supplies, between the dates you set.">
+<PageHeader Title="Announcements" Subtitle="Notices shown as a banner to every office on e-SRS, between the dates you set.">
     <Actions>
         <button type="button" class="btn btn-accent" @onclick="OpenAdd" disabled="@_error"><i class="bi bi-megaphone me-1" aria-hidden="true"></i> New announcement</button>
     </Actions>
@@ -35,7 +35,7 @@
         <div class="empty-state">
             <i class="bi bi-megaphone" aria-hidden="true"></i>
             <h2>No announcements yet</h2>
-            <p>Post a notice like "No issuance on Friday" or "Submit your APP-CSE by November 15". Offices see it at the top of AMS Supplies.</p>
+            <p>Post a notice like "No issuance on Friday" or "Submit your APP-CSE by November 15". Offices see it at the top of e-SRS.</p>
             <button type="button" class="btn btn-primary" @onclick="OpenAdd">New announcement</button>
         </div>
     }
@@ -96,7 +96,7 @@
             <input class="form-check-input" type="checkbox" role="switch" id="an-active" @bind="_form.IsActive" />
             <label class="form-check-label" for="an-active">@(_form.IsActive ? "On: offices will see it in its date range" : "Off: hidden from offices")</label>
         </div>
-        <p class="small text-muted-2 mt-2 mb-0">Times are Philippine time. Offices can close a notice; it stays closed on their computer.</p>
+        <p class="small text-muted-2 mt-2 mb-0">Times are Philippine time. Offices can't close a notice: it stays on every page of e-SRS until its end time, or until you turn it off. Up to 3 show at once, most important first.</p>
         @if (_formError is not null)
         {
             <div class="form-error" role="alert"><i class="bi bi-exclamation-circle" aria-hidden="true"></i>@_formError</div>
@@ -179,7 +179,7 @@
         await JS.InvokeVoidAsync("showToast", r.Message, "danger");
     }
 
-    // Live: when announcements change on either website, reload without a refresh.
+    // Live update: when announcements change on either website, reload them without refreshing the page.
     private static readonly string[] LiveAreas = ["announcements"];
     protected override void OnInitialized()
     {
@@ -187,8 +187,8 @@
         _ = KeepStatesFreshAsync(_cts.Token);
     }
 
-    // "Scheduled" becomes "Live" (and "Live" becomes "Ended") as the clock passes the dates,
-    // so redraw every 30 seconds. No database query needed for that.
+    // "Scheduled" turns into "Live" (and "Live" into "Ended") as time passes the dates,
+    // so I redraw every 30 seconds. No database query needed for that.
     private readonly CancellationTokenSource _cts = new();
 
     private async Task KeepStatesFreshAsync(CancellationToken ct)

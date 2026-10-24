@@ -4,8 +4,11 @@
 @inject ReportService ReportSvc
 @inject SettingsService Settings
 @inject IJSRuntime JS
+@inject DeliveryService Deliveries
+@inject DeliveryDocumentStorage DeliveryFiles
+@inject AuthenticationStateProvider AuthStateProvider
 
-<PageTitle>Reports | AMS StockWatch</PageTitle>
+<PageTitle>Reports | e-PINS</PageTitle>
 
 <PageHeader Title="Reports" Subtitle="Built from issued requisitions, deliveries and each office's APP-CSE. Download any report as Excel or print it." />
 
@@ -21,6 +24,82 @@
 
     @switch (_tab)
     {
+        case "deliveries":
+            <section class="panel">
+                <header class="panel-head">
+                    <div>
+                        <h2>Deliveries</h2>
+                        <span class="meta">Supplies received in the month, with the scanned Delivery Receipt, Sales Invoice and IAR of each delivery.</span>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 align-items-end no-print">
+                        <div><label class="form-label" for="dl-month">Month</label><DatePicker Id="dl-month" @bind-Value="_dMonth" @bind-Value:after="LoadAsync" MonthOnly="true" Max="PhTime.Now.Date" /></div>
+                        <div>
+                            <label class="form-label" for="dl-search">Search</label>
+                            <input id="dl-search" type="search" class="form-control" placeholder="IAR / DR no. or supplier" autocomplete="off" @bind="_dSearch" @bind:event="oninput" />
+                        </div>
+                    </div>
+                </header>
+                @if (_deliveries is null) { <div class="loading">Loading…</div> }
+                else if (!VisibleDeliveries.Any())
+                {
+                    <div class="empty-state"><i class="bi bi-truck" aria-hidden="true"></i>
+                        <h2>@(_deliveries.Count == 0 ? $"No deliveries in {_dMonth:MMMM yyyy}" : "No deliveries match")</h2>
+                        <p>@(_deliveries.Count == 0 ? "Deliveries are recorded in Supplies inventory → Receive delivery." : "Try another number or supplier.")</p></div>
+                }
+                else
+                {
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <thead><tr><th>Date received</th><th>IAR / DR no.</th><th>Supplier</th><th class="t-num">Items</th><th class="t-num">Amount</th><th>Scanned documents</th><th class="text-end">Actions</th></tr></thead>
+                            <tbody>
+                                @foreach (var d in VisibleDeliveries.Page(_pDeliveries))
+                                {
+                                    <tr @key="d.DeliveryId">
+                                        <td class="text-nowrap">@d.ReceivedOn.ToString("MMM d, yyyy")</td>
+                                        <td class="cell-strong text-nowrap">@d.ReferenceNo<span class="cell-sub">@(d.RecordedBy is null ? "" : $"Recorded by {d.RecordedBy}")</span></td>
+                                        <td>
+                                            @(d.Supplier ?? "—")
+                                            @if (d.Remarks is not null)
+                                            {
+                                                <span class="cell-sub">@d.Remarks</span>
+                                            }
+                                        </td>
+                                        <td class="t-num">@d.Items<span class="cell-sub">@d.Units.ToString("N0") units</span></td>
+                                        <td class="t-num text-nowrap">₱@d.Amount.ToString("N2")</td>
+                                        <td>
+                                            @if (d.HasFile)
+                                            {
+                                                <span class="badge-pill badge-ok"><i class="bi bi-file-earmark-pdf" aria-hidden="true"></i>DR, Invoice, IAR</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge-pill badge-warn"><i class="bi bi-exclamation-circle" aria-hidden="true"></i>Not attached</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <div class="row-actions justify-content-end">
+                                                <button type="button" class="act" @onclick="() => OpenDeliveryAsync(d)"><i class="bi bi-eye" aria-hidden="true"></i>View</button>
+                                                @if (d.HasFile)
+                                                {
+                                                    <a class="act" href="@($"/deliveries/{d.DeliveryId}/document?download=true")"><i class="bi bi-download" aria-hidden="true"></i>Download</a>
+                                                }
+                                                <button type="button" class="act" @onclick="() => OpenAttach(d)"><i class="bi bi-paperclip" aria-hidden="true"></i>@(d.HasFile ? "Replace" : "Attach PDF")</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <Pager Total="VisibleDeliveries.Count()" @bind-Page="_pDeliveries" ResetKey="@($"{_dMonth:yyyy-MM}|{_dSearch}")" Label="Delivery pages" />
+                    <div class="panel-body border-top d-flex flex-wrap justify-content-between gap-2">
+                        <span class="text-muted-2">@VisibleDeliveries.Count() @(VisibleDeliveries.Count() == 1 ? "delivery" : "deliveries")</span>
+                        <strong>Total: ₱@VisibleDeliveries.Sum(d => d.Amount).ToString("N2")</strong>
+                    </div>
+                }
+            </section>
+            break;
+
         case "rsmi":
             <section class="panel">
                 <header class="panel-head">
@@ -31,7 +110,7 @@
                     <div class="d-flex flex-wrap gap-2 align-items-end no-print">
                         <div><label class="form-label" for="rs-month">Month</label><DatePicker Id="rs-month" @bind-Value="_month" @bind-Value:after="LoadAsync" MonthOnly="true" Max="PhTime.Now.Date" /></div>
                         <a class="btn btn-outline-primary" href="@($"/exports/rsmi?year={_month.Year}&month={_month.Month}")"><i class="bi bi-file-earmark-excel me-1" aria-hidden="true"></i>Excel</a>
-                        <button type="button" class="btn btn-accent" @onclick="PrintAsync"><i class="bi bi-printer me-1" aria-hidden="true"></i>Print</button>
+                        <button type="button" class="btn btn-accent" @onclick="OpenRsmi" disabled="@(_rsmi is null)"><i class="bi bi-file-earmark-text me-1" aria-hidden="true"></i>Generate RSMI</button>
                     </div>
                 </header>
                 <div class="print-only panel-body">
@@ -48,26 +127,28 @@
                         <table class="data-table">
                             <thead><tr><th>Date</th><th>RIS No.</th><th>Resp. Center</th><th>Office</th><th>Stock No.</th><th>Item</th><th>Unit</th><th class="t-num">Qty</th><th class="t-num">Unit cost</th><th class="t-num">Amount</th></tr></thead>
                             <tbody>
-                                @foreach (var l in _rsmi)
+                                @foreach (var (l, rowIndex) in _rsmi.Select((x, n) => (x, n)))
                                 {
-                                    <tr><td class="text-nowrap">@l.IssuedAt.ToString("MMM d")</td><td class="text-nowrap">@l.RisNo</td><td>@l.ResponsibilityCenterCode</td><td>@l.OfficeAcronym</td><td class="text-nowrap">@l.StockNo</td><td>@l.Item</td><td>@l.Unit</td><td class="t-num">@l.Quantity</td><td class="t-num">@l.UnitCost.ToString("N2")</td><td class="t-num">@l.Amount.ToString("N2")</td></tr>
+                                    <tr class="@Paging.RowClass(rowIndex, _pRsmi, _rsmi.Count)"><td class="text-nowrap">@l.IssuedAt.ToString("MMM d")</td><td class="text-nowrap">@l.RisNo</td><td>@l.ResponsibilityCenterCode</td><td>@l.OfficeAcronym</td><td class="text-nowrap">@l.StockNo</td><td>@l.Item</td><td>@l.Unit</td><td class="t-num">@l.Quantity</td><td class="t-num">@l.UnitCost.ToString("N2")</td><td class="t-num">@l.Amount.ToString("N2")</td></tr>
                                 }
                             </tbody>
                         </table>
                     </div>
+                    <Pager Total="_rsmi.Count" @bind-Page="_pRsmi" ResetKey="@_month.ToString("yyyy-MM")" Label="RSMI pages" />
                     <div class="panel-body border-top d-flex justify-content-end"><strong>Total: ₱@_rsmi.Sum(l => l.Amount).ToString("N2")</strong></div>
                     <header class="panel-head border-top"><h2>Recapitulation</h2></header>
                     <div class="table-wrap">
                         <table class="data-table">
                             <thead><tr><th>Stock No.</th><th>Item</th><th>Unit</th><th class="t-num">Quantity</th><th class="t-num">Unit cost</th><th class="t-num">Total cost</th></tr></thead>
                             <tbody>
-                                @foreach (var r in ReportService.Recap(_rsmi))
+                                @foreach (var (r, rowIndex) in ReportService.Recap(_rsmi).Select((x, n) => (x, n)))
                                 {
-                                    <tr><td class="text-nowrap">@r.StockNo</td><td>@r.Item</td><td>@r.Unit</td><td class="t-num">@r.Quantity</td><td class="t-num">@r.UnitCost.ToString("N2")</td><td class="t-num">@r.TotalCost.ToString("N2")</td></tr>
+                                    <tr class="@Paging.RowClass(rowIndex, _pRecap, ReportService.Recap(_rsmi).Count())"><td class="text-nowrap">@r.StockNo</td><td>@r.Item</td><td>@r.Unit</td><td class="t-num">@r.Quantity</td><td class="t-num">@r.UnitCost.ToString("N2")</td><td class="t-num">@r.TotalCost.ToString("N2")</td></tr>
                                 }
                             </tbody>
                         </table>
                     </div>
+                    <Pager Total="ReportService.Recap(_rsmi).Count()" @bind-Page="_pRecap" ResetKey="@_month.ToString("yyyy-MM")" Label="Recapitulation pages" />
                 }
             </section>
             break;
@@ -97,9 +178,9 @@
                         <table class="data-table">
                             <thead><tr><th>Office</th><th>Item</th><th class="t-num">APP-CSE</th><th class="t-num">Issued</th><th class="t-num">Pending</th><th class="t-num">Remaining</th><th style="width: 160px">Used</th></tr></thead>
                             <tbody>
-                                @foreach (var u in _util)
+                                @foreach (var (u, rowIndex) in _util.Select((x, n) => (x, n)))
                                 {
-                                    <tr>
+                                    <tr class="@Paging.RowClass(rowIndex, _pUtil, _util.Count)">
                                         <td class="cell-strong">@u.OfficeAcronym</td>
                                         <td><span>@u.Item</span><span class="cell-sub">@u.StockNo, @u.Unit</span></td>
                                         <td class="t-num">@u.Allocated</td><td class="t-num">@u.Issued</td><td class="t-num">@u.Pending</td>
@@ -110,6 +191,7 @@
                             </tbody>
                         </table>
                     </div>
+                    <Pager Total="_util.Count" @bind-Page="_pUtil" ResetKey="@($"{_year}|{_officeId}")" Label="Utilization pages" />
                 }
             </section>
             break;
@@ -141,9 +223,9 @@
                         <table class="data-table">
                             <thead><tr><th>Stock No.</th><th>Item</th><th class="t-num">On hand</th><th class="t-num">Low at</th><th class="t-num">Issued, 90 days</th><th class="t-num">Suggested order</th><th class="t-num">Est. cost</th></tr></thead>
                             <tbody>
-                                @foreach (var r in _reorder)
+                                @foreach (var (r, rowIndex) in _reorder.Select((x, n) => (x, n)))
                                 {
-                                    <tr>
+                                    <tr class="@Paging.RowClass(rowIndex, _pReorder, _reorder.Count)">
                                         <td class="text-nowrap">@r.StockNo</td>
                                         <td><span>@r.Item</span><span class="cell-sub">@r.Unit</span></td>
                                         <td class="t-num"><span class="@(r.OnHand <= 0 ? "text-danger fw-bold" : "")">@r.OnHand</span></td>
@@ -156,22 +238,121 @@
                             </tbody>
                         </table>
                     </div>
+                    <Pager Total="_reorder.Count" @bind-Page="_pReorder" ResetKey="@_showAll.ToString()" Label="Reorder pages" />
                     <div class="panel-body border-top d-flex justify-content-end"><strong>Estimated total: ₱@_reorder.Sum(r => r.SuggestedOrder * r.UnitPrice).ToString("N2")</strong></div>
                 }
             </section>
             break;
     }
 
-    <p class="small text-muted-2 no-print"><i class="bi bi-journal-text me-1" aria-hidden="true"></i>For an item's full history, open its <a href="/inventory">stock card from Inventory</a>.</p>
+    <p class="small text-muted-2 no-print"><i class="bi bi-journal-text me-1" aria-hidden="true"></i>For an item's full history, open its <a href="/inventory">stock card from Supplies inventory</a>.</p>
 </div>
 
+<Dialog Show="_viewDelivery is not null" Title="@($"Delivery {_viewDelivery?.ReferenceNo}")" Icon="bi-truck" Size="xl" DismissOnBackdrop="true" OnClose="() => _viewDelivery = null">
+    <ChildContent>
+        @if (_viewDelivery is { } vd)
+        {
+            <div class="delivery-view">
+                <div class="delivery-pdf">
+                    @if (vd.HasFile)
+                    {
+                        <iframe id="delivery-frame" src="@($"/deliveries/{vd.DeliveryId}/document")" title="@($"Scanned documents of {vd.ReferenceNo}")"></iframe>
+                    }
+                    else
+                    {
+                        <div class="empty-state"><i class="bi bi-file-earmark-x" aria-hidden="true"></i><h2>No scanned documents yet</h2>
+                            <p>Attach the DR, Sales Invoice and IAR scanned into one PDF.</p>
+                            <button type="button" class="btn btn-primary" @onclick="() => { var d = vd; _viewDelivery = null; OpenAttach(d); }">Attach PDF</button></div>
+                    }
+                </div>
+                <div class="delivery-side">
+                    <dl class="delivery-facts">
+                        <div><dt>Date received</dt><dd>@vd.ReceivedOn.ToString("MMMM d, yyyy")</dd></div>
+                        <div><dt>IAR / DR no.</dt><dd>@vd.ReferenceNo</dd></div>
+                        <div><dt>Supplier</dt><dd>@(vd.Supplier ?? "—")</dd></div>
+                        @if (vd.Remarks is not null) { <div><dt>Remarks</dt><dd>@vd.Remarks</dd></div> }
+                    </dl>
+                    <h3 class="delivery-lines-title">Items received</h3>
+                    @if (_viewLines is null) { <div class="loading">Loading…</div> }
+                    else
+                    {
+                        <ul class="delivery-lines">
+                            @foreach (var l in _viewLines)
+                            {
+                                <li><span><strong>@l.Item</strong><small>@l.StockNo · ₱@((l.UnitCost ?? 0).ToString("N2")) each</small></span><b>@l.Quantity @l.Unit</b></li>
+                            }
+                        </ul>
+                        <div class="delivery-total"><span>Total</span><strong>₱@_viewLines.Sum(l => l.Amount).ToString("N2")</strong></div>
+                    }
+                </div>
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-light" @onclick="() => _viewDelivery = null">Close</button>
+        @if (_viewDelivery is { HasFile: true } f)
+        {
+            <a class="btn btn-outline-primary" href="@($"/deliveries/{f.DeliveryId}/document?download=true")"><i class="bi bi-download me-1" aria-hidden="true"></i>Download</a>
+            <button type="button" class="btn btn-primary" @onclick="PrintDeliveryAsync"><i class="bi bi-printer me-1" aria-hidden="true"></i>Print</button>
+        }
+    </Footer>
+</Dialog>
+
+<Dialog Show="_attachFor is not null" Title="@($"Scanned documents of {_attachFor?.ReferenceNo}")" Icon="bi-paperclip" Busy="_attaching" OnClose="() => _attachFor = null">
+    <ChildContent>
+        <div class="field mb-0">
+            <label class="form-label" for="dl-file">DR, Sales Invoice and IAR <span class="text-muted-2 fw-normal">(one PDF)</span></label>
+            <InputFile id="dl-file" class="form-control" OnChange="OnAttachFileSelected" accept=".pdf,application/pdf" />
+            <div class="form-text">Up to 50 MB. @(_attachFor?.HasFile == true ? "It replaces the PDF attached now." : "")</div>
+        </div>
+        @if (_attachError is not null)
+        {
+            <div class="form-error" role="alert"><i class="bi bi-exclamation-circle" aria-hidden="true"></i>@_attachError</div>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-light" @onclick="() => _attachFor = null" disabled="@_attaching">Cancel</button>
+        <button type="button" class="btn btn-primary" @onclick="AttachAsync" disabled="@_attaching">
+            @if (_attaching) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
+            Save PDF
+        </button>
+    </Footer>
+</Dialog>
+
+<Dialog Show="_rsmiOpen" Title="@($"RSMI for {_month:MMMM yyyy}")" Icon="bi-file-earmark-text" Size="xl" DismissOnBackdrop="true" OnClose="() => _rsmiOpen = false">
+    <ChildContent>
+        <div class="row g-3 mb-3">
+            <div class="col-sm-6 col-lg-3">
+                <label class="form-label" for="rg-date">Date</label>
+                <DatePicker Id="rg-date" @bind-Value="_rsmiDate" />
+            </div>
+        </div>
+        @if (_rsmi is { Count: 0 })
+        {
+            <p class="text-muted-2 small"><i class="bi bi-info-circle me-1" aria-hidden="true"></i>Nothing was issued in @_month.ToString("MMMM yyyy"), so the report has no lines.</p>
+        }
+        <div class="paper-scroll">
+            <RsmiForm Lines="@(_rsmi ?? [])" Agency="@_entity" Date="_rsmiDate" Month="_month" />
+        </div>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="btn btn-light" @onclick="() => _rsmiOpen = false">Close</button>
+        <button type="button" class="btn btn-primary" @onclick="PrintRsmiAsync"><i class="bi bi-printer me-1" aria-hidden="true"></i>Print RSMI</button>
+    </Footer>
+</Dialog>
+
 @code {
+    private int _pReorder = 1;
+    private int _pUtil = 1;
+    private int _pRecap = 1;
+    private int _pRsmi = 1;
     private sealed record Tab(string Key, string Label, string Icon);
     private static readonly Tab[] Tabs =
     [
         new("rsmi", "RSMI", "bi-file-earmark-text"),
         new("utilization", "APP-CSE utilization", "bi-pie-chart"),
         new("reorder", "Reorder list", "bi-cart-plus"),
+        new("deliveries", "Deliveries", "bi-truck"),
     ];
 
     private string _tab = "rsmi";
@@ -211,9 +392,100 @@
         {
             case "rsmi": _rsmi = null; _rsmi = await ReportSvc.RsmiAsync(_month.Year, _month.Month); break;
             case "utilization": _util = null; _util = await ReportSvc.UtilizationAsync(_year, _officeId); break;
+            case "deliveries": _deliveries = null; _deliveries = await Deliveries.ListAsync(_dMonth, _dMonth.AddMonths(1)); break;
             default: _reorder = null; _reorder = await ReportSvc.ReorderAsync(!_showAll); break;
         }
     }
 
     private async Task PrintAsync() => await JS.InvokeVoidAsync("print");
+
+    // Deliveries
+    private int _pDeliveries = 1;
+    private DateTime _dMonth = new(PhTime.Now.Year, PhTime.Now.Month, 1);
+    private string _dSearch = "";
+    private List<DeliveryRow>? _deliveries;
+    private DeliveryRow? _viewDelivery;
+    private List<DeliveryLine>? _viewLines;
+    private DeliveryRow? _attachFor;
+    private IBrowserFile? _attachFile;
+    private bool _attaching;
+    private string? _attachError;
+
+    private IEnumerable<DeliveryRow> VisibleDeliveries
+    {
+        get
+        {
+            var t = _dSearch.Trim();
+            return (_deliveries ?? new List<DeliveryRow>()).Where(d => t.Length == 0
+                || d.ReferenceNo.Contains(t, StringComparison.OrdinalIgnoreCase)
+                || (d.Supplier?.Contains(t, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (d.Remarks?.Contains(t, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+    }
+
+    private async Task OpenDeliveryAsync(DeliveryRow d)
+    {
+        _viewDelivery = d;
+        _viewLines = null;
+        try { _viewLines = await Deliveries.LinesAsync(d.DeliveryId); }
+        catch (Exception) { _viewLines = []; await JS.InvokeVoidAsync("showToast", "Couldn't load the items of this delivery.", "danger"); }
+    }
+
+    private async Task PrintDeliveryAsync() => await JS.InvokeVoidAsync("amsDoc.print", "delivery-frame");
+
+    private void OpenAttach(DeliveryRow d)
+    {
+        _attachFor = d;
+        _attachFile = null;
+        _attachError = null;
+    }
+
+    private void OnAttachFileSelected(InputFileChangeEventArgs e)
+    {
+        _attachError = null;
+        _attachFile = null;
+        if (!e.File.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) _attachError = "Only one PDF file can be attached.";
+        else if (e.File.Size > DeliveryDocumentStorage.MaxBytes) _attachError = $"This file is {e.File.Size / 1024.0 / 1024.0:F1} MB. The limit is 50 MB.";
+        else _attachFile = e.File;
+    }
+
+    private async Task AttachAsync()
+    {
+        if (_attachFor is null) return;
+        if (_attachFile is null) { _attachError = "Choose the PDF file."; return; }
+        _attaching = true;
+        string? stored = null;
+        try
+        {
+            await using (var source = _attachFile.OpenReadStream(DeliveryDocumentStorage.MaxBytes))
+                stored = await DeliveryFiles.SaveAsync(source);
+            var user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+            uint.TryParse(user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out var userId);
+            var r = await Deliveries.AttachAsync(_attachFor.DeliveryId, stored, _attachFile.Name, userId);
+            if (!r.Ok) { _attachError = r.Message; return; }
+            _attachFor = null;
+            await LoadAsync();
+            await JS.InvokeVoidAsync("showToast", r.Message, "success");
+        }
+        catch (Exception)
+        {
+            DeliveryFiles.Delete(stored);
+            _attachError = "The PDF didn't upload. Check your connection and try again.";
+        }
+        finally { _attaching = false; }
+    }
+
+    // Make the RSMI (the AMS form)
+    private bool _rsmiOpen;
+    private DateTime _rsmiDate = PhTime.Now.Date;
+
+    private void OpenRsmi()
+    {
+        // Dated the last day of the month (today for the current month), numbered by year and month
+        var end = _month.AddMonths(1).AddDays(-1);
+        _rsmiDate = end > PhTime.Now.Date ? PhTime.Now.Date : end;
+        _rsmiOpen = true;
+    }
+
+    private async Task PrintRsmiAsync() => await JS.InvokeVoidAsync("amsPrint.form", ".rsmi-doc");
 }

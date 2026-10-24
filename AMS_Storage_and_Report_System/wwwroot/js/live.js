@@ -1,20 +1,20 @@
-// live.js — sound + desktop notifications for live updates (called from Blazor).
+// This is for the sound and desktop notifications of the live updates (Blazor calls these).
 window.amsLive = (function () {
     const supported = () => "Notification" in window;
     const sounds = {};
     let activated = false;          // has the person clicked or typed on this page yet?
-    let pendingUrl = null;          // a sound the browser blocked, to play once sound is enabled
+    let pendingUrl = null;          // a sound the browser blocked, to play once sound is allowed
 
     function sound(url) {
         if (!sounds[url]) { sounds[url] = new Audio(url); sounds[url].preload = "auto"; }
         return sounds[url];
     }
 
-    // Browsers only allow sound after a click or key press on the page. On every such
-    // gesture, "warm up" any sound not yet unlocked (some browsers need it per sound).
+    // Browsers only allow sound after a click or key press on the page. So on every click or key,
+    // I "warm up" any sound that isn't unlocked yet (some browsers need it per sound).
     function unlockAll() {
         activated = true;
-        // A sound that was blocked earlier plays now, at full volume (the click allows it)...
+        // A sound that was blocked before plays now at full volume (the click allows it)...
         let skip = null;
         if (pendingUrl) {
             skip = sound(pendingUrl);
@@ -24,7 +24,7 @@ window.amsLive = (function () {
             skip.dataset.unlocked = "1";
             play(skip.src);
         }
-        // ...and every other sound is silently "warmed up" so it can play later without a click.
+        // ...and the other sounds are warmed up silently so they can play later without a click.
         Object.values(sounds).forEach(a => {
             if (a === skip || (a.dataset && a.dataset.unlocked)) return;
             a.muted = true;
@@ -35,7 +35,7 @@ window.amsLive = (function () {
     document.addEventListener("pointerdown", unlockAll, { capture: true });
     document.addEventListener("keydown", unlockAll, { capture: true });
 
-    // Small button shown only when the browser blocked a sound.
+    // Small button that only shows when the browser blocked a sound.
     let hint = null;
     function showHint() {
         if (hint) return;
@@ -69,7 +69,7 @@ window.amsLive = (function () {
         },
         notify: function (title, body, soundUrl, url) {
             if (soundUrl) play(soundUrl);
-            // Desktop notification when this tab isn't on screen; the page shows its own banner/toast.
+            // Desktop notification when this tab isn't on screen. The page shows its own banner or toast.
             if (supported() && Notification.permission === "granted" && document.visibilityState !== "visible") {
                 try {
                     const n = new Notification(title, { body: body, icon: "/favicon.png", tag: url || title });

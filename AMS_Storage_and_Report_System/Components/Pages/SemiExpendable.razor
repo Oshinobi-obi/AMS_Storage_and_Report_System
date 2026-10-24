@@ -10,7 +10,7 @@
 @inject IJSRuntime JS
 @inject ILogger<SemiExpendable> Log
 
-<PageTitle>SPLV and SPHV | AMS StockWatch</PageTitle>
+<PageTitle>SPLV and SPHV | e-PINS</PageTitle>
 
 <PageHeader Title="SPLV and SPHV deliveries" Subtitle="Semi-expendable property delivered to AMS. ICS and PAR numbers are given automatically when you save.">
     <Actions>
@@ -76,7 +76,7 @@
                     <table class="data-table">
                         <thead><tr><th>Delivered</th><th>Type</th><th>Supplier</th><th>Items and ICS / PAR numbers</th><th class="t-num">Amount</th><th class="text-end">Actions</th></tr></thead>
                         <tbody>
-                            @foreach (var d in _list)
+                            @foreach (var d in _list.Page(_pRows))
                             {
                                 <tr @key="d.DeliveryId">
                                     <td class="text-nowrap"><span class="cell-strong">@d.DeliveredOn.ToString("MMM d, yyyy")</span>
@@ -109,6 +109,7 @@
                         </tbody>
                     </table>
                 </div>
+                <Pager Total="_list.Count" @bind-Page="_pRows" ResetKey="@($"{_year}|{_type}|{_search}")" Label="Delivery pages" />
                 <div class="panel-body border-top d-flex flex-wrap justify-content-between gap-2">
                     <span class="text-muted-2">@_list.Count deliveries · @_list.Sum(d => d.Lines.Count) items · @_list.Sum(d => d.Lines.Sum(l => l.Quantity)).ToString("N0") units</span>
                     <strong>Total: ₱@_list.Sum(d => d.TotalAmount).ToString("N2")</strong>
@@ -118,7 +119,7 @@
     }
 </div>
 
-@* ── New delivery ── *@
+@* New delivery *@
 <Dialog Show="_formOpen" Title="New SPLV / SPHV delivery" Icon="bi-truck" Size="xl" Busy="_saving" OnClose="() => _formOpen = false">
     <ChildContent>
         <div class="row g-3">
@@ -264,7 +265,7 @@
     </Footer>
 </Dialog>
 
-@* ── View one delivery ── *@
+@* View one delivery *@
 <Dialog Show="_view is not null" Title="@(_view is null ? "" : $"{_view.Category} delivery, {_view.DeliveredOn:MMMM d, yyyy}")" Icon="bi-truck" Size="xl" DismissOnBackdrop="true" OnClose="() => _view = null">
     <ChildContent>
         @if (_view is not null)
@@ -309,7 +310,7 @@
     </Footer>
 </Dialog>
 
-@* ── Numbering: last number used per series ── *@
+@* Numbering: last number used per series *@
 <Dialog Show="_numberingOpen" Title="@($"ICS and PAR numbering, {_year}")" Icon="bi-123" Size="md" Busy="_saving" OnClose="() => _numberingOpen = false">
     <ChildContent>
         <p class="am-message">Each series counts on through the year and starts again at 001 in January. If numbers were already given out on paper this year, enter the last one used so the next delivery continues from it.</p>
@@ -338,6 +339,7 @@
 </Dialog>
 
 @code {
+    private int _pRows = 1;
     private List<SeDelivery>? _list;
     private (int All, int Splv, int Sphv) _counts;
     private List<int> _years = [];
@@ -407,13 +409,13 @@
         _searchCts = new CancellationTokenSource();
         try
         {
-            await Task.Delay(300, _searchCts.Token);   // wait until typing pauses
+            await Task.Delay(300, _searchCts.Token);   // wait until they stop typing
             await ReloadAsync();
         }
         catch (TaskCanceledException) { }
     }
 
-    // ── New delivery ──
+    // New delivery
     private async Task OpenAdd()
     {
         _form = new SeDeliveryForm { Category = _type == SeCategory.Sphv ? SeCategory.Sphv : SeCategory.Splv };
@@ -431,7 +433,7 @@
     {
         if (_form.EndUserType == type) return;
         _form.EndUserType = type;
-        foreach (var l in _form.Lines) l.EndUserId = 0;   // offices and people are different lists
+        foreach (var l in _form.Lines) l.EndUserId = 0;   // offices and people are separate lists
     }
 
     private IReadOnlyList<PickOption<int>> EndUserOptions => _form.EndUserType == SeCategory.EndUserOffice
@@ -500,7 +502,7 @@
         await JS.InvokeVoidAsync("showToast", "Delivery deleted. Its numbers will be used by the next delivery.", "success");
     }
 
-    // ── Numbering ──
+    // Numbering
     private async Task OpenNumbering()
     {
         _series = await SeSvc.SeriesAsync(_year);

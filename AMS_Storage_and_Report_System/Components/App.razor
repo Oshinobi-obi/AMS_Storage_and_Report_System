@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-season="@_season">
 
 <head>
     <meta charset="utf-8" />
@@ -8,11 +8,14 @@
     <base href="/" />
     <ResourcePreloader />
     <script src="@Assets["js/theme-init.js"]"></script>
-    @* Everything is served from wwwroot so the system works without internet. *@
+    @* I serve everything from wwwroot so the system works without internet. *@
     <link rel="stylesheet" href="@Assets["lib/bootstrap/dist/css/bootstrap.min.css"]" />
     <link rel="stylesheet" href="@Assets["lib/bootstrap-icons/bootstrap-icons.min.css"]" />
     <link rel="stylesheet" href="@Assets["css/admin.css"]" />
     <link rel="stylesheet" href="@Assets["css/ris.css"]" />
+    <link rel="stylesheet" href="@Assets["css/forms.css"]" />
+    <link rel="stylesheet" href="@Assets["css/motion.css"]" />
+    <link rel="stylesheet" href="@Assets["css/season.css"]" />
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["AMS_Storage_and_Report_System.styles.css"]" />
     <link rel="icon" type="image/png" href="favicon.png" />
@@ -24,7 +27,7 @@
 <body>
     <Routes @rendermode="PageRenderMode" />
     <ReconnectModal />
-    @* Shown by Blazor when the interactive connection hits an error, instead of buttons silently doing nothing. *@
+    @* Blazor shows this when the connection has an error, so buttons don't just silently do nothing. *@
     <div id="blazor-error-ui" data-nosnippet>
         <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
         <span>Something went wrong on this page. Reload to continue.</span>
@@ -36,16 +39,22 @@
     <script src="@Assets["js/app.js"]"></script>
     <script src="@Assets["js/live.js"]"></script>
     <script src="@Assets["js/ui.js"]"></script>
+    <script src="@Assets["js/motion.js"]"></script>
+    <script src="@Assets["js/season.js"]"></script>
     <script src="@Assets["_framework/blazor.web.js"]"></script>
 </body>
 
 </html>
 
+@inject SeasonState Season
 @code {
+    private string _season = "";   // seasonal theme for the headers and sidebar ("" means none)
+    protected override async Task OnInitializedAsync() => _season = await Season.CurrentAsync();
+
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
 
-    // Every page is interactive except ones marked [ExcludeFromInteractiveRouting] (Error).
+    // All pages are interactive except the ones marked [ExcludeFromInteractiveRouting] (Error).
     private IComponentRenderMode? PageRenderMode =>
         HttpContext.AcceptsInteractiveRouting() ? InteractiveServer : null;
 }

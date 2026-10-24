@@ -7,8 +7,10 @@
 @inject ModalService Modal
 @inject IJSRuntime JS
 @inject ILogger<Employees> Log
+@inject PersonnelBirthdays Birthdays
+@inject AuthenticationStateProvider AuthStateProvider
 
-<PageTitle>Employees | AMS StockWatch</PageTitle>
+<PageTitle>Employees | e-PINS</PageTitle>
 
 <PageHeader Title="Employees" Subtitle="Regional Office personnel by office. They appear in property documents and as RIS signatories.">
     <Actions>
@@ -72,15 +74,34 @@
                     <table class="data-table">
                         <thead><tr><th>Name</th><th>Position</th><th class="text-end">Actions</th></tr></thead>
                         <tbody>
-                            @foreach (var g in VisibleGroups)
+                            @{ OfficeGroup? shown = null; var pages = PeoplePages(); }
+                            @foreach (var (g, p) in pages[Math.Clamp(_pPeople, 1, pages.Count) - 1])
                             {
-                                <tr class="group-row" @key="@($"office-{g.Office.OfficeId}")">
-                                    <td colspan="3">@g.Office.OfficeName <span class="cell-sub">@g.Office.OfficeAcronym, @g.Personnel.Count @(g.Personnel.Count == 1 ? "person" : "people")</span></td>
-                                </tr>
-                                @foreach (var p in g.Personnel)
+                                if (!ReferenceEquals(shown, g))
+                                {
+                                    shown = g;
+                                    <tr class="group-row" @key="@($"office-{g.Office.OfficeId}")">
+                                        <td colspan="3">@g.Office.OfficeName <span class="cell-sub">@g.Office.OfficeAcronym, @g.Personnel.Count @(g.Personnel.Count == 1 ? "person" : "people")</span></td>
+                                    </tr>
+                                }
+                                if (p is null)
+                                {
+                                    <tr @key="@($"empty-{g.Office.OfficeId}")"><td colspan="3" class="is-muted">No employees in this office yet.</td></tr>
+                                }
+                                else
                                 {
                                     <tr @key="@($"person-{p.PersonnelId}")">
-                                        <td class="cell-strong">@p.FullName</td>
+                                        <td>
+                                            <span class="cell-strong">@p.FullName</span>
+                                            @if (_birthdays is not null)
+                                            {
+                                                var b = _birthdays.GetValueOrDefault(p.PersonnelId);
+                                                <span class="bday-note @(b is null ? "is-none" : b.IsLocked ? "is-locked" : "")"
+                                                      title="Birthday asked by My accountability in e-SRS">
+                                                    <i class="bi @(b is null ? "bi-calendar" : b.IsLocked ? "bi-lock-fill" : "bi-calendar-check")" aria-hidden="true"></i>@(b is null ? "No birthday yet" : b.IsLocked ? "Locked out of My accountability" : "Birthday on file")
+                                                </span>
+                                            }
+                                        </td>
                                         <td>@p.Position</td>
                                         <td>
                                             <div class="row-actions justify-content-end">
@@ -94,6 +115,7 @@
                         </tbody>
                     </table>
                 </div>
+                <Pager Total="PeopleRows.Count" PageSizes="@(PeoplePages().Select(pg => pg.Count).ToList())" @bind-Page="_pPeople" ResetKey="@($"{_filterOfficeId}|{_search}")" Label="Employee pages" />
             }
         </section>
     }
@@ -141,6 +163,55 @@
         {
             <div class="form-error" role="alert"><i class="bi bi-exclamation-circle" aria-hidden="true"></i>@_formError</div>
         }
+
+        @if (_editingId is { } pid && _birthdays is not null)
+        {
+            var b = _birthdays.GetValueOrDefault(pid);
+            <section class="bday-box" aria-labelledby="bday-title">
+                <h3 id="bday-title"><i class="bi bi-shield-lock" aria-hidden="true"></i>Birthday for My accountability</h3>
+                <p class="bday-status">
+                    @if (b is null)
+                    {
+                        <span>Not set yet. @_fullName.Trim() sets it the first time they open My accountability in e-SRS.</span>
+                    }
+                    else
+                    {
+                        <span>On file. Set by @(b.SetBySelf ? "the person" : b.SetBy.Replace("AMS: ", "AMS (") + ")") on @PhTime.FromUtc(b.SetAtUtc).ToString("MMM d, yyyy").</span>
+                        @if (b.IsLocked)
+                        {
+                            <span class="bday-locked"><i class="bi bi-lock-fill" aria-hidden="true"></i>Locked after 5 wrong tries until @PhTime.FromUtc(b.LockedUntilUtc!.Value).ToString("h:mm tt").</span>
+                        }
+                    }
+                    <span class="form-text d-block">Birthdays are stored scrambled, so they can't be shown here. You can set a new one or remove it.</span>
+                </p>
+                @if (_bdayEditing)
+                {
+                    <div class="bday-edit">
+                        <DatePicker TValue="DateTime?" Id="e-bday" @bind-Value="_bdayNew" Placeholder="Choose the birthday"
+                                    Min="PhTime.Now.Date.AddYears(-100)" Max="PhTime.Now.Date.AddYears(-15)"
+                                    OpenAt="PhTime.Now.Date.AddYears(-30)" StartWithYears="true" HideToday="true" />
+                        <button type="button" class="btn btn-primary btn-sm" @onclick="SaveBirthdayAsync" disabled="@(_bdayBusy || _bdayNew is null)">Save birthday</button>
+                        <button type="button" class="btn btn-light btn-sm" @onclick="() => _bdayEditing = false" disabled="@_bdayBusy">Cancel</button>
+                    </div>
+                }
+                else
+                {
+                    <div class="bday-actions">
+                        <button type="button" class="btn btn-outline-primary btn-sm" @onclick="() => { _bdayEditing = true; _bdayNew = null; }" disabled="@_bdayBusy">
+                            <i class="bi bi-calendar-event me-1" aria-hidden="true"></i>@(b is null ? "Set birthday" : "Change birthday")
+                        </button>
+                        @if (b?.IsLocked == true)
+                        {
+                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="() => UnlockBirthdayAsync(pid)" disabled="@_bdayBusy"><i class="bi bi-unlock me-1" aria-hidden="true"></i>Unlock now</button>
+                        }
+                        @if (b is not null)
+                        {
+                            <button type="button" class="btn btn-outline-danger btn-sm" @onclick="() => ClearBirthdayAsync(pid)" disabled="@_bdayBusy"><i class="bi bi-x-circle me-1" aria-hidden="true"></i>Remove</button>
+                        }
+                    </div>
+                }
+            </section>
+        }
     </ChildContent>
     <Footer>
         <button type="button" class="btn btn-light" @onclick="() => _formOpen = false" disabled="@_saving">Cancel</button>
@@ -152,6 +223,7 @@
 </Dialog>
 
 @code {
+    private int _pPeople = 1;
     private sealed record OfficeGroup(Office Office, List<RoPersonnel> Personnel);
 
     private bool _loading = true;
@@ -167,8 +239,43 @@
     private string _officeName = "", _officeAcronym = "", _fullName = "", _position = "";
     private string? _formError;
 
+    // Birthdays for My accountability (null until database update 019 is run)
+    private Dictionary<int, BirthdayInfo>? _birthdays;
+    private bool _bdayEditing, _bdayBusy;
+    private DateTime? _bdayNew;
+
     private IReadOnlyList<PickOption<int>> OfficeOptions(string first) =>
         [new(0, first), .. _offices.Select(o => new PickOption<int>(o.OfficeId, o.OfficeAcronym, o.OfficeName))];
+
+    // One entry per person (an office with nobody yet is one entry with no person), for the pages.
+    private List<(OfficeGroup Group, RoPersonnel? Person)> PeopleRows =>
+        VisibleGroups.SelectMany(g => g.Personnel.Count == 0
+            ? [(g, (RoPersonnel?)null)]
+            : g.Personnel.Select(p => (g, (RoPersonnel?)p))).ToList();
+
+    // Pages that keep each office together. I keep adding offices while a page has less than 10 people,
+    // and a page can go up to 15 so a whole office still fits. Only an office with more than 15 gets split.
+    private const int PageTarget = Paging.Size, PageMax = 15;
+
+    private List<List<(OfficeGroup Group, RoPersonnel? Person)>> PeoplePages()
+    {
+        var pages = new List<List<(OfficeGroup, RoPersonnel?)>>();
+        var current = new List<(OfficeGroup, RoPersonnel?)>();
+        foreach (var rows in PeopleRows.GroupBy(r => r.Group).Select(g => g.ToList()))
+        {
+            if (current.Count > 0 && (current.Count >= PageTarget || current.Count + rows.Count > PageMax))
+            {
+                pages.Add(current);
+                current = [];
+            }
+            if (rows.Count <= PageMax) { current.AddRange(rows); continue; }
+            var chunks = rows.Chunk(PageTarget).Select(c => c.ToList()).ToList();
+            pages.AddRange(chunks.Take(chunks.Count - 1));
+            current = chunks[^1];
+        }
+        if (current.Count > 0 || pages.Count == 0) pages.Add(current);
+        return pages;
+    }
 
     private IEnumerable<OfficeGroup> VisibleGroups
     {
@@ -199,6 +306,7 @@
         _offices = await db.Offices.AsNoTracking().OrderBy(o => o.OfficeAcronym).ToListAsync();
         var personnel = await db.RoPersonnel.AsNoTracking().ToListAsync();
         _totalPersonnel = personnel.Count;
+        _birthdays = await Birthdays.AllAsync();
 
         _groups = _offices
             .Select(o => new OfficeGroup(o, personnel.Where(p => p.OfficeId == o.OfficeId)
@@ -226,7 +334,77 @@
         _fullName = p.FullName;
         _position = p.Position;
         _formError = null;
+        _bdayEditing = false;
+        _bdayNew = null;
         _formOpen = true;
+    }
+
+    private async Task<(uint Id, string Name)> CurrentUserAsync()
+    {
+        var user = (await AuthStateProvider.GetAuthenticationStateAsync()).User;
+        uint.TryParse(user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out var id);
+        return (id, user.Identity?.Name ?? "admin");
+    }
+
+    private async Task SaveBirthdayAsync()
+    {
+        if (_editingId is not { } pid || _bdayNew is not { } date) return;
+        _bdayBusy = true;
+        try
+        {
+            var (userId, userName) = await CurrentUserAsync();
+            await Birthdays.SetAsync(pid, DateOnly.FromDateTime(date), userId, userName);
+            _bdayEditing = false;
+            _birthdays = await Birthdays.AllAsync();
+            await Toast($"Birthday saved for {_fullName.Trim()}. They'll use it to open My accountability.");
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Saving birthday failed");
+            _formError = "The birthday couldn't be saved. Check your connection and try again.";
+        }
+        finally { _bdayBusy = false; }
+    }
+
+    private async Task ClearBirthdayAsync(int pid)
+    {
+        var name = _fullName.Trim();
+        var ok = await Modal.ConfirmAsync($"Remove {name}'s birthday?",
+            "They'll be asked to set a new birthday the next time they open My accountability in e-SRS. Anyone who picks their name first could set it, so tell them to do it soon.",
+            "Remove birthday", "Cancel", ModalVariant.Danger);
+        if (!ok) return;
+        _bdayBusy = true;
+        try
+        {
+            var (userId, _) = await CurrentUserAsync();
+            await Birthdays.ClearAsync(pid, userId);
+            _birthdays = await Birthdays.AllAsync();
+            await Toast($"Birthday removed. {name} can set a new one in e-SRS.");
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Removing birthday failed");
+            _formError = "The birthday couldn't be removed. Check your connection and try again.";
+        }
+        finally { _bdayBusy = false; }
+    }
+
+    private async Task UnlockBirthdayAsync(int pid)
+    {
+        _bdayBusy = true;
+        try
+        {
+            var (userId, _) = await CurrentUserAsync();
+            await Birthdays.UnlockAsync(pid, userId);
+            _birthdays = await Birthdays.AllAsync();
+            await Toast($"{_fullName.Trim()} can try their birthday again.");
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Unlocking birthday failed");
+            _formError = "Couldn't unlock. Check your connection and try again.";
+        }
+        finally { _bdayBusy = false; }
     }
 
     private void StartNewOffice()
@@ -337,8 +515,8 @@
 
     private ValueTask Toast(string text, string type = "success") => JS.InvokeVoidAsync("showToast", text, type);
 
-    // Sort senior positions first. "Assistant Regional Director" must be checked
-    // before plain "Director", or it would rank as the Regional Director.
+    // Senior positions go first. I check "Assistant Regional Director" before plain
+    // "Director", otherwise it would be ranked as the Regional Director.
     private static int PositionRank(string position)
     {
         if (string.IsNullOrWhiteSpace(position)) return 99;
@@ -363,7 +541,7 @@
             .Where(w => !skip.Contains(w)).Select(w => char.ToUpperInvariant(w[0])));
     }
 
-    // Live: when personnel change on either website, reload without a refresh.
+    // Live update: when personnel change on either website, reload without refreshing.
     private static readonly string[] LiveAreas = ["personnel"];
     protected override void OnInitialized() => Live.AreasChanged += OnAreasAsync;
 

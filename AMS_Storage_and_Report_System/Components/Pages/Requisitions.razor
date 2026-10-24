@@ -7,9 +7,9 @@
 @inject LiveRefresh Live
 @implements IDisposable
 
-<PageTitle>Requisitions | AMS StockWatch</PageTitle>
+<PageTitle>Requisitions | e-PINS</PageTitle>
 
-<PageHeader Title="Requisitions" Subtitle="Requisition and Issue Slips submitted by offices through the AMS Supplies portal." />
+<PageHeader Title="Requisitions" Subtitle="Requisition and Issue Slips submitted by offices through the e-SRS portal." />
 
 <div class="wrap page-body">
     @if (_error)
@@ -17,7 +17,7 @@
         <div class="empty-state">
             <i class="bi bi-database-exclamation" aria-hidden="true"></i>
             <h2>Requisitions couldn't load</h2>
-            <p>Make sure the AMS Supplies database update (<code>001_requisition_portal.sql</code>) has been run, then reload.</p>
+            <p>Make sure the e-SRS database update (<code>001_requisition_portal.sql</code>) has been run, then reload.</p>
         </div>
     }
     else
@@ -80,9 +80,9 @@
                             <tr><th>RIS no.</th><th>Office</th><th>Purpose</th><th class="t-num">Items</th><th class="t-num">Amount</th><th>Submitted</th><th>Status</th><th></th></tr>
                         </thead>
                         <tbody>
-                            @foreach (var r in Visible)
+                            @foreach (var r in Visible.Page(_pRows))
                             {
-                                <tr @key="r.RisId">
+                                <tr @key="r.RisId" class="@(_fresh.Contains(r.RisId) ? "is-fresh" : null)">
                                     <td class="cell-strong text-nowrap">@r.RisNo</td>
                                     <td><span class="cell-strong">@r.OfficeAcronym</span><span class="cell-sub">@r.OfficeName</span></td>
                                     <td><span class="d-inline-block text-truncate" style="max-width: 260px" title="@r.Purpose">@r.Purpose</span></td>
@@ -100,12 +100,14 @@
                         </tbody>
                     </table>
                 </div>
+                <Pager Total="Visible.Count()" @bind-Page="_pRows" ResetKey="@($"{_status}|{_officeId}|{_search}|{_from}|{_to}")" Label="Requisition pages" />
             }
         </section>
     }
 </div>
 
 @code {
+    private int _pRows = 1;
     private sealed record Tab(string Status, string Label, string Icon, string Tone);
     private static readonly Tab[] Tabs =
     [
@@ -176,13 +178,24 @@
 
     protected override void OnInitialized() => Live.Changed += OnLiveAsync;
 
-    // New, cancelled or updated requisitions appear without reloading the page.
+    // New, cancelled or updated requisitions show up without reloading the page.
     private async Task OnLiveAsync(IReadOnlyList<RisEvent> _)
     {
         if (_error) return;
+        var before = _rows?.Select(r => r.RisId).ToHashSet();
         await LoadAsync();
+        // Rows that just came in get a short gold highlight so AMS notices them.
+        _fresh = before is null ? [] : _rows!.Select(r => r.RisId).Where(id => !before.Contains(id)).ToHashSet();
         StateHasChanged();
+        if (_fresh.Count > 0)
+        {
+            await Task.Delay(4000);
+            _fresh = [];
+            StateHasChanged();
+        }
     }
+
+    private HashSet<int> _fresh = [];
 
     public void Dispose() => Live.Changed -= OnLiveAsync;
 

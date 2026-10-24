@@ -53,11 +53,11 @@ public class AuthService(IDbContextFactory<AppDbContext> dbFactory)
             return Fail();
         }
 
-        // Correct password, but this site is for AMS staff only.
+        // Right password, but this site is only for AMS staff.
         if (!user.IsStaff)
         {
             await LogAttemptAsync(db, username, ipAddress, false);
-            return Fail("This sign-in is for AMS staff. Office accounts use the AMS Supplies portal.");
+            return Fail("This sign-in is for AMS staff. Office accounts use the e-SRS portal.");
         }
         if (!user.IsActive)
         {
@@ -74,7 +74,7 @@ public class AuthService(IDbContextFactory<AppDbContext> dbFactory)
         db.UserActivities.Add(new UserActivity
         {
             UserId = user.UserId, ActivityType = "Login",
-            Description = "Signed in to AMS StockWatch", IpAddress = ipAddress, CreatedAt = now,
+            Description = "Signed in to e-PINS", IpAddress = ipAddress, CreatedAt = now,
         });
         await db.SaveChangesAsync();
         await LogAttemptAsync(db, username, ipAddress, true);

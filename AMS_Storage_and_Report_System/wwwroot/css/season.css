@@ -1,0 +1,193 @@
+:root {
+    --sp-bat: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 32%22%3E%3Cpath fill=%22%2314061f%22 stroke=%22%23ff9a3c%22 stroke-opacity=%22.55%22 stroke-width=%221%22 d=%22M32 9C31 6 29.5 4 28 3c0 2.5.5 4.5 1.5 6.5C25 8 19 5 12 1c1 5-2 9-10 11 5 1 8 4 9 9 3-3 7-4 10-2 2 2 4 6 11 11 7-5 9-9 11-11 3-2 7-1 10 2 1-5 4-8 9-9-8-2-11-6-10-11-7 4-13 7-17.5 8.5 1-2 1.5-4 1.5-6.5-1.5 1-3 3-4 6z%22/%3E%3C/svg%3E");
+    --sp-pumpkin: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 44%22%3E%3Cpath d=%22M23 12c0-5 2-9 7-10%22 fill=%22none%22 stroke=%22%234d7c0f%22 stroke-width=%223.2%22 stroke-linecap=%22round%22/%3E %3Cellipse cx=%2214%22 cy=%2227%22 rx=%2211%22 ry=%2214%22 fill=%22%23d9480f%22/%3E%3Cellipse cx=%2234%22 cy=%2227%22 rx=%2211%22 ry=%2214%22 fill=%22%23d9480f%22/%3E%3Cellipse cx=%2224%22 cy=%2227%22 rx=%2211%22 ry=%2215.5%22 fill=%22%23f7941d%22/%3E %3Cpath d=%22M17 24l3-4 3 4zM25 24l3-4 3 4z%22 fill=%22%233b1300%22/%3E%3Cpath d=%22M15 31q9 7 18 0l-3 1-1.5 2-3-1.5-3 1.5-1.5-2z%22 fill=%22%233b1300%22/%3E%3C/svg%3E");
+    --sp-ghost: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 40 48%22%3E%3Cpath d=%22M20 2C10 2 4 10 4 20v25l5.3-4.5L14.7 45l5.3-4.5 5.3 4.5 5.4-4.5L36 45V20C36 10 30 2 20 2z%22 fill=%22%23f5f3ff%22 fill-opacity=%22.92%22/%3E %3Cellipse cx=%2214.5%22 cy=%2220%22 rx=%222.6%22 ry=%223.6%22 fill=%22%232e1065%22/%3E%3Cellipse cx=%2225.5%22 cy=%2220%22 rx=%222.6%22 ry=%223.6%22 fill=%22%232e1065%22/%3E%3C/svg%3E");
+    --sp-snow: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%22-20 -20 40 40%22%3E%3Cdefs%3E%3Cg id=%22a%22%3E%3Cpath d=%22M0-17V17M-4.5-13.5L0-9l4.5-4.5M-4.5 13.5L0 9l4.5 4.5%22/%3E%3C/g%3E%3C/defs%3E %3Cg fill=%22none%22 stroke=%22%23ffffff%22 stroke-width=%222.2%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cuse href=%22%23a%22/%3E%3Cuse href=%22%23a%22 transform=%22rotate(60)%22/%3E%3Cuse href=%22%23a%22 transform=%22rotate(120)%22/%3E%3C/g%3E%3C/svg%3E");
+    --sp-parol: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%22-26 -26 52 70%22%3E%3Cpath d=%22M-6 18q-4 10 -9 22M0 20v22M6 18q4 10 9 22%22 fill=%22none%22 stroke=%22%23fdb515%22 stroke-width=%222%22 stroke-linecap=%22round%22/%3E %3Cpolygon points=%220.00,-25.00 6.47,-8.90 23.78,-7.73 10.46,3.40 14.69,20.23 0.00,11.00 -14.69,20.23 -10.46,3.40 -23.78,-7.73 -6.47,-8.90%22 fill=%22%23e03131%22 stroke=%22%23fdb515%22 stroke-width=%222.4%22 stroke-linejoin=%22round%22/%3E %3Cpolygon points=%220.00,-14.00 3.53,-4.85 13.31,-4.33 5.71,1.85 8.23,11.33 0.00,6.00 -8.23,11.33 -5.71,1.85 -13.31,-4.33 -3.53,-4.85%22 fill=%22%23fdb515%22/%3E%3Ccircle r=%224.5%22 fill=%22%23fff8db%22/%3E%3C/svg%3E");
+    --sp-ornament: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 40 48%22%3E%3Crect x=%2215%22 y=%222%22 width=%2210%22 height=%227%22 rx=%221.5%22 fill=%22%23fdb515%22/%3E%3Ccircle cx=%2220%22 cy=%2228%22 r=%2217%22 fill=%22%23c92a2a%22/%3E %3Cpath d=%22M5 26q15 7 30 0%22 fill=%22none%22 stroke=%22%23fdb515%22 stroke-width=%222.4%22/%3E%3Ccircle cx=%2213%22 cy=%2221%22 r=%224%22 fill=%22%23fff%22 fill-opacity=%22.45%22/%3E%3C/svg%3E");
+    --sp-heart-pink: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 46%22%3E%3Cpath d=%22M24 42S4 29 4 16C4 9 9 4 16 4c4 0 6.7 2.2 8 5 1.3-2.8 4-5 8-5 7 0 12 5 12 12 0 13-20 26-20 26z%22 fill=%22%23ff8fb8%22/%3E%3Cpath d=%22M12 12q4-4 8 0%22 fill=%22none%22 stroke=%22%23fff%22 stroke-opacity=%22.6%22 stroke-width=%222.4%22 stroke-linecap=%22round%22/%3E%3C/svg%3E");
+    --sp-heart-red: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 46%22%3E%3Cpath d=%22M24 42S4 29 4 16C4 9 9 4 16 4c4 0 6.7 2.2 8 5 1.3-2.8 4-5 8-5 7 0 12 5 12 12 0 13-20 26-20 26z%22 fill=%22%23ff3b5c%22/%3E%3Cpath d=%22M12 12q4-4 8 0%22 fill=%22none%22 stroke=%22%23fff%22 stroke-opacity=%22.55%22 stroke-width=%222.4%22 stroke-linecap=%22round%22/%3E%3C/svg%3E");
+    --sp-sparkle: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 40 40%22%3E%3Cpath d=%22M20 0L23.5 16.5 40 20 23.5 23.5 20 40 16.5 23.5 0 20 16.5 16.5z%22 fill=%22%23fff6d6%22/%3E%3C/svg%3E");
+    --sp-burst-gold: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%22-23 -23 46 46%22%3E%3Cg stroke=%22%23fdb515%22 stroke-width=%222%22 stroke-linecap=%22round%22%3E%3Cpath d=%22M7.0 0.0L18.0 0.0%22/%3E%3Ccircle cx=%2220.0%22 cy=%220.0%22 r=%221.8%22 fill=%22%23fdb515%22 stroke=%22none%22/%3E%3Cpath d=%22M6.1 3.5L15.6 9.0%22/%3E%3Ccircle cx=%2217.3%22 cy=%2210.0%22 r=%221.8%22 fill=%22%23fff3bf%22 stroke=%22none%22/%3E%3Cpath d=%22M3.5 6.1L9.0 15.6%22/%3E%3Ccircle cx=%2210.0%22 cy=%2217.3%22 r=%221.8%22 fill=%22%23fdb515%22 stroke=%22none%22/%3E%3Cpath d=%22M0.0 7.0L0.0 18.0%22/%3E%3Ccircle cx=%220.0%22 cy=%2220.0%22 r=%221.8%22 fill=%22%23fff3bf%22 stroke=%22none%22/%3E%3Cpath d=%22M-3.5 6.1L-9.0 15.6%22/%3E%3Ccircle cx=%22-10.0%22 cy=%2217.3%22 r=%221.8%22 fill=%22%23fdb515%22 stroke=%22none%22/%3E%3Cpath d=%22M-6.1 3.5L-15.6 9.0%22/%3E%3Ccircle cx=%22-17.3%22 cy=%2210.0%22 r=%221.8%22 fill=%22%23fff3bf%22 stroke=%22none%22/%3E%3Cpath d=%22M-7.0 0.0L-18.0 0.0%22/%3E%3Ccircle cx=%22-20.0%22 cy=%220.0%22 r=%221.8%22 fill=%22%23fdb515%22 stroke=%22none%22/%3E%3Cpath d=%22M-6.1 -3.5L-15.6 -9.0%22/%3E%3Ccircle cx=%22-17.3%22 cy=%22-10.0%22 r=%221.8%22 fill=%22%23fff3bf%22 stroke=%22none%22/%3E%3Cpath d=%22M-3.5 -6.1L-9.0 -15.6%22/%3E%3Ccircle cx=%22-10.0%22 cy=%22-17.3%22 r=%221.8%22 fill=%22%23fdb515%22 stroke=%22none%22/%3E%3Cpath d=%22M-0.0 -7.0L-0.0 -18.0%22/%3E%3Ccircle cx=%22-0.0%22 cy=%22-20.0%22 r=%221.8%22 fill=%22%23fff3bf%22 stroke=%22none%22/%3E%3Cpath d=%22M3.5 -6.1L9.0 -15.6%22/%3E%3Ccircle cx=%2210.0%22 cy=%22-17.3%22 r=%221.8%22 fill=%22%23fdb515%22 stroke=%22none%22/%3E%3Cpath d=%22M6.1 -3.5L15.6 -9.0%22/%3E%3Ccircle cx=%2217.3%22 cy=%22-10.0%22 r=%221.8%22 fill=%22%23fff3bf%22 stroke=%22none%22/%3E%3C/g%3E%3Ccircle r=%222.5%22 fill=%22%23fff%22/%3E%3C/svg%3E");
+    --sp-burst-pink: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%22-23 -23 46 46%22%3E%3Cg stroke=%22%23ff8fb8%22 stroke-width=%222%22 stroke-linecap=%22round%22%3E%3Cpath d=%22M7.0 0.0L18.0 0.0%22/%3E%3Ccircle cx=%2220.0%22 cy=%220.0%22 r=%221.8%22 fill=%22%23ff8fb8%22 stroke=%22none%22/%3E%3Cpath d=%22M6.1 3.5L15.6 9.0%22/%3E%3Ccircle cx=%2217.3%22 cy=%2210.0%22 r=%221.8%22 fill=%22%23ffe3ef%22 stroke=%22none%22/%3E%3Cpath d=%22M3.5 6.1L9.0 15.6%22/%3E%3Ccircle cx=%2210.0%22 cy=%2217.3%22 r=%221.8%22 fill=%22%23ff8fb8%22 stroke=%22none%22/%3E%3Cpath d=%22M0.0 7.0L0.0 18.0%22/%3E%3Ccircle cx=%220.0%22 cy=%2220.0%22 r=%221.8%22 fill=%22%23ffe3ef%22 stroke=%22none%22/%3E%3Cpath d=%22M-3.5 6.1L-9.0 15.6%22/%3E%3Ccircle cx=%22-10.0%22 cy=%2217.3%22 r=%221.8%22 fill=%22%23ff8fb8%22 stroke=%22none%22/%3E%3Cpath d=%22M-6.1 3.5L-15.6 9.0%22/%3E%3Ccircle cx=%22-17.3%22 cy=%2210.0%22 r=%221.8%22 fill=%22%23ffe3ef%22 stroke=%22none%22/%3E%3Cpath d=%22M-7.0 0.0L-18.0 0.0%22/%3E%3Ccircle cx=%22-20.0%22 cy=%220.0%22 r=%221.8%22 fill=%22%23ff8fb8%22 stroke=%22none%22/%3E%3Cpath d=%22M-6.1 -3.5L-15.6 -9.0%22/%3E%3Ccircle cx=%22-17.3%22 cy=%22-10.0%22 r=%221.8%22 fill=%22%23ffe3ef%22 stroke=%22none%22/%3E%3Cpath d=%22M-3.5 -6.1L-9.0 -15.6%22/%3E%3Ccircle cx=%22-10.0%22 cy=%22-17.3%22 r=%221.8%22 fill=%22%23ff8fb8%22 stroke=%22none%22/%3E%3Cpath d=%22M-0.0 -7.0L-0.0 -18.0%22/%3E%3Ccircle cx=%22-0.0%22 cy=%22-20.0%22 r=%221.8%22 fill=%22%23ffe3ef%22 stroke=%22none%22/%3E%3Cpath d=%22M3.5 -6.1L9.0 -15.6%22/%3E%3Ccircle cx=%2210.0%22 cy=%22-17.3%22 r=%221.8%22 fill=%22%23ff8fb8%22 stroke=%22none%22/%3E%3Cpath d=%22M6.1 -3.5L15.6 -9.0%22/%3E%3Ccircle cx=%2217.3%22 cy=%22-10.0%22 r=%221.8%22 fill=%22%23ffe3ef%22 stroke=%22none%22/%3E%3C/g%3E%3Ccircle r=%222.5%22 fill=%22%23fff%22/%3E%3C/svg%3E");
+    --sp-sun: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 48%22%3E%3Cpath d=%22M21.2 11.3L24.0 1.0L26.8 11.3zM31.0 13.0L40.3 7.7L35.0 17.0zM36.7 21.2L47.0 24.0L36.7 26.8zM35.0 31.0L40.3 40.3L31.0 35.0zM26.8 36.7L24.0 47.0L21.2 36.7zM17.0 35.0L7.7 40.3L13.0 31.0zM11.3 26.8L1.0 24.0L11.3 21.2zM13.0 17.0L7.7 7.7L17.0 13.0z%22 fill=%22%23fcd116%22/%3E%3Ccircle cx=%2224%22 cy=%2224%22 r=%2210%22 fill=%22%23fcd116%22/%3E%3C/svg%3E");
+    --sp-star: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%22-20 -20 40 40%22%3E%3Cpolygon points=%220.00,-17.50 4.47,-4.65 18.07,-4.37 7.23,3.85 11.17,16.87 0.00,9.10 -11.17,16.87 -7.23,3.85 -18.07,-4.37 -4.47,-4.65%22 fill=%22%23fcd116%22/%3E%3C/svg%3E");
+    --sp-star-white: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%22-20 -20 40 40%22%3E%3Cpolygon points=%220.00,-17.50 4.47,-4.65 18.07,-4.37 7.23,3.85 11.17,16.87 0.00,9.10 -11.17,16.87 -7.23,3.85 -18.07,-4.37 -4.47,-4.65%22 fill=%22%23ffffff%22/%3E%3C/svg%3E");
+    --sp-apple: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 44 48%22%3E%3Cpath d=%22M22 14c-3-3-9-4-13 0-6 6-4 18 2 25 3 4 7 6 11 4 4 2 8 0 11-4 6-7 8-19 2-25-4-4-10-3-13 0z%22 fill=%22%23e03131%22/%3E %3Cpath d=%22M22 14c0-5 1-8 4-11%22 fill=%22none%22 stroke=%22%235c3b1e%22 stroke-width=%222.6%22 stroke-linecap=%22round%22/%3E%3Cpath d=%22M24 8c4-5 10-5 13-3-3 4-8 6-13 3z%22 fill=%22%2340c057%22/%3E%3Cellipse cx=%2213%22 cy=%2222%22 rx=%222.6%22 ry=%225%22 fill=%22%23fff%22 fill-opacity=%22.4%22 transform=%22rotate(20 13 22)%22/%3E%3C/svg%3E");
+    --sp-pencil: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 60 16%22%3E%3Crect x=%2210%22 y=%222%22 width=%2238%22 height=%2212%22 fill=%22%23fdb515%22/%3E%3Crect x=%2210%22 y=%222%22 width=%2238%22 height=%224%22 fill=%22%23ffd43b%22/%3E %3Crect x=%2248%22 y=%222%22 width=%225%22 height=%2212%22 fill=%22%23adb5bd%22/%3E%3Crect x=%2253%22 y=%222%22 width=%226%22 height=%2212%22 rx=%222.5%22 fill=%22%23ff8787%22/%3E%3Cpath d=%22M10 2L0 8l10 6z%22 fill=%22%23f1d3a1%22/%3E%3Cpath d=%22M3.4 6L0 8l3.4 2z%22 fill=%22%23343a40%22/%3E%3C/svg%3E");
+    --sp-book: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 56 40%22%3E%3Cpath d=%22M28 8C22 3 12 2 3 4v32c9-2 19-1 25 4 6-5 16-6 25-4V4c-9-2-19-1-25 4z%22 fill=%22%233b5bdb%22/%3E %3Cpath d=%22M28 10C23 6 14 5 6 6.5v26c8-1.5 17-.5 22 3.5zM28 10c5-4 14-5 22-3.5v26c-8-1.5-17-.5-22 3.5z%22 fill=%22%23ffffff%22/%3E%3Cpath d=%22M28 10v26%22 stroke=%22%23bac8ff%22 stroke-width=%221.4%22/%3E%3C/svg%3E");
+}
+
+/* These are the seasonal themes (set in e-PINS > Settings > Seasonal theme).
+   <html data-season="halloween"> changes the colors of the top bar, the page headers and
+   the sidebar, and adds some floating 3D decorations in them (SeasonDecor.razor).
+   Everything else in the system keeps its normal colors. */
+
+/* No season: don't draw the decorations at all */
+.season-decor { display: none; }
+
+html[data-season="halloween"] {
+    --season-bg: linear-gradient(160deg, #4a1a72 0%, #2a0f47 55%, #12061f 100%);
+    --season-side: linear-gradient(180deg, #2a0f47 0%, #170828 100%);
+    --season-line: #f7941d; --season-arc1: #c2410c; --season-arc2: #f59f00;
+    --s1: var(--sp-bat); --s2: var(--sp-pumpkin); --s3: var(--sp-ghost); --season-anim: season-drift;
+}
+html[data-season="christmas"] {
+    --season-bg: linear-gradient(160deg, #13804d 0%, #0b5a35 55%, #053520 100%);
+    --season-side: linear-gradient(180deg, #0b5a35 0%, #053520 100%);
+    --season-line: #e03131; --season-arc1: #c92a2a; --season-arc2: #fdb515;
+    --s1: var(--sp-snow); --s2: var(--sp-parol); --s3: var(--sp-ornament); --season-anim: season-fall;
+}
+html[data-season="valentines"] {
+    --season-bg: linear-gradient(160deg, #b0174f 0%, #800f3a 55%, #4f0822 100%);
+    --season-side: linear-gradient(180deg, #800f3a 0%, #4f0822 100%);
+    --season-line: #ff8fb8; --season-arc1: #ff4d7d; --season-arc2: #ffb3cd;
+    --s1: var(--sp-heart-pink); --s2: var(--sp-heart-red); --s3: var(--sp-sparkle); --season-anim: season-rise;
+}
+html[data-season="newyear"] {
+    --season-bg: linear-gradient(160deg, #23285e 0%, #12153a 55%, #070818 100%);
+    --season-side: linear-gradient(180deg, #12153a 0%, #070818 100%);
+    --season-line: #fdb515; --season-arc1: #fab005; --season-arc2: #ffe066;
+    --s1: var(--sp-burst-gold); --s2: var(--sp-sparkle); --s3: var(--sp-burst-pink); --season-anim: season-pop;
+}
+html[data-season="independence"] {
+    --season-bg: linear-gradient(160deg, #0b47c4 0%, #0038a8 55%, #001f63 100%);
+    --season-side: linear-gradient(180deg, #0038a8 0%, #001f63 100%);
+    --season-line: #ce1126; --season-arc1: #ce1126; --season-arc2: #fcd116;
+    --s1: var(--sp-sun); --s2: var(--sp-star); --s3: var(--sp-star-white); --season-anim: season-drift;
+}
+html[data-season="teachers"] {
+    --season-bg: linear-gradient(160deg, #1c4fc4 0%, #0b2fa8 55%, #00007f 100%);
+    --season-side: linear-gradient(180deg, #0b2fa8 0%, #00007f 100%);
+    --season-line: #fdb515; --season-arc1: #f7941d; --season-arc2: #fdb515;
+    --s1: var(--sp-apple); --s2: var(--sp-pencil); --s3: var(--sp-book); --season-anim: season-drift;
+}
+
+/* Recolored headers and sidebar */
+html[data-season]:not([data-season=""]) :is(.topbar, .page-head, .catalog-hero) { background: var(--season-bg); }
+html[data-season]:not([data-season=""]) .topbar { border-bottom-color: var(--season-line); }
+html[data-season]:not([data-season=""]) .sidebar { background: var(--season-side); border-right-color: var(--season-line); }
+html[data-season]:not([data-season=""]) .mobile-bar { background: var(--season-bg); border-bottom-color: var(--season-line); }
+html[data-season]:not([data-season=""]) .catalog-hero::before { background: var(--season-arc1); }
+html[data-season]:not([data-season=""]) .catalog-hero::after { background: var(--season-arc2); box-shadow: inset 0 0 0 1.25rem color-mix(in srgb, var(--season-arc2) 70%, #fff); }
+/* The decorations go behind the header text, so each header becomes its own layer */
+html[data-season]:not([data-season=""]) :is(.topbar, .page-head, .catalog-hero, .sidebar) { isolation: isolate; }
+
+/* The 3D decoration layer */
+html[data-season]:not([data-season=""]) .season-decor {
+    display: block; position: absolute; inset: 0; z-index: -1; overflow: hidden;
+    pointer-events: none; perspective: 600px;
+}
+.season-field {
+    position: absolute; inset: 0; transform-style: preserve-3d;
+    /* Moves a little with the mouse, so near and far decorations move by different amounts (see season.js) */
+    transform: rotateX(calc(var(--sy, 0) * -10deg)) rotateY(calc(var(--sx, 0) * 14deg));
+    transition: transform .4s ease-out;
+}
+.season-field i {
+    position: absolute; display: block;
+    width: var(--w, 34px); height: var(--w, 34px);
+    left: var(--x, 50%); top: var(--y, 30%);
+    background: center / contain no-repeat;
+    opacity: var(--o, .85);
+    filter: drop-shadow(0 6px 8px rgb(0 0 0 / .35));
+    transform: translate3d(0, 0, var(--z, 0px));
+    animation: var(--season-anim, season-drift) var(--t, 11s) ease-in-out var(--d, 0s) infinite;
+    will-change: transform;
+}
+.season-field i:nth-child(3n+1) { background-image: var(--s1); }
+.season-field i:nth-child(3n+2) { background-image: var(--s2); }
+.season-field i:nth-child(3n)   { background-image: var(--s3); }
+/* Ten spots, mostly on the right so the titles are easy to read */
+.season-field i:nth-child(1)  { --x: 1%;  --y: 4%;  --w: 18px; --z: -140px; --o: .3;  --t: 13s; --d: -2s; }
+.season-field i:nth-child(2)  { --x: 40%; --y: 74%; --w: 18px; --z: -220px; --o: .22; --t: 15s; --d: -7s; }
+.season-field i:nth-child(3)  { --x: 52%; --y: 10%; --w: 24px; --z: -60px;  --o: .55; --t: 12s; --d: -4s; }
+.season-field i:nth-child(4)  { --x: 58%; --y: 52%; --w: 40px; --z: 40px;   --o: .9;  --t: 10s; --d: -1s; }
+.season-field i:nth-child(5)  { --x: 66%; --y: 8%;  --w: 30px; --z: -30px;  --o: .8;  --t: 14s; --d: -9s; }
+.season-field i:nth-child(6)  { --x: 74%; --y: 46%; --w: 24px; --z: -180px; --o: .55; --t: 16s; --d: -5s; }
+.season-field i:nth-child(7)  { --x: 81%; --y: 14%; --w: 46px; --z: 70px;   --o: .95; --t: 11s; --d: -3s; }
+.season-field i:nth-child(8)  { --x: 88%; --y: 60%; --w: 30px; --z: 0px;    --o: .85; --t: 12s; --d: -8s; }
+.season-field i:nth-child(9)  { --x: 94%; --y: 22%; --w: 22px; --z: -120px; --o: .6;  --t: 15s; --d: -6s; }
+.season-field i:nth-child(10) { --x: 28%; --y: 4%;  --w: 16px; --z: -260px; --o: .22; --t: 17s; --d: -10s; }
+
+/* The top bar is short, so smaller decorations and only on the right half */
+.topbar .season-field i { --w: 22px !important; opacity: calc(var(--o, .85) * .6); }
+.topbar .season-field i:nth-child(-n+3), .topbar .season-field i:nth-child(10) { display: none; }
+/* The sidebar is tall and narrow, so the decorations stay in the empty bottom half and the edges, lighter */
+.sidebar .season-field i:nth-child(1)  { --x: 86%; --y: 2%; }
+.sidebar .season-field i:nth-child(2)  { --x: 4%;  --y: 46%; }
+.sidebar .season-field i:nth-child(3)  { --x: 82%; --y: 50%; }
+.sidebar .season-field i:nth-child(4)  { --x: 34%; --y: 58%; }
+.sidebar .season-field i:nth-child(5)  { --x: 70%; --y: 64%; }
+.sidebar .season-field i:nth-child(6)  { --x: 10%; --y: 70%; }
+.sidebar .season-field i:nth-child(7)  { --x: 52%; --y: 76%; }
+.sidebar .season-field i:nth-child(8)  { --x: 20%; --y: 82%; }
+.sidebar .season-field i:nth-child(9)  { --x: 80%; --y: 80%; }
+.sidebar .season-field i:nth-child(10) { --x: 2%;  --y: 2%; }
+.sidebar .season-field i { opacity: calc(var(--o, .85) * .55); }
+
+@media (max-width: 575.98px) {
+    .season-field i:nth-child(n+7) { display: none; }
+    .season-field i { --w: 24px; }
+}
+
+/* Floating in 3D: drifts, tilts and turns toward you */
+@keyframes season-drift {
+    0%   { transform: translate3d(0, 0, var(--z, 0px)) rotateX(8deg) rotateY(-30deg) rotateZ(-6deg); }
+    50%  { transform: translate3d(14px, -10px, calc(var(--z, 0px) + 60px)) rotateX(-8deg) rotateY(30deg) rotateZ(6deg); }
+    100% { transform: translate3d(0, 0, var(--z, 0px)) rotateX(8deg) rotateY(-30deg) rotateZ(-6deg); }
+}
+/* Snow and parol falling and slowly turning */
+@keyframes season-fall {
+    0%   { transform: translate3d(0, -140%, var(--z, 0px)) rotateY(-50deg) rotateZ(0deg); opacity: 0; }
+    12%  { opacity: var(--o, .85); }
+    85%  { opacity: var(--o, .85); }
+    100% { transform: translate3d(18px, 420%, var(--z, 0px)) rotateY(50deg) rotateZ(120deg); opacity: 0; }
+}
+/* Hearts going up */
+@keyframes season-rise {
+    0%   { transform: translate3d(0, 260%, var(--z, 0px)) rotateY(-25deg) scale(.8); opacity: 0; }
+    15%  { opacity: var(--o, .85); }
+    50%  { transform: translate3d(-10px, 60%, calc(var(--z, 0px) + 40px)) rotateY(25deg) scale(1); }
+    85%  { opacity: var(--o, .85); }
+    100% { transform: translate3d(8px, -160%, var(--z, 0px)) rotateY(-25deg) scale(.9); opacity: 0; }
+}
+/* Fireworks: burst, glow, fade */
+@keyframes season-pop {
+    0%, 100% { transform: translate3d(0, 0, var(--z, 0px)) scale(.3) rotateZ(0deg); opacity: 0; }
+    20%      { opacity: var(--o, .85); }
+    55%      { transform: translate3d(0, -6px, calc(var(--z, 0px) + 50px)) scale(1.15) rotateZ(25deg); opacity: var(--o, .85); }
+    80%      { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .season-field { transform: none; transition: none; }
+    .season-field i { animation: none; }
+}
+@media print { .season-decor { display: none !important; } }
+
+/* Settings > Seasonal theme: the choices */
+.season-picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: .75rem; }
+.season-pick {
+    position: relative; display: flex; align-items: center; gap: .75rem; text-align: left;
+    padding: .625rem .75rem; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink);
+    transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+.season-pick:hover:not(:disabled) { border-color: var(--brand); transform: translateY(-1px); box-shadow: 0 6px 16px rgb(0 0 40 / .08); }
+.season-pick.is-on { border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand) inset; }
+.season-pick-text { display: flex; flex-direction: column; min-width: 0; }
+.season-pick-text strong { font-size: .9375rem; }
+.season-pick-text small { color: var(--muted); font-size: .8rem; }
+.season-check { margin-left: auto; color: var(--brand); font-size: 1.1rem; }
+.season-swatch {
+    flex: none; width: 52px; height: 40px; border-radius: 9px; display: grid; place-items: center;
+    color: #fff; font-size: 1.1rem; background: linear-gradient(160deg, #0b2fa8, #00007f);
+    background-repeat: no-repeat; box-shadow: inset 0 -3px 0 var(--sw-line, #fdb515);
+}
+.season-swatch[data-swatch="auto"] { background: conic-gradient(from 200deg, #2a0f47, #0b5a35, #800f3a, #12153a, #0038a8, #0b2fa8, #2a0f47); }
+.season-swatch[data-swatch="halloween"]    { --sw-line: #f7941d; background: linear-gradient(160deg, #4a1a72, #12061f); color: #f7941d; }
+.season-swatch[data-swatch="christmas"]    { --sw-line: #e03131; background: linear-gradient(160deg, #13804d, #053520); }
+.season-swatch[data-swatch="valentines"]   { --sw-line: #ff8fb8; background: linear-gradient(160deg, #b0174f, #4f0822); color: #ffb3cd; }
+.season-swatch[data-swatch="newyear"]      { --sw-line: #fdb515; background: linear-gradient(160deg, #23285e, #070818); color: #fdb515; }
+.season-swatch[data-swatch="independence"] { --sw-line: #ce1126; background: linear-gradient(160deg, #0b47c4, #001f63); color: #fcd116; }
+.season-swatch[data-swatch="teachers"]     { --sw-line: #fdb515; background: linear-gradient(160deg, #1c4fc4, #00007f); color: #ffd43b; }

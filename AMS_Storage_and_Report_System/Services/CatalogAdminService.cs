@@ -1,5 +1,5 @@
-// CatalogAdminService.cs — AMS manages the supply catalog (items, photos,
-// categories, suppliers) and answers "Suggest a supply" requests from offices.
+// This is how AMS manages the supply catalog (items, photos, categories, suppliers)
+// and answers the "Suggest a supply" requests from offices.
 
 using AMS_Storage_and_Report_System.Data;
 using AMS_Storage_and_Report_System.Models;
@@ -21,6 +21,11 @@ public sealed class ItemForm
     public bool IsPerishable { get; set; }
     public DateTime? ManufacturedOn { get; set; }
     public DateTime? ExpiresOn { get; set; }
+    /// The pack only shows the month and year ("EXP 03/2027").
+    public bool MfdMonthOnly { get; set; }
+    public bool ExpMonthOnly { get; set; }
+    /// Colors the offices can choose in e-SRS (empty means the item has no colors).
+    public List<ItemColor> Colors { get; set; } = [];
 }
 
 public sealed class CatalogAdminService(IDbContextFactory<AppDbContext> dbFactory)
@@ -28,20 +33,20 @@ public sealed class CatalogAdminService(IDbContextFactory<AppDbContext> dbFactor
     public const int MaxImageBytes = 2 * 1024 * 1024;
     public static readonly string[] ImageTypes = ["image/jpeg", "image/png", "image/webp"];
 
-    /// Photos are shrunk in the browser to fit this many pixels before they are saved
+    /// Photos are shrunk in the browser to fit this many pixels before saving
     /// (a 3 MB phone photo becomes about 50 to 150 KB), so the catalog loads fast everywhere.
     public const int PhotoMaxSide = 1000;
-    /// The original may be big: only the shrunk copy is uploaded and stored.
+    /// The original can be big, only the shrunk copy is uploaded and saved.
     public const long MaxOriginalBytes = 25 * 1024 * 1024;
 
-    /// The real format, read from the file's first bytes.
+    /// The real format, read from the first bytes of the file.
     public static string? DetectImageType(byte[] b) =>
         b.Length >= 12 && b[0] == 'R' && b[1] == 'I' && b[2] == 'F' && b[3] == 'F' && b[8] == 'W' && b[9] == 'E' && b[10] == 'B' && b[11] == 'P' ? "image/webp"
         : b.Length >= 3 && b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF ? "image/jpeg"
         : b.Length >= 8 && b[0] == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G' ? "image/png"
         : null;
 
-    // ── Items ───────────────────────────────────────────────────────────
+    // Items
     public async Task<List<SupplyItem>> ItemsAsync()
     {
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -61,12 +66,19 @@ public sealed class CatalogAdminService(IDbContextFactory<AppDbContext> dbFactor
         if (unit.Length == 0) return OpResult.Fail("Enter the unit of measure, for example pc, ream or box.");
         if (f.UnitPrice < 0) return OpResult.Fail("The unit price can't be negative.");
         if (f.ReorderLevel < 0) return OpResult.Fail("The low-stock level can't be negative.");
+        // I save a month-only MFD as the 1st of the month and a month-only EXP as the last day,
+        // because "EXP 03/2027" means the item can still be used until the end of March 2027.
+        var mfdDate = f.ManufacturedOn?.Date is { } md && f.MfdMonthOnly ? new DateTime(md.Year, md.Month, 1) : f.ManufacturedOn?.Date;
+        var expDate = f.ExpiresOn?.Date is { } ed && f.ExpMonthOnly ? new DateTime(ed.Year, ed.Month, DateTime.DaysInMonth(ed.Year, ed.Month)) : f.ExpiresOn?.Date;
         if (f.IsPerishable)
         {
-            if (f.ExpiresOn is null) return OpResult.Fail("Enter the expiration date (EXP), or choose No for Perishable.");
-            if (f.ManufacturedOn is { } mfd && mfd.Date > PhTime.Now.Date) return OpResult.Fail("The manufacturing date (MFD) can't be in the future.");
-            if (f.ManufacturedOn is { } m && m.Date >= f.ExpiresOn.Value.Date) return OpResult.Fail("The expiration date (EXP) must be after the manufacturing date (MFD).");
+            if (expDate is null) return OpResult.Fail("Enter the expiration date (EXP), or choose No for Perishable.");
+            if (mfdDate is { } mfd && mfd > PhTime.Now.Date) return OpResult.Fail("The manufacturing date (MFD) can't be in the future.");
+            if (mfdDate is { } m && m >= expDate.Value) return OpResult.Fail("The expiration date (EXP) must be after the manufacturing date (MFD).");
         }
+        var colors = f.Colors.Select(c => c with { Name = ItemColors.Clean(c.Name) }).Where(c => c.Name.Length > 0)
+            .DistinctBy(c => c.Name.ToLowerInvariant()).ToList();
+        if (colors.Count > ItemColors.MaxColors) return OpResult.Fail($"An item can have up to {ItemColors.MaxColors} colors.");
 
         await using var db = await dbFactory.CreateDbContextAsync();
         if (await db.SupplyItems.AnyAsync(i => i.StockNo == stockNo && i.ItemId != f.ItemId))
@@ -83,8 +95,11 @@ public sealed class CatalogAdminService(IDbContextFactory<AppDbContext> dbFactor
         item.UnitPrice = Math.Round(f.UnitPrice, 2);
         item.ReorderLevel = f.ReorderLevel;
         item.IsPerishable = f.IsPerishable;
-        item.ManufacturedOn = f.IsPerishable ? f.ManufacturedOn?.Date : null;   // "No" clears the dates
-        item.ExpiresOn = f.IsPerishable ? f.ExpiresOn?.Date : null;
+        item.ManufacturedOn = f.IsPerishable ? mfdDate : null;   // "No" clears the dates
+        item.ExpiresOn = f.IsPerishable ? expDate : null;
+        item.MfdMonthOnly = f.IsPerishable && f.MfdMonthOnly;
+        item.ExpMonthOnly = f.IsPerishable && f.ExpMonthOnly;
+        item.ColorOptions = ItemColors.Format(colors);
         if (f.ItemId == 0) db.SupplyItems.Add(item);
 
         db.UserActivities.Add(new UserActivity
@@ -107,7 +122,7 @@ public sealed class CatalogAdminService(IDbContextFactory<AppDbContext> dbFactor
         return OpResult.Success(active ? $"{item.ItemName} is back in the catalog." : $"{item.ItemName} is hidden from offices.");
     }
 
-    // ── Photos ──────────────────────────────────────────────────────────
+    // Photos
     public async Task<OpResult> SetImageAsync(int itemId, byte[] content, string contentType)
     {
         contentType = DetectImageType(content) ?? contentType;
@@ -122,7 +137,7 @@ public sealed class CatalogAdminService(IDbContextFactory<AppDbContext> dbFactor
         if (image is null) { image = new ItemImage { ItemId = itemId }; db.ItemImages.Add(image); }
         image.ContentType = contentType;
         image.Content = content;
-        // The AMS Supplies catalog shows the photo from this address (?v= forces browsers to load the new one).
+        // The e-SRS catalog loads the photo from this address (?v= makes browsers load the new one).
         item.ImagePath = $"/images/items/{itemId}?v={DateTime.UtcNow.Ticks}";
         await db.SaveChangesAsync();
         return OpResult.Success("Photo saved.");
@@ -135,7 +150,7 @@ public sealed class CatalogAdminService(IDbContextFactory<AppDbContext> dbFactor
         await db.SupplyItems.Where(i => i.ItemId == itemId).ExecuteUpdateAsync(s => s.SetProperty(i => i.ImagePath, (string?)null));
     }
 
-    // ── Categories and suppliers ───────────────────────────────────────
+    // Categories and suppliers
     public async Task<List<ItemCategory>> CategoriesAsync()
     {
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -182,7 +197,7 @@ public sealed class CatalogAdminService(IDbContextFactory<AppDbContext> dbFactor
         return OpResult.Success("Supplier saved.") with { Id = s.SupplierId };
     }
 
-    // ── Suggestions from offices ───────────────────────────────────────
+    // Suggestions from offices
     public async Task<List<SupplySuggestion>> SuggestionsAsync()
     {
         await using var db = await dbFactory.CreateDbContextAsync();

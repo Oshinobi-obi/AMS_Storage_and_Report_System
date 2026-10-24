@@ -8,7 +8,7 @@
 @inject IJSRuntime JS
 @inject ILogger<Profile> Log
 
-<PageTitle>My profile | AMS StockWatch</PageTitle>
+<PageTitle>My profile | e-PINS</PageTitle>
 
 <PageHeader Title="My profile" Subtitle="Your name, picture and password." />
 
@@ -220,11 +220,11 @@
         _email = _user?.Email ?? "";
     }
 
-    // Re-issue the sign-in cookie so the menu shows the new name/picture.
+    // Make a new login cookie so the menu shows the new name and picture.
     private void RefreshSession(string returnUrl = "/profile") =>
         Navigation.NavigateTo($"/account/refresh-session?returnUrl={Uri.EscapeDataString(returnUrl)}", forceLoad: true);
 
-    // ── Details ─────────────────────────────────────────────────────────
+    // Details
     private void StartEdit() { _editing = true; _formError = null; }
 
     private void CancelEdit()
@@ -267,7 +267,7 @@
         finally { _saving = false; }
     }
 
-    // ── Password ────────────────────────────────────────────────────────
+    // Password
     private static bool StrongEnough(string p) => p.Length >= 8 && p.Any(char.IsLetter) && p.Any(char.IsDigit);
 
     private void OpenPassword()
@@ -280,7 +280,7 @@
 
     private void ClosePassword()
     {
-        if (_user?.RequirePasswordChange == true) return;   // must finish this first
+        if (_user?.RequirePasswordChange == true) return;   // has to finish this first
         _passwordOpen = false;
     }
 
@@ -313,8 +313,8 @@
             await db.SaveChangesAsync();
 
             _passwordOpen = false;
-            // Always re-issue the sign-in cookie: it carries a fingerprint of the password,
-            // and other sessions using the old password are signed out within 5 minutes.
+            // I always make a new login cookie because it has a fingerprint of the password,
+            // and other sessions still using the old password get logged out within 5 minutes.
             RefreshSession(wasRequired ? "/dashboard" : "/profile?passwordChanged=true");
         }
         catch (Exception ex)
@@ -325,7 +325,7 @@
         finally { _saving = false; }
     }
 
-    // ── Picture ─────────────────────────────────────────────────────────
+    // Picture
     private void OpenPicture() { _picture = null; _pictureError = null; _pictureOpen = true; }
 
     private void OnPictureSelected(InputFileChangeEventArgs e)

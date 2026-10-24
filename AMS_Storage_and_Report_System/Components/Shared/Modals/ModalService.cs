@@ -1,8 +1,8 @@
-// ModalService.cs — one service, one <ModalHost/>, every dialog in the app.
-// Register:  builder.Services.AddScoped<ModalService>();   (scoped = per circuit)
-// Place <ModalHost /> once in MainLayout.razor.
+// This is ModalService, one service and one <ModalHost/> for every dialog in the app.
+// I register it with builder.Services.AddScoped<ModalService>(); (scoped means one per circuit)
+// and put <ModalHost /> once in MainLayout.razor.
 //
-// Usage from any interactive component:
+// How I use it from a component:
 //   if (await Modal.ConfirmAsync("Remove item?", "Ballpen will be removed from your cart.",
 //                                "Remove item", variant: ModalVariant.Danger)) { ... }
 //   var reason = await Modal.PromptAsync("Reject RIS 2026-10-0004", "Tell the office what to fix.",
@@ -21,27 +21,27 @@ public sealed class ModalOptions
 {
     public required string Title { get; init; }
     public string? Message { get; init; }
-    public RenderFragment? Body { get; init; }            // rich content (e.g. RIS summary)
+    public RenderFragment? Body { get; init; }            // extra content inside the modal (like the RIS summary)
     public ModalVariant Variant { get; init; } = ModalVariant.Neutral;
     public ModalSize Size { get; init; } = ModalSize.Medium;
 
     public string ConfirmText { get; init; } = "OK";
-    public string? CancelText { get; init; }               // null → alert (single button)
-    public bool DismissOnBackdrop { get; init; } = true;   // set false for destructive/long forms
+    public string? CancelText { get; init; }               // null means it's just an alert with one button
+    public bool DismissOnBackdrop { get; init; } = true;   // I set this to false for delete and long forms
 
-    // Prompt mode (e.g. rejection reason)
+    // Prompt mode (like typing a rejection reason)
     public bool ShowTextInput { get; init; }
     public string? InputLabel { get; init; }
     public string? InputPlaceholder { get; init; }
     public int InputMinLength { get; init; }
     public int InputMaxLength { get; init; } = 1000;
 
-    /// Optional async work run when Confirm is clicked. Return null to close,
-    /// or an error message to keep the modal open and show it inline.
-    /// Lets "Approve request?" show a spinner and surface failures in place.
+    /// Optional work that runs when Confirm is clicked. Return null to close the modal,
+    /// or an error message to keep it open and show the error inside.
+    /// I use this so "Approve request?" can show a spinner and show errors right there.
     public Func<string?, Task<string?>>? OnConfirmAsync { get; init; }
 
-    // Custom component mode (login form, suggestion form, item detail)
+    // Custom component mode (login form, suggestion form, item details)
     public Type? ComponentType { get; init; }
     public IDictionary<string, object?>? ComponentParameters { get; init; }
 }
@@ -52,7 +52,7 @@ public sealed record ModalResult(bool Confirmed, string? Text = null, object? Da
     public static ModalResult Ok(object? data = null) => new(true, Data: data);
 }
 
-/// Cascaded to custom modal content so it can close itself:
+/// I pass this down to custom modal content so it can close itself:
 ///   [CascadingParameter] public ModalInstance Instance { get; set; } = default!;
 ///   Instance.Close(ModalResult.Ok());
 public sealed class ModalInstance
@@ -95,7 +95,7 @@ public sealed class ModalService
         _stack.Clear();
     }
 
-    // ── Convenience API ──────────────────────────────────────────────
+    // Shortcut methods
 
     public async Task<bool> ConfirmAsync(string title, string message,
         string confirmText = "Continue", string cancelText = "Cancel",
@@ -138,6 +138,6 @@ public sealed class ModalService
         {
             Title = title, Size = size,
             ComponentType = typeof(TComponent), ComponentParameters = parameters,
-            CancelText = null, ConfirmText = "",   // content renders its own buttons
+            CancelText = null, ConfirmText = "",   // the content has its own buttons
         });
 }

@@ -2,9 +2,10 @@
 @layout AppLayout
 @attribute [Authorize]
 @inject StockService Stock
+@inject SettingsService Settings
 @inject IJSRuntime JS
 
-<PageTitle>Stock card | AMS StockWatch</PageTitle>
+<PageTitle>Stock card | e-PINS</PageTitle>
 
 <PageHeader Title="@(_item is null ? "Stock card" : $"Stock card: {_item.ItemName}")"
             Subtitle="@(_item is null ? null : $"{_item.StockNo}, {_item.UnitOfMeasure}. Every delivery, issue and adjustment, with the running balance.")">
@@ -49,49 +50,43 @@
                     }
                 </div>
             </header>
-            @if (_rows.Count == 0)
-            {
-                <div class="empty-state"><i class="bi bi-journal" aria-hidden="true"></i><h2>No movements</h2><p>Nothing was received, issued or adjusted in this period.</p></div>
-            }
-            else
-            {
-                <div class="table-wrap">
-                    <table class="data-table">
-                        <thead><tr><th>Date</th><th>Reference</th><th>Type</th><th class="t-num">Receipt</th><th class="t-num">Issue</th><th>Office</th><th class="t-num">Balance</th><th>Remarks</th></tr></thead>
-                        <tbody>
-                            @foreach (var r in _rows)
-                            {
-                                <tr>
-                                    <td class="text-nowrap">@r.Date.ToString("MMM d, yyyy")</td>
-                                    <td class="text-nowrap">@r.Reference</td>
-                                    <td>@r.Type</td>
-                                    <td class="t-num">@(r.Receipt == 0 ? "" : r.Receipt.ToString("N0"))</td>
-                                    <td class="t-num">@(r.Issue == 0 ? "" : r.Issue.ToString("N0"))</td>
-                                    <td>@r.Office</td>
-                                    <td class="t-num"><strong>@r.Balance.ToString("N0")</strong></td>
-                                    <td class="is-muted">@r.Remarks</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
+            <div class="panel-body">
+                @if (_rows.Count == 0)
+                {
+                    <p class="text-muted-2 mb-3 no-print"><i class="bi bi-info-circle me-1" aria-hidden="true"></i>Nothing was received, issued or adjusted in this period. The card below is blank, ready to print.</p>
+                }
+                <div class="paper-scroll">
+                    <div class="paper">
+                        <StockCardForm Item="_item" Rows="_rows" EntityName="@_entity" FundCluster="@_fund" Page="_pRows" />
+                    </div>
                 </div>
-            }
+                <div class="paper-pager">
+                    <Pager Total="_rows.Count" @bind-Page="_pRows" ResetKey="@($"{_item?.ItemId}|{_from}|{_to}")" Label="Stock card pages" />
+                </div>
+            </div>
         </section>
     }
 </div>
 
 @code {
+    private int _pRows = 1;
     [Parameter] public int ItemId { get; set; }
 
     private SupplyItem? _item;
     private List<StockCardRow> _rows = [];
     private DateTime? _from, _to;
     private bool _loaded;
+    private string _entity = "", _fund = "";
 
     protected override async Task OnParametersSetAsync() => await LoadAsync();
 
     private async Task LoadAsync()
     {
+        if (!_loaded)
+        {
+            var settings = await Settings.LoadAsync();
+            (_entity, _fund) = (settings.EntityName, settings.FundCluster);
+        }
         (_item, _rows) = await Stock.StockCardAsync(ItemId, _from, _to);
         _loaded = true;
     }
@@ -102,5 +97,6 @@
         return LoadAsync();
     }
 
-    private async Task PrintAsync() => await JS.InvokeVoidAsync("print");
+    // Prints only the Stock Card (all rows, on A4), not the rest of the page.
+    private async Task PrintAsync() => await JS.InvokeVoidAsync("amsPrint.form", ".sc-sheet");
 }

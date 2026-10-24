@@ -9,13 +9,13 @@
 @inject IJSRuntime JS
 @inject ILogger<Catalog> Log
 
-<PageTitle>Catalog | AMS StockWatch</PageTitle>
+<PageTitle>Catalog | e-PINS</PageTitle>
 
-<PageHeader Title="Catalog" Subtitle="The supplies offices can request in AMS Supplies: names, prices, photos and low-stock levels.">
+<PageHeader Title="Catalog" Subtitle="The supplies offices can request in e-SRS: names, prices, photos and low-stock levels.">
     <Actions>
         @if (_items?.Any(i => !string.IsNullOrEmpty(i.ImagePath)) == true)
         {
-            <button type="button" class="btn btn-light" @onclick="ShrinkPhotosAsync" disabled="@_shrinking" title="Make saved photos smaller so AMS Supplies loads faster">
+            <button type="button" class="btn btn-light" @onclick="ShrinkPhotosAsync" disabled="@_shrinking" title="Make saved photos smaller so e-SRS loads faster">
                 @if (_shrinking) { <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> } else { <i class="bi bi-image me-1" aria-hidden="true"></i> }
                 Optimize photos
             </button>
@@ -61,7 +61,7 @@
                 <table class="data-table">
                     <thead><tr><th style="width:64px"></th><th>Item</th><th>Category</th><th class="t-num">Unit price</th><th class="t-num">On hand</th><th class="t-num">Low at</th><th>Status</th><th class="text-end">Actions</th></tr></thead>
                     <tbody>
-                        @foreach (var i in Visible)
+                        @foreach (var i in Visible.Page(_pItems))
                         {
                             <tr class="@(i.IsActive ? "" : "is-dim")" @key="i.ItemId">
                                 <td>
@@ -75,6 +75,13 @@
                                     @if (i.DaysToExpiry is int days)
                                     {
                                         <span class="cell-sub"><span class="exp-tag @Expiry.Css(days)"><i class="bi @Expiry.Icon(days)" aria-hidden="true"></i>@Expiry.Text(i)</span></span>
+                                    }
+                                    @if (ItemColors.Parse(i.ColorOptions) is { Count: > 0 } colors)
+                                    {
+                                        <span class="color-dots" title="@string.Join(", ", colors.Select(c => c.Name))">
+                                            @foreach (var c in colors) { <span class="swatch @(ItemColors.IsLight(c.Hex) ? "is-light" : "")" style="background:@c.Hex" aria-hidden="true"></span> }
+                                            <span>@colors.Count @(colors.Count == 1 ? "color" : "colors")</span>
+                                        </span>
                                     }
                                 </td>
                                 <td class="is-muted">@(i.Category?.CategoryName ?? "None")</td>
@@ -101,11 +108,12 @@
                     </tbody>
                 </table>
             </div>
+            <Pager Total="Visible.Count()" @bind-Page="_pItems" ResetKey="@($"{_search}|{_statusFilter}|{_categoryFilter}")" Label="Item pages" />
         }
     </section>
 </div>
 
-@* ── Add / edit item ── *@
+@* Add / edit item *@
 <Dialog Show="_formOpen" Title="@(_form.ItemId == 0 ? "Add item" : "Edit item")" Icon="bi-box-seam" Size="lg" Busy="_saving" OnClose="() => _formOpen = false">
     <ChildContent>
         <div class="row g-3">
@@ -158,19 +166,76 @@
                     {
                         <div class="row g-3 mt-0">
                             <div class="col-sm-6">
-                                <label class="form-label" for="i-mfd">MFD (manufacturing date) <span class="text-muted-2 fw-normal">optional</span></label>
-                                <DatePicker Id="i-mfd" @bind-Value="_form.ManufacturedOn" Max="MfdMax" Placeholder="Not shown on the pack" />
+                                <div class="date-label-row">
+                                    <label class="form-label" for="i-mfd">MFD <span class="text-muted-2 fw-normal">optional</span></label>
+                                    <div class="seg-toggle" role="group" aria-label="How the MFD is printed on the pack">
+                                        <button type="button" aria-pressed="@(_form.MfdMonthOnly ? "true" : "false")" @onclick="() => _form.MfdMonthOnly = true">Month/Year</button>
+                                        <button type="button" aria-pressed="@(_form.MfdMonthOnly ? "false" : "true")" @onclick="() => _form.MfdMonthOnly = false">Full date</button>
+                                    </div>
+                                </div>
+                                <DatePicker Id="i-mfd" @bind-Value="_form.ManufacturedOn" Max="MfdMax" MonthOnly="_form.MfdMonthOnly"
+                                            Placeholder="@(_form.MfdMonthOnly ? "Choose the month" : "Not shown on the pack")" />
                             </div>
                             <div class="col-sm-6">
-                                <label class="form-label" for="i-exp">EXP (expiration date)</label>
-                                <DatePicker Id="i-exp" @bind-Value="_form.ExpiresOn" Min="_form.ManufacturedOn?.AddDays(1)" Placeholder="Select the expiration date" />
+                                <div class="date-label-row">
+                                    <label class="form-label" for="i-exp">EXP</label>
+                                    <div class="seg-toggle" role="group" aria-label="How the EXP is printed on the pack">
+                                        <button type="button" aria-pressed="@(_form.ExpMonthOnly ? "true" : "false")" @onclick="() => _form.ExpMonthOnly = true">Month/Year</button>
+                                        <button type="button" aria-pressed="@(_form.ExpMonthOnly ? "false" : "true")" @onclick="() => _form.ExpMonthOnly = false">Full date</button>
+                                    </div>
+                                </div>
+                                <DatePicker Id="i-exp" @bind-Value="_form.ExpiresOn" Min="_form.ManufacturedOn?.AddDays(1)" MonthOnly="_form.ExpMonthOnly"
+                                            Placeholder="@(_form.ExpMonthOnly ? "Choose the month" : "Select the expiration date")" />
                             </div>
                         </div>
-                        <p class="form-text mb-0 mt-2">Offices see the MFD and EXP in AMS Supplies. Update them when a new batch arrives.</p>
+                        <p class="form-text mb-0 mt-2">Choose <strong>Month/Year</strong> when the pack shows only the month, like "EXP 03/2027" (good until the end of that month). Offices see the MFD and EXP in e-SRS.</p>
                     }
                     else
                     {
                         <p class="form-text mb-0 mt-1">Choose Yes for supplies with an expiration date, such as printer ink, toner or glue.</p>
+                    }
+                </div>
+            </div>
+            <div class="col-12">
+                <div class="color-box">
+                    <div class="color-box-head">
+                        <span class="form-label m-0" id="i-colors-label">Colors <span class="text-muted-2 fw-normal">optional</span></span>
+                        <span class="form-text m-0">Offices choose how many of each color in e-SRS.</span>
+                    </div>
+                    @if (_form.Colors.Count > 0)
+                    {
+                        <ul class="color-chips" aria-labelledby="i-colors-label">
+                            @foreach (var c in _form.Colors)
+                            {
+                                var color = c;
+                                <li class="color-chip">
+                                    <span class="swatch @(ItemColors.IsLight(c.Hex) ? "is-light" : "")" style="background:@c.Hex" aria-hidden="true"></span>@c.Name
+                                    <button type="button" aria-label="@($"Remove {c.Name}")" title="Remove" @onclick="() => _form.Colors.Remove(color)"><i class="bi bi-x" aria-hidden="true"></i></button>
+                                </li>
+                            }
+                        </ul>
+                    }
+                    else
+                    {
+                        <p class="form-text mt-1 mb-2">No colors. Add them if the item comes in different colors, like ballpens or folders.</p>
+                    }
+                    @if (_form.Colors.Count < ItemColors.MaxColors)
+                    {
+                        <div class="color-presets" role="group" aria-label="Add a common color">
+                            @foreach (var p in ItemColors.Presets.Where(p => !_form.Colors.Any(c => c.Name.Equals(p.Name, StringComparison.OrdinalIgnoreCase))))
+                            {
+                                var preset = p;
+                                <button type="button" class="color-preset" title="@($"Add {p.Name}")" @onclick="() => _form.Colors.Add(preset)">
+                                    <span class="swatch @(ItemColors.IsLight(p.Hex) ? "is-light" : "")" style="background:@p.Hex" aria-hidden="true"></span>@p.Name
+                                </button>
+                            }
+                        </div>
+                        <div class="color-custom">
+                            <input type="color" class="form-control form-control-color" aria-label="Color of the new color" @bind="_newColorHex" />
+                            <input class="form-control" maxlength="@ItemColors.MaxNameLength" autocomplete="off" placeholder="Other color, e.g. Teal" aria-label="Name of the new color"
+                                   @bind="_newColorName" @bind:event="oninput" @onkeydown="OnColorKey" />
+                            <button type="button" class="btn btn-outline-primary" @onclick="AddCustomColor" disabled="@string.IsNullOrWhiteSpace(_newColorName)"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Add color</button>
+                        </div>
                     }
                 </div>
             </div>
@@ -213,7 +278,7 @@
     </Footer>
 </Dialog>
 
-@* ── Categories and suppliers ── *@
+@* Categories and suppliers *@
 <Dialog Show="_listsOpen" Title="Categories and suppliers" Icon="bi-tags" Size="lg" DismissOnBackdrop="true" OnClose="() => _listsOpen = false">
     <ChildContent>
         <div class="row g-4">
@@ -256,6 +321,7 @@
 </Dialog>
 
 @code {
+    private int _pItems = 1;
     private static readonly IReadOnlyList<PickOption<string>> StatusOptions =
         [new("listed", "Listed items"), new("hidden", "Hidden items"), new("all", "All items")];
 
@@ -268,12 +334,27 @@
 
     private bool _formOpen, _saving, _listsOpen, _hasPhoto, _shrinking;
 
-    /// MFD can't be after today, nor on/after the EXP.
+    /// MFD can't be after today, or on/after the EXP.
     private DateTime MfdMax => _form.ExpiresOn is { } exp && exp.Date.AddDays(-1) < PhTime.Now.Date ? exp.Date.AddDays(-1) : PhTime.Now.Date;
     private long _photoVersion;
     private ItemForm _form = new();
     private string? _formError;
     private string _newCategory = "", _newSupplier = "";
+    private string _newColorName = "", _newColorHex = "#2563eb";
+
+    private void AddCustomColor()
+    {
+        var name = ItemColors.Clean(_newColorName);
+        if (name.Length == 0 || _form.Colors.Count >= ItemColors.MaxColors) return;
+        var at = _form.Colors.FindIndex(c => c.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+        if (at >= 0) _form.Colors[at] = new ItemColor(name, _newColorHex); else _form.Colors.Add(new ItemColor(name, _newColorHex));
+        _newColorName = "";
+    }
+
+    private void OnColorKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") AddCustomColor();
+    }
 
     private IReadOnlyList<PickOption<int>> CategoryOptions(string first) =>
         [new(0, first), .. _categories.Select(c => new PickOption<int>(c.CategoryId, c.CategoryName))];
@@ -324,7 +405,9 @@
             UnitOfMeasure = i.UnitOfMeasure, CategoryId = i.CategoryId ?? 0, SupplierId = i.SupplierId ?? 0,
             UnitPrice = i.UnitPrice, ReorderLevel = i.ReorderLevel,
             IsPerishable = i.IsPerishable, ManufacturedOn = i.ManufacturedOn, ExpiresOn = i.ExpiresOn,
+            MfdMonthOnly = i.MfdMonthOnly, ExpMonthOnly = i.ExpMonthOnly, Colors = ItemColors.Parse(i.ColorOptions),
         };
+        _newColorName = "";
         _hasPhoto = !string.IsNullOrEmpty(i.ImagePath);
         _photoVersion = DateTime.UtcNow.Ticks;
         _formError = null;
@@ -349,8 +432,8 @@
         finally { _saving = false; }
     }
 
-    // Photos saved before they were shrunk on upload can be several MB each. This makes a
-    // smaller copy of each one in the browser and saves it in place of the original.
+    // Photos saved before I added the shrinking can be several MB each. This makes a
+    // smaller copy of each one in the browser and saves it instead of the original.
     private async Task ShrinkPhotosAsync()
     {
         var withPhoto = (_items ?? []).Where(i => !string.IsNullOrEmpty(i.ImagePath)).ToList();
@@ -394,7 +477,7 @@
         _saving = true;
         try
         {
-            // Shrink it in the browser first, so only a small copy is uploaded and stored.
+            // Shrink it in the browser first, so only the small copy is uploaded and saved.
             var file = await e.File.RequestImageFileAsync("image/webp", CatalogAdminService.PhotoMaxSide, CatalogAdminService.PhotoMaxSide);
             await using var stream = file.OpenReadStream(CatalogAdminService.MaxImageBytes);
             using var ms = new MemoryStream();
@@ -405,7 +488,7 @@
             _hasPhoto = true;
             _photoVersion = DateTime.UtcNow.Ticks;
             await LoadAsync();
-            await JS.InvokeVoidAsync("showToast", "Photo saved. It shows in AMS Supplies right away.", "success");
+            await JS.InvokeVoidAsync("showToast", "Photo saved. It shows in e-SRS right away.", "success");
         }
         catch (Exception ex)
         {
@@ -467,7 +550,7 @@
         await LoadAsync();
     }
 
-    // Live: when catalog change on either website, reload without a refresh.
+    // Live update: when the catalog changes on either website, reload without refreshing.
     private static readonly string[] LiveAreas = ["catalog"];
     protected override void OnInitialized() => Live.AreasChanged += OnAreasAsync;
 

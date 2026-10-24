@@ -1,0 +1,113 @@
+/* This is where I put the small animations of e-PINS.
+   Everything that moves is inside "no-preference", so people who turned on
+   "Reduce motion" / "Show animations: off" get none. Nothing blocks a click,
+   and nothing moves on printed forms. */
+
+/* Loading placeholders: the "Loading..." text on grey lines */
+.loading { position: relative; padding: 1.25rem 1.25rem 1.5rem; text-align: left; font-size: .875rem; }
+.loading::after {
+    content: ""; display: block; margin-top: .875rem; height: 9.5rem; border-radius: 8px;
+    background:
+        linear-gradient(#e7ebf0 0 0) 0 0 / 38% .9rem no-repeat,
+        linear-gradient(#e7ebf0 0 0) 0 2.1rem / 100% .75rem no-repeat,
+        linear-gradient(#e7ebf0 0 0) 0 3.9rem / 92% .75rem no-repeat,
+        linear-gradient(#e7ebf0 0 0) 0 5.7rem / 97% .75rem no-repeat,
+        linear-gradient(#e7ebf0 0 0) 0 7.5rem / 70% .75rem no-repeat;
+}
+html[data-theme="dark"] .loading::after {
+    background:
+        linear-gradient(#1f2540 0 0) 0 0 / 38% .9rem no-repeat,
+        linear-gradient(#1f2540 0 0) 0 2.1rem / 100% .75rem no-repeat,
+        linear-gradient(#1f2540 0 0) 0 3.9rem / 92% .75rem no-repeat,
+        linear-gradient(#1f2540 0 0) 0 5.7rem / 97% .75rem no-repeat,
+        linear-gradient(#1f2540 0 0) 0 7.5rem / 70% .75rem no-repeat;
+}
+
+/* A returned PAR / ICS row is tinted green */
+.data-table tbody tr.is-returned td { background: #f2faf5; }
+html[data-theme="dark"] .data-table tbody tr.is-returned td { background: #12261b; }
+
+/* "Approved" / "Items issued" check mark (made by motion.js) */
+.done-burst {
+    position: fixed; inset: 0; z-index: 3000; display: grid; place-items: center; pointer-events: none;
+    background: rgb(0 0 40 / .18);
+}
+.done-card {
+    display: grid; justify-items: center; gap: .75rem; padding: 1.75rem 2.5rem; border-radius: 20px;
+    background: var(--surface, #fff); color: var(--ink, #111); box-shadow: 0 20px 60px rgb(0 0 40 / .3);
+    font-weight: 700; font-size: 1.125rem;
+}
+.done-card svg { width: 84px; height: 84px; }
+.done-card circle { fill: none; stroke: var(--ok, #1e7a46); stroke-width: 4; }
+.done-card path { fill: none; stroke: var(--ok, #1e7a46); stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
+
+@media (prefers-reduced-motion: no-preference) {
+
+    /* Shimmer over the loading placeholder */
+    .loading::before {
+        content: ""; position: absolute; left: 1.25rem; right: 1.25rem; bottom: 1.5rem; height: 9.5rem; border-radius: 8px;
+        background: linear-gradient(90deg, transparent 0, rgb(255 255 255 / .6) 50%, transparent 100%) 0 0 / 200% 100% no-repeat;
+        animation: skel-shine 1.3s ease-in-out infinite; pointer-events: none;
+    }
+    html[data-theme="dark"] .loading::before {
+        background-image: linear-gradient(90deg, transparent 0, rgb(255 255 255 / .07) 50%, transparent 100%);
+    }
+
+    /* Pages fade in, and the summary tiles come in one after another */
+    .page-body { animation: fade-in .3s ease-out backwards; }
+    .stat-grid > .stat { animation: fade-up .38s ease-out backwards; }
+    .stat-grid > .stat:nth-child(2) { animation-delay: 50ms; }
+    .stat-grid > .stat:nth-child(3) { animation-delay: 100ms; }
+    .stat-grid > .stat:nth-child(4) { animation-delay: 150ms; }
+    .stat-grid > .stat:nth-child(n+5) { animation-delay: 200ms; }
+    .stat { transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
+    @media (hover: hover) and (pointer: fine) {
+        a.stat:hover, button.stat:hover { transform: translateY(-3px); box-shadow: 0 10px 22px rgb(0 0 60 / .1); }
+        .stat:hover .stat-icon { transform: scale(1.08) rotate(-4deg); }
+        .stat-icon { transition: transform .2s ease; }
+    }
+    .panel { animation: fade-in .4s ease-out backwards; animation-delay: .08s; }
+
+    /* Table rows: smooth hover, and a gold flash for requisitions that just came in */
+    .data-table tbody td { transition: background-color .15s ease; }
+    .data-table tbody tr.is-fresh td { animation: fresh-row 4s ease-out backwards; }
+    .data-table tbody tr.is-fresh td:first-child { box-shadow: inset 4px 0 0 var(--gold); }
+
+    /* Status badges fade in to their color, and out-of-stock icons pulse a little */
+    .badge-pill { animation: pill-in .35s ease-out backwards; }
+    .badge-bad > .bi-x-circle-fill { display: inline-block; animation: warn-pulse 2.2s ease-in-out infinite; }
+
+    /* Buttons press in a little */
+    .btn:not(:disabled):active, .act:active, .pager-btn:not(:disabled):active { transform: scale(.97); }
+    .btn, .act, .pager-btn { transition: transform .08s ease, background-color .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease; }
+
+    /* Returned row turns green smoothly */
+    .data-table tbody tr.is-returned td { transition: background-color .4s ease; }
+
+    /* The check mark */
+    .done-burst { animation: burst-bg 1.6s ease both; }
+    .done-card { animation: card-pop 1.6s cubic-bezier(.3, 1.4, .5, 1) both; }
+    .done-card circle { stroke-dasharray: 240; stroke-dashoffset: 240; animation: draw .5s ease-out .1s forwards; }
+    .done-card path { stroke-dasharray: 60; stroke-dashoffset: 60; animation: draw .35s ease-out .5s forwards; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .done-burst { animation: burst-fade 1.4s linear both; }
+    .data-table tbody tr.is-fresh td { background: #fff4d6; }
+}
+
+@keyframes skel-shine { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes fresh-row { 0%, 15% { background-color: #ffe8a3; } 100% { background-color: transparent; } }
+@keyframes pill-in { from { opacity: 0; transform: scale(.85); } to { opacity: 1; transform: none; } }
+@keyframes warn-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.25); } }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes burst-bg { 0% { opacity: 0; } 12% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes card-pop { 0% { transform: scale(.7); opacity: 0; } 15% { transform: scale(1); opacity: 1; } 80% { transform: scale(1); opacity: 1; } 100% { transform: scale(.95); opacity: 0; } }
+@keyframes burst-fade { 0% { opacity: 0; } 10%, 85% { opacity: 1; } 100% { opacity: 0; } }
+
+@media print {
+    .done-burst { display: none !important; }
+    .page-body, .panel, .badge-pill, .stat { animation: none !important; }
+}

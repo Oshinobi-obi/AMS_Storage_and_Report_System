@@ -10,7 +10,7 @@
 @inject IJSRuntime JS
 @inject ILogger<PropertyRegister> Log
 
-<PageTitle>Property register | AMS StockWatch</PageTitle>
+<PageTitle>Property register | e-PINS</PageTitle>
 
 <PageHeader Title="Property register" Subtitle="Every PPE and semi-expendable property, who is accountable for it, and its current status.">
     <Actions>
@@ -58,6 +58,7 @@
                     </div>
                     <div><label class="form-label" for="pr-office">Office</label><Picker TValue="int" Id="pr-office" Options="@(OfficeOptions("All offices"))" @bind-Value="_office" /></div>
                     <div><label class="form-label" for="pr-class">Classification</label><Picker TValue="string" Id="pr-class" Options="@(ClassOptions("All classifications"))" @bind-Value="_class" /></div>
+                    <div><label class="form-label" for="pr-equip">Equipment</label><Picker TValue="string" Id="pr-equip" Options="EquipmentFilterOptions" @bind-Value="_equip" /></div>
                     <div><label class="form-label" for="pr-type">Type</label><Picker TValue="int" Id="pr-type" Options="@(TypeOptions("PPE and semi-expendable"))" @bind-Value="_type" /></div>
                 </div>
             </header>
@@ -76,11 +77,17 @@
                     <table class="data-table">
                         <thead><tr><th>Property no.</th><th>Description</th><th>Office / accountable</th><th class="t-num">Qty</th><th class="t-num">Total cost</th><th>Status</th><th class="text-end">Actions</th></tr></thead>
                         <tbody>
-                            @foreach (var p in Visible)
+                            @foreach (var p in Visible.Page(_pItems))
                             {
                                 <tr @key="p.PropertyId">
                                     <td class="text-nowrap cell-strong">@p.PropertyNo<span class="cell-sub">@(p.PropertyTypeId == PropertyStatus.PpeTypeId ? "PPE" : "Semi-expendable")</span></td>
-                                    <td><span>@p.Description</span><span class="cell-sub">@(p.Classification + (p.AcquiredOn is { } d ? $", acquired {d:MMM d, yyyy}" : ""))</span></td>
+                                    <td>
+                                        @if (!string.IsNullOrWhiteSpace(p.EquipmentType))
+                                        {
+                                            <span class="equip-tag"><i class="bi @EquipmentPicker.Icon(p.EquipmentType)" aria-hidden="true"></i>@p.EquipmentType</span>
+                                        }
+                                        <span>@p.Description</span><span class="cell-sub">@(p.Classification + (p.AcquiredOn is { } d ? $", acquired {d:MMM d, yyyy}" : ""))</span>
+                                    </td>
                                     <td><span>@(p.Office?.OfficeAcronym ?? "No office")</span><span class="cell-sub">@(p.Personnel?.FullName ?? "Unassigned")</span></td>
                                     <td class="t-num">@p.Quantity</td>
                                     <td class="t-num text-nowrap">₱@p.TotalCost.ToString("N2")</td>
@@ -96,6 +103,7 @@
                         </tbody>
                     </table>
                 </div>
+                <Pager Total="Visible.Count()" @bind-Page="_pItems" ResetKey="@($"{_search}|{_status}|{_class}|{_office}|{_type}|{_equip}")" Label="Property pages" />
                 <div class="panel-body border-top d-flex flex-wrap justify-content-between gap-2">
                     <span class="text-muted-2">@Units(Visible).ToString("N0") units in @Visible.Count() records</span>
                     <strong>Total acquisition cost: ₱@Visible.Sum(p => p.TotalCost).ToString("N2")</strong>
@@ -119,6 +127,10 @@
             <div class="col-12">
                 <label class="form-label" for="p-desc">Description</label>
                 <input id="p-desc" class="form-control" maxlength="500" autocomplete="off" @bind="_form.Description" placeholder="Desktop computer, Core i5, 16 GB RAM, with monitor" />
+            </div>
+            <div class="col-sm-6">
+                <label class="form-label" for="p-equip">Equipment</label>
+                <EquipmentPicker Id="p-equip" Value="@_form.EquipmentType" ValueChanged="SetEquipment" />
             </div>
             <div class="col-sm-6">
                 <label class="form-label" for="p-class">Classification</label>
@@ -169,13 +181,14 @@
 </Dialog>
 
 @code {
+    private int _pItems = 1;
     [SupplyParameterFromQuery(Name = "status")] public string? StatusQuery { get; set; }
     [SupplyParameterFromQuery(Name = "class")] public string? ClassQuery { get; set; }
 
     private List<PropertyItem>? _items;
     private List<Office> _offices = [];
     private List<RoPersonnel> _people = [];
-    private string _search = "", _status = "", _class = "";
+    private string _search = "", _status = "", _class = "", _equip = "";
     private int _office, _type;
     private bool _error, _formOpen, _saving;
     private PropertyItem _form = new();
@@ -194,10 +207,23 @@
                 .Where(p => _office == 0 || p.OfficeId == _office)
                 .Where(p => _class == "" || p.Classification == _class)
                 .Where(p => _type == 0 || p.PropertyTypeId == _type)
+                .Where(p => _equip == "" || string.Equals(p.EquipmentType, _equip, StringComparison.OrdinalIgnoreCase))
                 .Where(p => t.Length == 0 || p.PropertyNo.Contains(t, StringComparison.OrdinalIgnoreCase)
+                         || (p.EquipmentType?.Contains(t, StringComparison.OrdinalIgnoreCase) ?? false)
                          || p.Description.Contains(t, StringComparison.OrdinalIgnoreCase)
                          || (p.Personnel?.FullName.Contains(t, StringComparison.OrdinalIgnoreCase) ?? false));
         }
+    }
+
+    private IReadOnlyList<PickOption<string>> EquipmentFilterOptions =>
+        [new("", "All equipment"), .. (_items ?? new List<PropertyItem>()).Where(p => !string.IsNullOrWhiteSpace(p.EquipmentType)).Select(p => p.EquipmentType!)
+            .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(e => e).Select(e => new PickOption<string>(e, e))];
+
+    // Picking a known kind of equipment also fills in the classification if it's still empty
+    private void SetEquipment(string? equipment)
+    {
+        _form.EquipmentType = equipment;
+        if (string.IsNullOrEmpty(_form.Classification) && PropertyStatus.ClassificationOf(equipment) is { } c) _form.Classification = c;
     }
 
     private static readonly IReadOnlyList<PickOption<string>> StatusOptions =
@@ -246,7 +272,7 @@
     {
         _form.OfficeId = officeId == 0 ? null : officeId;
         if (_form.PersonnelId is int pid && _people.FirstOrDefault(p => p.PersonnelId == pid)?.OfficeId != _form.OfficeId)
-            _form.PersonnelId = null;   // person no longer matches the office
+            _form.PersonnelId = null;   // the person isn't in this office anymore
     }
 
     private void OpenAdd()
@@ -260,7 +286,7 @@
     {
         _form = new PropertyItem
         {
-            PropertyId = p.PropertyId, PropertyNo = p.PropertyNo, Description = p.Description, Classification = p.Classification,
+            PropertyId = p.PropertyId, PropertyNo = p.PropertyNo, Description = p.Description, Classification = p.Classification, EquipmentType = p.EquipmentType,
             PropertyTypeId = p.PropertyTypeId, Quantity = p.Quantity, UnitCost = p.UnitCost, AcquiredOn = p.AcquiredOn,
             OfficeId = p.OfficeId, PersonnelId = p.PersonnelId, Status = p.Status, Remarks = p.Remarks,
         };
@@ -293,7 +319,7 @@
         await JS.InvokeVoidAsync("showToast", r.Message, r.Ok ? "danger" : "danger");
     }
 
-    // Live: when property, personnel change on either website, reload without a refresh.
+    // Live update: when property or personnel change on either website, reload without refreshing.
     private static readonly string[] LiveAreas = ["property", "personnel"];
     protected override void OnInitialized() => Live.AreasChanged += OnAreasAsync;
 

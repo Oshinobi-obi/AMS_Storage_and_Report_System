@@ -1,5 +1,5 @@
-@* ReusableModal.razor — the single visual shell for confirmations, alerts,
-   prompts and custom forms. Rendered by <ModalHost/>; you rarely use it directly. *@
+@* This is the one modal layout I use for confirmations, alerts, prompts and custom forms.
+   <ModalHost/> renders it, so I almost never use it directly. *@
 
 <div class="am-backdrop" style="z-index:@(1050 + StackIndex * 10)"
      @onclick="OnBackdropClick">
@@ -37,7 +37,9 @@
 
             @if (Options.ComponentType is not null)
             {
-                <DynamicComponent Type="Options.ComponentType" Parameters="Options.ComponentParameters" />
+                <CascadingValue Name="InDialog" Value="true" IsFixed="true">
+                    <DynamicComponent Type="Options.ComponentType" Parameters="Options.ComponentParameters" />
+                </CascadingValue>
             }
 
             @if (Options.ShowTextInput)
@@ -112,7 +114,7 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender && IsTopMost)
-            await _dialog.FocusAsync();   // keyboard users land inside the dialog
+            await _dialog.FocusAsync();   // so keyboard users start inside the dialog
     }
 
     private void OnBackdropClick()
@@ -144,7 +146,7 @@
                 _error = "Something went wrong while saving. Nothing was changed — please try again.";
             }
             finally { _busy = false; }
-            if (_error is not null) return;   // stay open, show inline error
+            if (_error is not null) return;   // stay open and show the error inside
         }
         Instance.Close(new ModalResult(true, _text?.Trim()));
     }

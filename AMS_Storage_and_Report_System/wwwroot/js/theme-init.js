@@ -1,5 +1,5 @@
-// theme-init.js — runs in <head> before the page is drawn, so a saved dark
-// theme never flashes white first. First visit follows the computer's setting.
+// This runs in <head> before the page shows, so a saved dark theme doesn't
+// flash white first. On the first visit it follows the computer's setting.
 (function () {
     try {
         var saved = localStorage.getItem("ams-theme");

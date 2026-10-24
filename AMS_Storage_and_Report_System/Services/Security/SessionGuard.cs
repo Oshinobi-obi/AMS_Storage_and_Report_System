@@ -1,7 +1,7 @@
-// SessionGuard.cs — keeps sign-ins honest after the fact.
-// A signed-in session is re-checked against the database (at most every 5 minutes):
-// deactivated accounts, changed roles and changed/reset passwords end the session,
-// both for normal page loads (cookie check) and for open pages (Blazor revalidation).
+// This makes sure a login is still valid later on.
+// I check the logged-in session against the database (at most every 5 minutes):
+// a deactivated account, changed role or a changed/reset password ends the session,
+// both on normal page loads (cookie check) and on open pages (Blazor revalidation).
 
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -22,7 +22,7 @@ public static class SessionGuard
     public const string StampClaim = "pwd_stamp";
     private const string CheckedKey = "checked_at";
 
-    /// A short fingerprint of the password hash. It changes whenever the password changes,
+    /// A short fingerprint of the password hash. It changes when the password changes,
     /// without putting the hash itself in the cookie.
     public static string PasswordStamp(string passwordHash) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(passwordHash)))[..16];
@@ -41,7 +41,7 @@ public static class SessionGuard
             && principal.FindFirstValue(StampClaim) == PasswordStamp(u.PasswordHash);
     }
 
-    /// Cookie check on every request (throttled to one database query per 5 minutes per user).
+    /// Cookie check on every request (limited to one database query per 5 minutes per user).
     public static async Task ValidatePrincipalAsync(CookieValidatePrincipalContext context)
     {
         if (context.Principal is null) return;
@@ -58,7 +58,7 @@ public static class SessionGuard
         }
         catch (Exception)
         {
-            return;   // database hiccup: don't sign everyone out, try again on the next request
+            return;   // database problem, so I don't log everyone out, just try again on the next request
         }
 
         if (!valid)
@@ -72,8 +72,8 @@ public static class SessionGuard
     }
 }
 
-/// Re-checks the signed-in user of an OPEN page every 5 minutes, so a deactivated
-/// account is sent to the sign-in page even if it never reloads.
+/// Checks the logged-in user of an OPEN page every 5 minutes, so a deactivated
+/// account is sent to the login page even if the page is never reloaded.
 public sealed class RevalidatingAuthStateProvider(ILoggerFactory loggerFactory, IDbContextFactory<AppDbContext> dbFactory)
     : RevalidatingServerAuthenticationStateProvider(loggerFactory)
 {
@@ -81,8 +81,8 @@ public sealed class RevalidatingAuthStateProvider(ILoggerFactory loggerFactory, 
 
     protected override async Task<bool> ValidateAuthenticationStateAsync(AuthenticationState state, CancellationToken ct)
     {
-        if (state.User.Identity?.IsAuthenticated != true) return true;   // guests: nothing to check
+        if (state.User.Identity?.IsAuthenticated != true) return true;   // guests, nothing to check
         try { return await SessionGuard.IsStillValidAsync(state.User, dbFactory, ct); }
-        catch (Exception) { return true; }   // keep the page usable during a database hiccup
+        catch (Exception) { return true; }   // keep the page usable if the database has a problem
     }
 }

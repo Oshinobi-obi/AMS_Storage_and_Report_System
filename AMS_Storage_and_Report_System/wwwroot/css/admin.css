@@ -1,8 +1,6 @@
-/* =====================================================================
-   AMS StockWatch (admin) — design system
-   Same DepEd NCR palette, type and components as the AMS Supplies portal.
-   Loaded after Bootstrap 5.3 and Bootstrap Icons.
-   ===================================================================== */
+/* This is the main stylesheet of e-PINS (admin).
+   Same DepEd NCR colors, fonts and components as e-SRS.
+   It loads after Bootstrap 5.3 and Bootstrap Icons. */
 
 :root {
     --navy: #00007f;
@@ -36,11 +34,11 @@
 html, body { background: var(--canvas); color: var(--ink); }
 h1:focus { outline: none; }
 
-/* No visible scrollbars anywhere; scrolling still works */
+/* I hide the scrollbars everywhere, scrolling still works */
 * { scrollbar-width: none; -ms-overflow-style: none; }
 *::-webkit-scrollbar { display: none; width: 0; height: 0; }
 
-/* ---------- Buttons ---------- */
+/* Buttons */
 .btn { font-weight: 600; border-radius: 10px; }
 .btn-primary {
     --bs-btn-bg: var(--brand); --bs-btn-border-color: var(--brand);
@@ -65,7 +63,7 @@ h1:focus { outline: none; }
 .btn-light { --bs-btn-bg: #eef0f6; --bs-btn-border-color: #eef0f6; --bs-btn-hover-bg: #e2e6f0; --bs-btn-hover-border-color: #e2e6f0; }
 .btn-danger { --bs-btn-bg: var(--bad); --bs-btn-border-color: var(--bad); --bs-btn-hover-bg: #8f1c13; --bs-btn-hover-border-color: #8f1c13; }
 
-/* Small text-style row actions (Edit, Delete, View…) */
+/* Small text buttons in table rows (Edit, Delete, View...) */
 .row-actions { display: flex; flex-wrap: wrap; gap: .25rem; }
 .act {
     display: inline-flex; align-items: center; gap: .3rem;
@@ -77,8 +75,11 @@ h1:focus { outline: none; }
 .act.is-danger:hover { background: var(--bad-tint); color: #8f1c13; }
 .act.is-ok { color: var(--ok); }
 .act.is-ok:hover { background: var(--ok-tint); }
+/* Small icon button next to a value (like the pencil after a date), and a text button that lines up with the column */
+.act.act-icon { padding: .2rem .35rem; margin-left: .15rem; }
+.act.act-set { margin-left: -.55rem; }
 
-/* ---------- Form fields ---------- */
+/* Form fields */
 .form-label { font-weight: 600; font-size: .875rem; margin-bottom: .3rem; }
 .form-control, .form-select { background-color: var(--surface); border-color: var(--line); }
 .form-control:focus, .form-select:focus { border-color: var(--brand); box-shadow: 0 0 0 .2rem rgb(11 47 168 / .18); }
@@ -102,9 +103,7 @@ h1:focus { outline: none; }
 }
 .btn-icon:hover { color: var(--brand); border-color: var(--brand); }
 
-/* =====================================================================
-   App shell: navy sidebar (fixed on desktop, slide-in on phones)
-   ===================================================================== */
+/* App layout: navy sidebar (fixed on desktop, slides in on phones) */
 .shell { min-height: 100vh; }
 
 .sidebar {
@@ -123,19 +122,19 @@ h1:focus { outline: none; }
 }
 
 .sidebar-brand { padding: .875rem .875rem .75rem; border-bottom: 1px solid rgb(255 255 255 / .1); }
-/* Full-width logo pill in the sidebar */
+/* Full width logo pill in the sidebar */
 .brand-pill {
     display: inline-flex; align-items: center;
     background: #fff; border-radius: 999px; padding: .3rem .85rem;
     box-shadow: 0 2px 8px rgb(0 0 40 / .3);
 }
 .brand-pill img { height: 34px; width: auto; display: block; }
-/* Full-width logo pill at the top of the sidebar */
+/* Full width logo pill at the top of the sidebar */
 .sidebar .brand-pill-wide { display: flex; justify-content: center; width: 100%; padding: .4rem .9rem; border-radius: 16px; }
 .sidebar .brand-pill-wide img { width: 100%; height: auto; max-height: 64px; object-fit: contain; }
 .sidebar-app { margin: .625rem 0 0; line-height: 1.15; text-align: center; }
 .sidebar-app strong { display: block; color: var(--gold); font-size: 1.375rem; font-weight: 800; letter-spacing: .01em; }
-.sidebar-app span { display: block; font-size: .9375rem; font-weight: 600; color: #fff; }
+.sidebar-app span { display: block; font-size: .8125rem; font-weight: 600; color: #fff; }
 
 .sidebar-nav { flex: 1; overflow-y: auto; padding: .5rem .625rem; }
 .nav-group + .nav-group { margin-top: .5rem; }
@@ -161,7 +160,7 @@ h1:focus { outline: none; }
     margin-left: auto; min-width: 1.5rem; padding: .05rem .45rem; border-radius: 999px; text-align: center;
     font-size: .75rem; font-weight: 800; color: var(--navy); background: var(--gold);
 }
-/* Shorter laptop screens: tighten the menu so every item fits without scrolling */
+/* Shorter laptop screens: tighter menu so every item fits without scrolling */
 @media (max-height: 860px) {
     .sidebar-brand { padding: .6rem .75rem .5rem; }
     .sidebar .brand-pill-wide img { max-height: 46px; }
@@ -213,7 +212,7 @@ h1:focus { outline: none; }
     border: 1px solid rgb(255 255 255 / .35); border-radius: 10px; background: none; color: #fff; font-size: 1.25rem;
 }
 
-/* ---------- Page header band + body (same as the portal) ---------- */
+/* Page header band and body (same as e-SRS) */
 .page-head {
     background: linear-gradient(160deg, var(--royal), var(--navy));
     color: #fff; padding: 1.75rem 0 1.75rem;
@@ -223,13 +222,13 @@ h1:focus { outline: none; }
 .page-head p { margin: 0; max-width: 70ch; color: rgb(255 255 255 / .88); }
 .page-head-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
 .page-body { position: relative; z-index: 1; padding-bottom: 4rem; }
-/* Clear space under the banner on every page (".wrap" alone would reset the top margin to 0) */
+/* Space under the banner on every page (".wrap" alone would reset the top margin to 0) */
 .wrap.page-body { margin-top: 1.5rem; }
 @media (max-width: 575.98px) { .wrap.page-body { margin-top: 1rem; } }
 .wrap { width: 100%; max-width: 1240px; margin: 0 auto; padding: 0 1.25rem; }
 @media (max-width: 575.98px) { .wrap { padding: 0 .875rem; } }
 
-/* ---------- Cards / panels ---------- */
+/* Cards and panels */
 .panel {
     background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
     box-shadow: 0 1px 2px rgb(0 0 40 / .05); margin-bottom: 1rem;
@@ -246,7 +245,7 @@ h1:focus { outline: none; }
 .filters { display: grid; gap: .875rem; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); align-items: end; }
 .filters-actions { display: flex; gap: .5rem; justify-content: flex-end; margin-top: .875rem; }
 
-/* Stat tiles (clickable ones are buttons) */
+/* Stat tiles (the clickable ones are buttons) */
 .stat-grid { display: grid; gap: .875rem; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 1rem; }
 @media (max-width: 575.98px) {
     .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .625rem; }
@@ -272,18 +271,18 @@ button.stat:hover, a.stat:hover { border-color: var(--brand); color: var(--ink);
 .stat-value { display: block; font-size: 1.5rem; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .stat-label { display: block; font-size: .8125rem; color: var(--muted); }
 
-/* ---------- Tables ---------- */
+/* Tables */
 .table-wrap { overflow-x: auto; }
 .data-table { width: 100%; margin: 0; font-size: .9rem; border-collapse: separate; border-spacing: 0; }
 .data-table thead th {
     background: var(--navy); color: #fff; font-weight: 600; font-size: .8125rem;
     padding: .65rem .875rem; text-align: left; white-space: nowrap; border: 0;
 }
-/* Round the navy header only when the table starts the panel */
+/* Only round the navy header when the table is at the top of the panel */
 .panel > .table-wrap:first-child .data-table thead th:first-child { border-top-left-radius: var(--radius); }
 .panel > .table-wrap:first-child .data-table thead th:last-child { border-top-right-radius: var(--radius); }
 @media (max-width: 767.98px) {
-    .data-table { min-width: 640px; }   /* scroll sideways instead of squashing columns */
+    .data-table { min-width: 640px; }   /* scroll sideways instead of squeezing the columns */
 }
 .data-table td { padding: .7rem .875rem; border-top: 1px solid var(--line); vertical-align: middle; background: var(--surface); }
 .data-table tbody tr:hover td { background: #fffaeb; }
@@ -306,7 +305,7 @@ dd, .callout p { overflow-wrap: anywhere; }   /* long pasted text (purpose, reas
 .thumb img { width: 100%; height: 100%; object-fit: cover; }
 .thumb-lg { width: 88px; height: 88px; font-size: 2rem; }
 
-/* ---------- Badges ---------- */
+/* Badges */
 .badge-pill {
     display: inline-flex; align-items: center; gap: .3rem;
     padding: .2rem .6rem; border-radius: 999px; font-size: .75rem; font-weight: 700;
@@ -320,7 +319,7 @@ dd, .callout p { overflow-wrap: anywhere; }   /* long pasted text (purpose, reas
 .badge-grey { background: #eef0f4; color: var(--muted); border-color: #dfe2ea; }
 .dot { width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
 
-/* ---------- Empty / loading states ---------- */
+/* Empty and loading messages */
 .empty-state {
     text-align: center; padding: 3rem 1rem; background: var(--surface);
     border: 1px dashed var(--line); border-radius: var(--radius);
@@ -331,7 +330,7 @@ dd, .callout p { overflow-wrap: anywhere; }   /* long pasted text (purpose, reas
 .panel .empty-state { border: 0; }
 .loading { padding: 2.5rem; text-align: center; color: var(--muted); }
 
-/* ---------- Dialogs (shared by <Dialog> and ModalService) ---------- */
+/* Dialogs (used by <Dialog> and ModalService) */
 .am-backdrop {
     position: fixed; inset: 0; z-index: 1050;
     display: grid; place-items: center; padding: 1rem;
@@ -375,7 +374,7 @@ dd, .callout p { overflow-wrap: anywhere; }   /* long pasted text (purpose, reas
 @keyframes am-sheet { from { transform: translateY(100%); } }
 @media (prefers-reduced-motion: reduce) { .am-backdrop, .am-dialog { animation: none; } }
 
-/* One-time secret display (generated passwords) */
+/* Shows a secret once (generated passwords) */
 .secret-box {
     display: flex; align-items: center; gap: .5rem; margin: .5rem 0 1rem;
     padding: .625rem .75rem; border-radius: 10px; background: #f6f7fb; border: 1px dashed var(--line);
@@ -383,7 +382,7 @@ dd, .callout p { overflow-wrap: anywhere; }   /* long pasted text (purpose, reas
 }
 .secret-box code { flex: 1; color: var(--navy); }
 
-/* ---------- Toasts (js/toast.js) ---------- */
+/* Toasts (js/toast.js) */
 #toast-container {
     position: fixed; left: 50%; bottom: 1.5rem; transform: translateX(-50%);
     z-index: 1100; display: flex; flex-direction: column; gap: .5rem;
@@ -403,7 +402,7 @@ dd, .callout p { overflow-wrap: anywhere; }   /* long pasted text (purpose, reas
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
 @media (prefers-reduced-motion: reduce) { #toast-container .app-toast { animation: none; } }
 
-/* ---------- Auth pages (landing + sign in) ---------- */
+/* Login pages (landing and sign in) */
 .auth-page {
     position: relative; overflow: hidden; isolation: isolate;
     min-height: 100vh; display: flex; flex-direction: column;
@@ -449,7 +448,7 @@ dd, .callout p { overflow-wrap: anywhere; }   /* long pasted text (purpose, reas
 .login-card h1 { font-size: 1.375rem; font-weight: 800; text-align: center; margin: 0; color: var(--navy); }
 .login-card .login-sub { text-align: center; color: var(--muted); margin: .25rem 0 1.5rem; font-size: .9375rem; }
 
-/* ---------- Picker (dropdown that matches its field's width) ---------- */
+/* Picker (my dropdown that matches the width of its field) */
 .picker { position: relative; }
 .picker-toggle {
     text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -464,7 +463,7 @@ dd, .callout p { overflow-wrap: anywhere; }   /* long pasted text (purpose, reas
     background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
     box-shadow: 0 12px 32px rgb(0 0 40 / .18); overflow: hidden;
 }
-/* Inside a dialog the list opens in place, so it never gets cut off by the dialog edge */
+/* Inside a dialog the list opens in place, so the dialog edge never cuts it off */
 .am-body .picker-panel { position: relative; top: 0; margin-top: 4px; box-shadow: 0 6px 16px rgb(0 0 40 / .12); }
 .picker-search { position: relative; padding: 6px; border-bottom: 1px solid var(--line); }
 .picker-search .bi { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: var(--muted); }
@@ -480,7 +479,7 @@ dd, .callout p { overflow-wrap: anywhere; }   /* long pasted text (purpose, reas
 .picker-option.is-selected .picker-name::after { content: "\F26E"; font-family: "bootstrap-icons"; margin-left: .375rem; color: var(--brand); }
 .picker-empty { padding: .75rem; color: var(--muted); font-size: .875rem; }
 
-/* ---------- Blazor error bar ---------- */
+/* Blazor error bar */
 #blazor-error-ui {
     display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 2000;
     align-items: center; gap: .75rem; padding: .75rem 1.25rem;
@@ -490,7 +489,7 @@ dd, .callout p { overflow-wrap: anywhere; }   /* long pasted text (purpose, reas
 #blazor-error-ui .reload { margin-left: auto; color: var(--navy); }
 #blazor-error-ui .dismiss { border: 0; background: none; font-size: 1rem; color: #5c3b00; }
 
-/* ---------- RIS print page ---------- */
+/* RIS print page */
 .print-toolbar {
     position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: .75rem;
     padding: .75rem 1.25rem; background: var(--navy); border-bottom: 3px solid var(--gold);
@@ -499,22 +498,22 @@ dd, .callout p { overflow-wrap: anywhere; }   /* long pasted text (purpose, reas
 .print-page { padding: 1.5rem 1rem 3rem; overflow-x: auto; }
 @media print { .print-page { padding: 0; } }
 
-/* Very short laptop screens (e.g. 1366 x 768): every menu item must still fit with
-   no scrolling, so group titles become thin divider lines and items get tighter. */
+/* Very short laptop screens (like 1366 x 768): every menu item still has to fit without
+   scrolling, so the group titles become thin lines and the items get tighter. */
 @media (max-height: 800px) and (min-width: 992px) {
     .sidebar .brand-pill-wide img { max-height: 34px; }
     .sidebar-app strong { font-size: 1rem; }
     .sidebar-app span { font-size: .75rem; }
     .sidebar-clock { margin-top: .3rem; padding: .2rem .5rem; font-size: .78rem; }
     .sidebar-nav { padding: .3rem .625rem; }
-    .nav-group-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }  /* still read by screen readers */
+    .nav-group-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }  /* screen readers still read it */
     .nav-group + .nav-group { margin-top: .3rem; padding-top: .3rem; border-top: 1px solid rgb(255 255 255 / .12); }
     .nav-item { padding: .3rem .75rem; font-size: .86rem; line-height: 1.25; }
     .nav-item .bi { font-size: 1rem; }
     .sidebar-foot { padding-top: .3rem; padding-bottom: .4rem; }
 }
 
-/* ---------- Notification permission prompt ---------- */
+/* Notification permission prompt */
 .notify-prompt {
     display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .875rem;
     padding: .625rem 1.25rem; background: var(--navy); color: #fff; font-size: .9rem;
@@ -525,7 +524,7 @@ dd, .callout p { overflow-wrap: anywhere; }   /* long pasted text (purpose, reas
 .notify-later { color: #fff; border: 1px solid rgb(255 255 255 / .4); }
 .notify-later:hover { background: rgb(255 255 255 / .1); color: #fff; }
 
-/* ---------- Report tabs + usage meter ---------- */
+/* Report tabs and usage meter */
 .chip-tabs { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }
 .chip-tab {
     display: inline-flex; align-items: center; gap: .4rem; min-height: 40px; padding: 0 1rem;
@@ -538,7 +537,7 @@ dd, .callout p { overflow-wrap: anywhere; }   /* long pasted text (purpose, reas
 .print-only { display: none; }
 @media print { .print-only { display: block; } .chip-tabs { display: none; } }
 
-/* ---------- Dashboard sections and charts ---------- */
+/* Dashboard sections and charts */
 .section-title { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin: 1.75rem 0 .875rem; }
 .section-title h2 { display: flex; align-items: center; gap: .5rem; margin: 0; font-size: 1.25rem; font-weight: 800; color: var(--navy); }
 .section-title h2 .bi { color: var(--gold); }
@@ -557,7 +556,7 @@ html[data-theme="dark"] .section-title h2 { color: #c9d2ff; }
 .bar-fill {
     display: block; height: 100%; border-radius: 999px;
     transform-origin: left center; animation: bar-grow .8s cubic-bezier(.2,.8,.2,1) both; animation-delay: var(--delay, 0ms);
-    transition: width .6s cubic-bezier(.2,.8,.2,1);   /* live updates glide to the new value */
+    transition: width .6s cubic-bezier(.2,.8,.2,1);   /* live updates slide to the new value */
 }
 .bar-value { min-width: 4.5rem; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .bar-value small { margin-left: .35rem; color: var(--muted); }
@@ -580,7 +579,7 @@ html[data-theme="dark"] .section-title h2 { color: #c9d2ff; }
 .pie-legend small { color: var(--muted); min-width: 3rem; text-align: right; }
 .pie-dot { width: 12px; height: 12px; border-radius: 4px; }
 
-/* Property register status filter + tags */
+/* Property register status filter and tags */
 .status-chips { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }
 .status-chip {
     display: inline-flex; align-items: center; gap: .4rem; padding: .4rem .75rem; border-radius: 999px;
@@ -598,7 +597,7 @@ html[data-theme="dark"] .section-title h2 { color: #c9d2ff; }
 .period-bar { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: .75rem; color: var(--muted); font-weight: 600; font-size: .9rem; }
 .period-picker { min-width: 180px; }
 
-/* ---------- Announcements (admin list) ---------- */
+/* Announcements (admin list) */
 .ann-list { display: grid; gap: .75rem; }
 .ann-card {
     display: flex; gap: 1rem; align-items: flex-start; justify-content: space-between; flex-wrap: wrap;
@@ -613,11 +612,11 @@ html[data-theme="dark"] .section-title h2 { color: #c9d2ff; }
 .ann-message { margin: 0 0 .5rem; white-space: pre-line; overflow-wrap: anywhere; }
 .ann-card-actions { display: flex; gap: .25rem; }
 
-/* APP-CSE: items to be added to the catalog */
+/* APP-CSE: items that will be added to the catalog */
 .new-items-box { padding: .875rem 1rem; border: 1px solid var(--line); border-left: 4px solid var(--gold); border-radius: 10px; background: var(--surface); }
 .new-items-box summary { cursor: pointer; color: var(--brand); }
 
-/* ---------- Misc ---------- */
+/* Other styles */
 .callout {
     display: flex; gap: .75rem; padding: 1rem 1.125rem; margin-bottom: 1rem;
     border-radius: var(--radius); background: #fffaeb; border: 1px solid #f6dc9b;
@@ -635,9 +634,7 @@ html[data-theme="dark"] .section-title h2 { color: #c9d2ff; }
     .page-head h1 { color: #000; }
 }
 
-/* =====================================================================
-   Theme switch + Philippine-time clock
-   ===================================================================== */
+/* Theme switch and the Philippine time clock */
 .theme-toggle {
     display: inline-grid; place-items: center; width: 40px; height: 40px; flex: none;
     border-radius: 10px; border: 1px solid var(--line); background: var(--surface);
@@ -663,10 +660,8 @@ html[data-theme="dark"] .section-title h2 { color: #c9d2ff; }
 .sidebar-clock .ph-clock-text { flex-direction: row; align-items: baseline; gap: .6rem; }
 @media (max-height: 860px) { .sidebar-clock { margin-top: .4rem; padding: .3rem .5rem; font-size: .8125rem; } }
 
-/* =====================================================================
-   Dark mode (html[data-theme="dark"]) — the navy sidebar, gold accents
-   and the RIS paper stay the same; surfaces and text switch to dark.
-   ===================================================================== */
+/* Dark mode (html[data-theme="dark"]). The navy sidebar, gold accents and the RIS paper
+   stay the same. Only the backgrounds and text switch to dark. */
 html[data-theme="dark"] {
     --ink: #e7e9f4;
     --muted: #9ba3bf;
@@ -702,10 +697,10 @@ html[data-theme="dark"] .picker-option.is-active { background: #232c5c; }
 html[data-theme="dark"] .meter { background: #2b3354; }
 html[data-theme="dark"] #blazor-error-ui { background: #33280e; color: #f5c25a; }
 html[data-theme="dark"] .print-page { background: var(--canvas); }
-/* The RIS stays black-on-white: it's a paper form */
+/* The RIS stays black on white because it's a paper form */
 html[data-theme="dark"] .ris-sheet { color: #000; background: #fff; }
 
-/* Printing always uses the light colours, whatever the screen theme */
+/* Printing always uses the light colors, whatever theme is on screen */
 @media print {
     html[data-theme="dark"] {
         --ink: #141a3a; --muted: #565f7a; --line: #d8dcea; --surface: #ffffff; --canvas: #ffffff;
@@ -715,7 +710,7 @@ html[data-theme="dark"] .ris-sheet { color: #000; background: #fff; }
     .theme-toggle, .ph-clock { display: none !important; }
 }
 
-/* "Sound is blocked" button, shown only when the browser blocked an alert sound */
+/* "Sound is blocked" button, only shown when the browser blocked an alert sound */
 .sound-hint {
     position: fixed; left: 50%; bottom: 1.25rem; transform: translateX(-50%); z-index: 2100;
     display: inline-flex; align-items: center; gap: .5rem; padding: .6rem 1rem; border-radius: 999px;
@@ -727,9 +722,7 @@ html[data-theme="dark"] .ris-sheet { color: #000; background: #fff; }
 @keyframes sound-hint-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translateX(-50%); } }
 @media print { .sound-hint { display: none; } }
 
-/* =====================================================================
-   Office supplies on the dashboard: stock health bar + stock level bars
-   ===================================================================== */
+/* Office supplies on the dashboard: stock health bar and stock level bars */
 :root { --lvl-ok: #1e9e5a; --lvl-low: #e0a400; --lvl-out: #d63a3a; --lvl-track: #eef0f6; }
 html[data-theme="dark"] { --lvl-ok: #3fbf7f; --lvl-low: #f0b84a; --lvl-out: #ff6b62; --lvl-track: #1f2540; }
 
@@ -780,9 +773,7 @@ html[data-theme="dark"] { --lvl-ok: #3fbf7f; --lvl-low: #f0b84a; --lvl-out: #ff6
 }
 @media (prefers-reduced-motion: reduce) { .level-fill, .health-part { animation: none; } }
 
-/* =====================================================================
-   Calendar (DatePicker) — replaces the browser's plain date box
-   ===================================================================== */
+/* Calendar (DatePicker), my replacement for the browser's plain date box */
 .datepicker { position: relative; }
 .datepicker-toggle {
     display: flex; align-items: center; gap: .55rem; text-align: left; cursor: pointer;
@@ -795,7 +786,7 @@ html[data-theme="dark"] { --lvl-ok: #3fbf7f; --lvl-low: #f0b84a; --lvl-out: #ff6
 .datepicker-value { overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 
 .datepicker-panel {
-    /* ui.js switches this to position: fixed, as wide as the field, and makes it visible */
+    /* ui.js changes this to position: fixed, makes it as wide as the field, and shows it */
     position: absolute; z-index: 1041; left: 0; top: calc(100% + 4px); visibility: hidden;
     width: 18.5rem; max-width: calc(100vw - 1rem); max-height: calc(100dvh - 1rem); overflow-y: auto; padding: .625rem;
     background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
@@ -861,9 +852,7 @@ html[data-theme="dark"] .dp-ampm button.is-on { background: var(--brand); }
 .choice-row .form-check-input:checked { background-color: var(--brand); border-color: var(--brand); }
 .perish-box { padding: .875rem 1rem; border-radius: 10px; background: var(--brand-tint); border: 1px solid var(--line); }
 
-/* =====================================================================
-   SPLV / SPHV deliveries
-   ===================================================================== */
+/* SPLV / SPHV deliveries */
 .se-exports { display: flex; gap: .5rem; align-items: end; justify-content: flex-end; }
 .se-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; font-size: .875rem; }
 .se-lines li { line-height: 1.35; }
@@ -902,9 +891,291 @@ html[data-theme="dark"] .se-no.is-par { background: #33280e; color: #f5c25a; }
 .se-facts dd { margin: 0; }
 .se-series { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .75rem 0; border-top: 1px solid var(--line); }
 
-/* Floating dropdown (Picker Floating="true"): placed by ui.js like the calendar */
+/* Floating dropdown (Picker Floating="true"), ui.js places it like the calendar */
 .picker-panel.is-floating { visibility: hidden; max-height: calc(100dvh - 1rem); overflow-y: auto; }
 .am-body .picker-panel.is-floating { position: absolute; margin-top: 0; box-shadow: 0 12px 32px rgb(0 0 40 / .18); }
 .picker-panel.is-floating.is-placed { visibility: visible; }
 .se-eu-cell .picker-toggle { font-size: .875rem; padding-top: .25rem; padding-bottom: .25rem; min-height: calc(1.5em + .5rem + 2px); }
 .se-eu { min-height: 38px; gap: 1rem; }
+
+/* Sticky page header, back to top button and table pages */
+/* The navy page header stays at the top while scrolling. Once scrolled it gets
+   shorter (subtitle hidden) so the table has more room. ui.js sets html.is-scrolled. */
+.page-head { position: sticky; top: 0; z-index: 1020; transition: padding .2s ease, box-shadow .2s ease; }
+@media (max-width: 991.98px) { .page-head { top: 60px; } }   /* under the phone/tablet top bar (60px tall) */
+.page-head h1, .page-head p { transition: font-size .2s ease; }
+.is-scrolled .page-head { padding: .7rem 0; box-shadow: 0 8px 20px -10px rgb(0 0 40 / .55); }
+.is-scrolled .page-head-inner { align-items: center; }
+.is-scrolled .page-head h1 { font-size: 1.25rem; margin: 0; }
+.is-scrolled .page-head p { display: none; }
+.is-scrolled .page-head-actions .btn { padding-top: .3rem; padding-bottom: .3rem; }
+/* Pickers and dialogs in the page open above the sticky header */
+.page-body { z-index: auto; }
+@media (prefers-reduced-motion: reduce) { .page-head, .page-head h1, .page-head p { transition: none; } }
+@media print { .page-head { position: static; box-shadow: none; } }
+
+/* Back to top: shows after scrolling down one screen */
+.scroll-top {
+    position: fixed; right: 1.25rem; bottom: 1.25rem; z-index: 1030;
+    width: 46px; height: 46px; display: grid; place-items: center;
+    border: 2px solid var(--gold); border-radius: 50%;
+    background: var(--navy); color: #fff; font-size: 1.25rem;
+    box-shadow: 0 8px 20px rgb(0 0 40 / .3);
+    opacity: 0; visibility: hidden; transform: translateY(12px);
+    transition: opacity .2s ease, transform .2s ease, visibility .2s;
+}
+.show-scroll-top .scroll-top { opacity: 1; visibility: visible; transform: none; }
+/* While the back to top button shows, the table page buttons move away from it (it's at the bottom right) */
+.show-scroll-top .pager-buttons { margin-right: 4rem; }
+.scroll-top:hover { background: var(--royal); }
+.scroll-top:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+@media (max-width: 575.98px) { .scroll-top { right: .875rem; bottom: .875rem; width: 42px; height: 42px; } .show-scroll-top .pager-buttons { margin-right: 3.25rem; } }
+@media (prefers-reduced-motion: reduce) { .scroll-top { transition: none; } }
+@media print { .scroll-top { display: none !important; } }
+
+/* Page buttons under a table (Pager.razor): count on the left, buttons on the bottom right */
+.pager {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem;
+    padding: .75rem 1.125rem; border-top: 1px solid var(--line);
+}
+.pager-info { color: var(--muted); font-size: .875rem; }
+.pager-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; margin-left: auto; }
+.pager-btn {
+    min-width: 2.25rem; height: 2.25rem; padding: 0 .55rem;
+    display: inline-grid; place-items: center;
+    border: 1px solid var(--line); border-radius: 9px; background: var(--surface);
+    color: var(--ink); font-size: .875rem; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.pager-btn:hover:not(:disabled):not(.is-current) { border-color: var(--brand); color: var(--brand); }
+.pager-btn.is-current { background: var(--brand); border-color: var(--brand); color: #fff; }
+.pager-btn:disabled { opacity: .45; cursor: default; }
+.pager-btn:focus-visible { outline: 3px solid var(--gold); outline-offset: 1px; }
+.pager-gap { padding: 0 .2rem; color: var(--muted); }
+.am-body .pager { padding-left: 0; padding-right: 0; }
+/* Printed tables keep every row, rows of other pages are only hidden on screen */
+.pg-off { display: none; }
+@media print { .pg-off { display: table-row; } .pager { display: none !important; } }
+
+/* Property documents: "Returned" switch */
+.ret-switch { color: var(--muted); }
+.ret-track {
+    position: relative; flex: none; width: 30px; height: 17px; border-radius: 999px;
+    background: #c5cbdc; transition: background .15s ease;
+}
+.ret-knob {
+    position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 2px rgb(0 0 40 / .3); transition: transform .15s ease;
+}
+.ret-switch.is-on { color: var(--ok); }
+.ret-switch.is-on .ret-track { background: var(--ok); }
+.ret-switch.is-on .ret-knob { transform: translateX(13px); }
+.ret-switch:hover { background: var(--ok-tint); color: var(--ok); }
+@media (prefers-reduced-motion: reduce) { .ret-track, .ret-knob { transition: none; } }
+.returned-note {
+    display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .5rem; margin-top: .3rem;
+    color: var(--ok); font-size: .8rem; font-weight: 600;
+}
+.returned-note .bi { margin-right: .1rem; }
+.returned-note a { color: inherit; font-weight: 600; text-decoration: underline; }
+/* Phones: the shorter header keeps the title and its buttons on one line */
+@media (max-width: 575.98px) {
+    .is-scrolled .page-head-inner { flex-wrap: nowrap; }
+    .is-scrolled .page-head-inner > div:first-child { min-width: 0; }
+    .is-scrolled .page-head h1 { font-size: 1.05rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .is-scrolled .page-head-actions .btn { font-size: .8125rem; padding: .3rem .6rem; }
+}
+.return-for {
+    display: flex; gap: .75rem; align-items: flex-start; margin-bottom: 1rem;
+    padding: .75rem .875rem; border-radius: 10px; background: var(--ok-tint); color: var(--ink);
+    border: 1px solid rgb(30 122 70 / .25);
+}
+.return-for > .bi { color: var(--ok); font-size: 1.15rem; margin-top: .1rem; }
+.return-for strong { display: block; }
+.return-for span { display: block; color: var(--muted); font-size: .85rem; overflow-wrap: anywhere; }
+html[data-theme="dark"] .ret-track { background: #3a4366; }
+
+/* Sidebar groups that open and close (Supplies, Records, Administration) */
+.nav-group-toggle {
+    width: 100%; display: flex; align-items: center; gap: .6rem;
+    padding: .45rem .75rem; border: 0; border-radius: 10px; background: none;
+    color: rgb(255 255 255 / .62); font-size: .75rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    text-align: left;
+}
+.nav-group-toggle > .bi:first-child { font-size: .95rem; width: 1.25rem; text-align: center; color: rgb(255 255 255 / .5); }
+.nav-group-toggle > span:not(.nav-count) { flex: 1; }
+.nav-group-toggle .nav-count { margin-left: 0; letter-spacing: 0; }
+.nav-group-toggle:hover { background: rgb(255 255 255 / .06); color: #fff; }
+.nav-group-toggle:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
+.nav-group.is-open > .nav-group-toggle { color: var(--gold); }
+.nav-group.is-open > .nav-group-toggle > .bi:first-child { color: var(--gold); }
+.nav-group-chevron { font-size: .8rem; transition: transform .2s ease; }
+.nav-group.is-open .nav-group-chevron { transform: rotate(180deg); }
+/* Smooth open and close: the list grows from 0 to its full height */
+.nav-group-items { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .22s ease; }
+.nav-group.is-open > .nav-group-items { grid-template-rows: 1fr; }
+.nav-group-inner { min-height: 0; overflow: hidden; margin-left: -.625rem; padding-left: .625rem; }   /* room for the gold bar of the current page */
+.nav-group.is-collapsible .nav-item { margin-left: .4rem; }
+.nav-group.is-collapsible .nav-item.active::before { left: -1.025rem; }
+@media (prefers-reduced-motion: reduce) { .nav-group-items, .nav-group-chevron { transition: none; } }
+@media (max-height: 860px) { .nav-group-toggle { padding: .32rem .75rem; } }
+
+/* Property on a PAR / ICS (Property documents) */
+.doc-items { margin-top: .25rem; }
+.doc-items-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .5rem; }
+.doc-items-search { max-width: 280px; flex: 1 1 200px; }
+.doc-items-list {
+    list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
+}
+.doc-items-list li + li { border-top: 1px solid var(--line); }
+.doc-items-list label { display: flex; gap: .65rem; align-items: flex-start; padding: .55rem .75rem; cursor: pointer; margin: 0; }
+.doc-items-list li:hover { background: var(--brand-tint); }
+.doc-items-list li.is-on { background: color-mix(in srgb, var(--brand-tint) 70%, transparent); }
+.doc-items-list .form-check-input { margin-top: .2rem; flex: none; }
+.doc-items-main { min-width: 0; display: block; }
+.doc-items-desc { display: block; font-weight: 600; font-size: .875rem; overflow-wrap: anywhere; }
+.doc-items-meta { display: block; color: var(--muted); font-size: .8rem; }
+.doc-items-status { font-weight: 600; }
+.doc-items-holder { color: var(--warn); }
+.doc-items-empty { padding: .75rem .875rem; border: 1px dashed var(--line); border-radius: 10px; color: var(--muted); font-size: .875rem; }
+.doc-items-foot { display: flex; flex-wrap: wrap; gap: .25rem 1rem; margin-top: .5rem; font-size: .85rem; color: var(--muted); }
+.doc-items-foot strong { color: var(--ink); }
+.doc-items-warn { color: var(--warn); }
+.doc-items-warn .bi { margin-right: .3rem; }
+.linked-note { display: inline-flex; align-items: center; gap: .3rem; margin-top: .15rem; font-size: .78rem; color: var(--muted); }
+.linked-note.is-none { color: var(--warn); }
+
+/* Dashboard: label of what each card is for (Requisition and Issue Slip, Supplies Inventory, Property, Employees) */
+.stat-tag {
+    display: inline-flex; align-items: center; gap: .3rem; margin-bottom: .2rem;
+    padding: .1rem .5rem; border-radius: 6px; font-size: .6875rem; font-weight: 700; letter-spacing: .02em; line-height: 1.35;
+    background: #fff4d6; color: #8a5a00;
+}
+.stat-tag.is-ris { background: #e6f4f1; color: #0b6e5f; }
+.stat-tag .bi { font-size: .75rem; }
+.stat-tag.is-property { background: var(--brand-tint); color: var(--brand); }
+.stat-tag.is-people { background: var(--ok-tint); color: var(--ok); }
+.panel-title { display: flex; flex-direction: column; align-items: flex-start; gap: .15rem; min-width: 0; }
+html[data-theme="dark"] .stat-tag { background: #3a2c0c; color: #ffd27a; }
+html[data-theme="dark"] .stat-tag.is-property { background: var(--brand-tint); color: #a9bcff; }
+html[data-theme="dark"] .stat-tag.is-people { background: var(--ok-tint); color: var(--ok); }
+html[data-theme="dark"] .stat-tag.is-ris { background: #10302b; color: #6fd6c2; }
+/* Long sidebar group names (Property & Equipment Records) wrap nicely into two lines */
+.nav-group-toggle > span:not(.nav-count) { line-height: 1.25; }
+
+/* Equipment type (Laptop, Printer...) on documents and the register */
+.equip-note { display: flex; width: fit-content; align-items: center; gap: .3rem; margin-top: .15rem; font-size: .78rem; font-weight: 600; color: var(--brand); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; background: none; padding: 0; }
+.equip-note.is-none { color: var(--warn); font-weight: 500; text-decoration: underline dotted; cursor: pointer; }
+.equip-note + .linked-note { display: flex; width: fit-content; }
+.equip-tag { display: inline-flex; align-items: center; gap: .3rem; margin-bottom: .15rem; padding: .05rem .5rem; border-radius: 6px; font-size: .72rem; font-weight: 700; background: var(--brand-tint); color: var(--brand); }
+.equip-tag + span { display: block; }
+.equip-chips { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .5rem; }
+.equip-chip { display: inline-flex; align-items: center; gap: .35rem; padding: .2rem .25rem .2rem .6rem; border-radius: 999px; background: var(--brand-tint); color: var(--brand); font-size: .85rem; font-weight: 600; }
+.equip-chip button { border: 0; background: none; color: inherit; width: 1.4rem; height: 1.4rem; border-radius: 50%; display: grid; place-items: center; padding: 0; }
+.equip-chip button:hover { background: rgb(11 47 168 / .12); }
+.equip-other { display: flex; gap: .5rem; margin-top: .5rem; }
+html[data-theme="dark"] .equip-chip, html[data-theme="dark"] .equip-tag { color: #a9bcff; }
+
+/* Reports > Deliveries: the scanned DR / Invoice / IAR next to the items */
+.delivery-view { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 1rem; min-height: 60vh; }
+.delivery-pdf { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #525659; min-height: 60vh; display: grid; }
+.delivery-pdf iframe { width: 100%; height: 100%; min-height: 60vh; border: 0; }
+.delivery-pdf .empty-state { background: var(--surface); }
+.delivery-facts { margin: 0 0 1rem; display: grid; gap: .5rem; }
+.delivery-facts dt { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
+.delivery-facts dd { margin: 0; }
+.delivery-lines-title { font-size: .9375rem; font-weight: 700; margin: 0 0 .5rem; }
+.delivery-lines { list-style: none; margin: 0; padding: 0; max-height: 40vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; }
+.delivery-lines li { display: flex; justify-content: space-between; gap: .75rem; padding: .5rem .75rem; }
+.delivery-lines li + li { border-top: 1px solid var(--line); }
+.delivery-lines li span { display: flex; flex-direction: column; min-width: 0; }
+.delivery-lines small { color: var(--muted); font-size: .78rem; }
+.delivery-lines b { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.delivery-total { display: flex; justify-content: space-between; padding: .6rem .75rem 0; }
+@media (max-width: 767.98px) {
+    .delivery-view { grid-template-columns: minmax(0, 1fr); }
+    .delivery-pdf, .delivery-pdf iframe { min-height: 50vh; }
+}
+
+/* Property documents: neat row actions (Returned switch above a row of icon buttons) */
+.cell-actions { width: 1%; white-space: nowrap; }
+.doc-row-actions { display: flex; flex-direction: column; align-items: flex-end; gap: .45rem; }
+.doc-row-actions .ret-switch { padding: .25rem .55rem; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
+.doc-row-actions .ret-switch.is-on { border-color: color-mix(in srgb, var(--ok) 40%, var(--line)); background: var(--ok-tint); }
+.icon-acts {
+    display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+    background: var(--surface); box-shadow: 0 1px 2px rgb(0 0 40 / .05);
+}
+.iact {
+    display: grid; place-items: center; width: 34px; height: 32px; padding: 0;
+    border: 0; border-left: 1px solid var(--line); background: none;
+    color: var(--brand); font-size: .95rem; text-decoration: none;
+    transition: background .12s ease, color .12s ease;
+}
+.iact:first-child { border-left: 0; }
+.iact:hover, .iact:focus-visible { background: var(--brand-tint); color: var(--brand-deep); }
+.iact:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.iact.is-danger { color: var(--bad); }
+.iact.is-danger:hover, .iact.is-danger:focus-visible { background: var(--bad-tint); color: #8f1c13; }
+@media (prefers-reduced-motion: reduce) { .iact { transition: none; } }
+
+/* Employees: birthday for My accountability in e-SRS */
+.bday-note { display: flex; align-items: center; gap: .3rem; margin-top: .15rem; color: var(--ok); font-size: .78rem; font-weight: 600; }
+.bday-note.is-none { color: var(--muted); font-weight: 500; }
+.bday-note.is-locked { color: var(--warn); }
+.bday-box { margin-top: 1rem; padding: .85rem 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--canvas); }
+.bday-box h3 { display: flex; align-items: center; gap: .4rem; margin: 0 0 .35rem; font-size: .95rem; font-weight: 700; }
+.bday-status { margin: 0 0 .65rem; font-size: .875rem; }
+.bday-locked { display: flex; align-items: center; gap: .3rem; margin-top: .3rem; color: var(--warn); font-weight: 600; }
+.bday-actions, .bday-edit { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.bday-edit .datepicker { flex: 1 1 220px; min-width: 0; }
+
+/* Catalog: MFD / EXP format, and item colors */
+.date-label-row { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .3rem; flex-wrap: wrap; }
+.date-label-row .form-label { margin: 0; }
+.seg-toggle { display: inline-flex; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.seg-toggle button {
+    border: 0; background: none; padding: .15rem .55rem; border-radius: 6px;
+    color: var(--muted); font-size: .75rem; font-weight: 700; white-space: nowrap;
+}
+.seg-toggle button[aria-pressed="true"] { background: var(--brand); color: #fff; }
+.seg-toggle button:not([aria-pressed="true"]):hover { background: var(--brand-tint); color: var(--brand-deep); }
+
+.swatch {
+    display: inline-block; flex: none; width: .9rem; height: .9rem; border-radius: 50%;
+    box-shadow: inset 0 0 0 1px rgb(0 0 0 / .12);
+}
+.swatch.is-light { box-shadow: inset 0 0 0 1px rgb(0 0 0 / .3); }
+.color-box { padding: .85rem 1rem; border: 1px solid var(--line); border-radius: 12px; background: var(--canvas); }
+.color-box-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .75rem; }
+.color-chips { display: flex; flex-wrap: wrap; gap: .4rem; list-style: none; margin: .6rem 0 .7rem; padding: 0; }
+.color-chip {
+    display: inline-flex; align-items: center; gap: .4rem; padding: .2rem .25rem .2rem .55rem;
+    border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: .85rem; font-weight: 600;
+}
+.color-chip button {
+    display: grid; place-items: center; width: 1.4rem; height: 1.4rem; padding: 0; border: 0; border-radius: 50%;
+    background: none; color: var(--muted);
+}
+.color-chip button:hover { background: var(--bad-tint); color: var(--bad); }
+.color-presets { display: flex; flex-wrap: wrap; gap: .3rem; margin-bottom: .6rem; }
+.color-preset {
+    display: inline-flex; align-items: center; gap: .35rem; padding: .2rem .55rem;
+    border: 1px dashed var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); font-size: .8rem;
+}
+.color-preset:hover { border-style: solid; border-color: var(--brand); background: var(--brand-tint); }
+.color-custom { display: flex; gap: .4rem; align-items: center; }
+.color-custom .form-control-color { flex: none; width: 2.75rem; padding: .25rem; }
+.color-custom .form-control:not(.form-control-color) { flex: 1; min-width: 0; }
+.color-custom .btn { flex: none; white-space: nowrap; }
+.color-dots { display: flex; align-items: center; gap: .2rem; margin-top: .2rem; color: var(--muted); font-size: .78rem; }
+.color-dots > span:last-child { margin-left: .25rem; }
+.color-dots .swatch { width: .7rem; height: .7rem; }
+
+/* Settings: a single on/off switch with its explanation */
+/* This is the switch row: the switch and its label side by side, centered on one line */
+.setting-switch .form-check { display: flex; align-items: center; gap: .75rem; padding-left: 0; margin-bottom: 0; min-height: 1.4rem; }
+.setting-switch .form-check-input { width: 2.5rem; height: 1.4rem; margin: 0; float: none; flex-shrink: 0; cursor: pointer; }
+.setting-switch .form-check-label { cursor: pointer; }
+/* This is the explanation under the switch, lined up with the label text */
+.setting-switch > p { padding-left: 3.25rem; }

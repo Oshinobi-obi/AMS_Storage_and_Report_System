@@ -1,5 +1,5 @@
-@* Place once in MainLayout.razor:  <ModalHost />
-   Supports stacking (e.g. an error alert on top of the RIS submit dialog). *@
+@* I put this once in MainLayout.razor:  <ModalHost />
+   It can stack dialogs, like an error alert on top of the RIS submit dialog. *@
 @implements IDisposable
 @inject ModalService Modals
 
@@ -24,6 +24,6 @@
     public void Dispose()
     {
         Modals.Changed -= OnChanged;
-        Modals.CancelAll();   // never leave an awaiting caller hanging on circuit teardown
+        Modals.CancelAll();   // so a caller that's waiting doesn't get stuck when the circuit closes
     }
 }

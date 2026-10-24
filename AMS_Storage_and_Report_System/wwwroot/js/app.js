@@ -1,6 +1,6 @@
-// Small helpers called from Blazor through IJSRuntime.
+// Small helpers that Blazor calls through IJSRuntime.
 window.ams = {
-    // Submits a real HTML form (used after a confirmation dialog, e.g. Log out).
+    // Submits a real HTML form (I use it after a confirmation dialog, like Log out).
     submitForm: function (form) {
         if (!form) return;
         if (typeof form.requestSubmit === "function") form.requestSubmit();

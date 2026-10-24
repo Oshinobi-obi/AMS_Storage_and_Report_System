@@ -1,7 +1,7 @@
-// ExcelCharts.cs — adds real Excel charts (bar, column and pie) to a workbook made with ClosedXML.
-// ClosedXML can't draw charts, so the saved file is opened again with the Open XML SDK
-// (installed together with ClosedXML) and the chart parts are written in.
-// The charts point at cell ranges, so they update when someone edits the numbers in Excel.
+// This adds real Excel charts (bar, column and pie) to a workbook made with ClosedXML.
+// ClosedXML can't draw charts, so I open the saved file again with the Open XML SDK
+// (it comes with ClosedXML) and write the chart parts in.
+// The charts point to cell ranges, so they update when someone edits the numbers in Excel.
 
 using System.Globalization;
 using System.Security;
@@ -13,16 +13,16 @@ namespace AMS_Storage_and_Report_System.Services;
 
 public enum ExcelChartKind { Bar, Column, Pie }
 
-/// One data series: its name, the cells that hold its values, the values themselves
-/// (kept in the file so previews show the chart before Excel recalculates), and a colour.
+/// One data series: its name, the cells with its values, the values themselves
+/// (saved in the file so previews show the chart before Excel recalculates), and a color.
 public sealed record ExcelSeries(string Name, string ValuesRange, IReadOnlyList<double> Values, string ColorHex);
 
-/// A chart placed over the cells from (FromCol, FromRow) to (ToCol, ToRow); 0-based, like Excel's drawing grid.
+/// A chart placed over the cells from (FromCol, FromRow) to (ToCol, ToRow), starting at 0 like Excel's drawing grid.
 public sealed record ExcelChart(
     string Sheet, ExcelChartKind Kind, string Title,
     string CategoriesRange, IReadOnlyList<string> Categories, IReadOnlyList<ExcelSeries> Series,
     int FromCol, int FromRow, int ToCol, int ToRow,
-    IReadOnlyList<string>? PointColors = null,   // pie slices, or one colour per bar
+    IReadOnlyList<string>? PointColors = null,   // pie slices, or one color per bar
     string NumberFormat = "#,##0");
 
 public static class ExcelCharts
@@ -63,7 +63,7 @@ public static class ExcelCharts
                 using (var w = new StreamWriter(s, new UTF8Encoding(false)))
                     w.Write($"<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><xdr:wsDr xmlns:xdr=\"{Xdr}\" xmlns:a=\"{A}\">{anchors}</xdr:wsDr>");
 
-                // <drawing> must come before these elements in the sheet XML.
+                // <drawing> has to come before these elements in the sheet XML.
                 var ws = wsPart.Worksheet;
                 var drawing = new Drawing { Id = wsPart.GetIdOfPart(drawingsPart) };
                 var before = ws.ChildElements.FirstOrDefault(e => e is LegacyDrawing or LegacyDrawingHeaderFooter or Picture
@@ -109,8 +109,8 @@ public static class ExcelCharts
             sb.Append($"<c:barChart><c:barDir val=\"{(horizontal ? "bar" : "col")}\"/><c:grouping val=\"clustered\"/><c:varyColors val=\"0\"/>");
             for (var i = 0; i < c.Series.Count; i++) AppendSeries(sb, c, i, c.Series[i], pie: false);
             sb.Append($"<c:gapWidth val=\"60\"/><c:axId val=\"{axisId}\"/><c:axId val=\"{axisId + 1}\"/></c:barChart>");
-            // Category axis. Horizontal bars list the first row at the top (reverse order),
-            // so the value axis is moved to the bottom ("crosses at maximum").
+            // Category axis. Horizontal bars show the first row at the top (reverse order),
+            // so I move the value axis to the bottom ("crosses at maximum").
             sb.Append($"<c:catAx><c:axId val=\"{axisId}\"/><c:scaling><c:orientation val=\"{(horizontal ? "maxMin" : "minMax")}\"/></c:scaling><c:delete val=\"0\"/>");
             sb.Append($"<c:axPos val=\"{(horizontal ? "l" : "b")}\"/><c:numFmt formatCode=\"General\" sourceLinked=\"0\"/><c:majorTickMark val=\"none\"/><c:minorTickMark val=\"none\"/><c:tickLblPos val=\"nextTo\"/>");
             sb.Append("<c:spPr><a:ln w=\"9525\"><a:solidFill><a:srgbClr val=\"BFC5D6\"/></a:solidFill></a:ln></c:spPr>");
@@ -147,7 +147,7 @@ public static class ExcelCharts
                 sb.Append($"<c:spPr><a:solidFill><a:srgbClr val=\"{colors[p].TrimStart('#')}\"/></a:solidFill>{(pie ? "<a:ln w=\"19050\"><a:solidFill><a:srgbClr val=\"FFFFFF\"/></a:solidFill></a:ln>" : "")}</c:spPr></c:dPt>");
             }
         }
-        // Value labels on the marks (and the share for pie slices)
+        // Value labels on the bars (and the share for pie slices)
         sb.Append($"<c:dLbls><c:numFmt formatCode=\"{X(c.NumberFormat)}\" sourceLinked=\"0\"/><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln></c:spPr>");
         sb.Append("<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz=\"900\" b=\"1\"><a:solidFill><a:srgbClr val=\"141A3A\"/></a:solidFill></a:defRPr></a:pPr><a:endParaRPr lang=\"en-US\"/></a:p></c:txPr>");
         sb.Append(pie ? "<c:dLblPos val=\"bestFit\"/>" : "<c:dLblPos val=\"outEnd\"/>");

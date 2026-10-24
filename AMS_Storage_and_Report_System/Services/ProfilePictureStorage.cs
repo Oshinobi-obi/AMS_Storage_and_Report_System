@@ -16,8 +16,8 @@ public class ProfilePictureStorage
         Directory.CreateDirectory(RootPath);
     }
 
-    /// Returns the full path only for a plain file name inside the storage folder.
-    /// Blocks "..\..\appsettings.json"-style requests.
+    /// Only returns the full path for a plain file name inside the storage folder.
+    /// This blocks requests like "..\..\appsettings.json".
     public string? ResolveSafe(string? fileName)
     {
         if (string.IsNullOrWhiteSpace(fileName) || Path.GetFileName(fileName) != fileName) return null;

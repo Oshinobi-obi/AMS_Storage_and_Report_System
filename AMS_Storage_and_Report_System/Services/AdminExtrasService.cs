@@ -1,4 +1,4 @@
-// AdminExtrasService.cs — the activity log (who did what, when) and announcements.
+// This is for the activity log (who did what and when) and the announcements.
 
 using AMS_Storage_and_Report_System.Data;
 using AMS_Storage_and_Report_System.Models;
@@ -21,8 +21,9 @@ public sealed class AdminExtrasService(IDbContextFactory<AppDbContext> dbFactory
 {
     public const int PageSize = 100;
 
-    // ── Activity log ────────────────────────────────────────────────────
-    public async Task<(List<ActivityRow> Rows, bool More)> ActivityAsync(ActivityFilter f, int take)
+    // Activity log
+    // One page of the activity log (newest first) and how many entries match the filters.
+    public async Task<(List<ActivityRow> Rows, int Total)> ActivityAsync(ActivityFilter f, int page, int size = Paging.Size)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         var q = db.UserActivities.AsNoTracking().AsQueryable();
@@ -33,8 +34,11 @@ public sealed class AdminExtrasService(IDbContextFactory<AppDbContext> dbFactory
         var term = f.Search.Trim();
         if (term.Length > 0) q = q.Where(a => a.Description.Contains(term));
 
+        var total = await q.CountAsync();
+        var pages = Math.Max(1, (total + size - 1) / size);
+        page = Math.Clamp(page, 1, pages);
         var raw = await q.OrderByDescending(a => a.CreatedAt).ThenByDescending(a => a.ActivityId)
-            .Take(take + 1)
+            .Skip((page - 1) * size).Take(size)
             .Select(a => new
             {
                 a.CreatedAt, a.ActivityType, a.Description, a.IpAddress,
@@ -47,8 +51,7 @@ public sealed class AdminExtrasService(IDbContextFactory<AppDbContext> dbFactory
                 string.IsNullOrWhiteSpace(a.DisplayName) ? a.FullName ?? "Deleted account" : a.DisplayName,
                 a.Role switch { UserRole.SuperAdmin => "Super Admin", UserRole.Admin => "Admin", UserRole.Office => "Office", _ => "" },
                 a.ActivityType, a.Description, a.IpAddress)).ToList();
-        var more = rows.Count > take;
-        return (more ? rows.Take(take).ToList() : rows, more);
+        return (rows, total);
     }
 
     public async Task<List<string>> ActivityTypesAsync()
@@ -60,10 +63,13 @@ public sealed class AdminExtrasService(IDbContextFactory<AppDbContext> dbFactory
     public async Task<List<User>> UsersAsync()
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.Users.AsNoTracking().OrderBy(u => u.Name).ToListAsync();
+        // I sort after loading because Name (display name or full name) isn't a database column,
+        // so the database can't sort by it.
+        var users = await db.Users.AsNoTracking().ToListAsync();
+        return users.OrderBy(u => u.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
-    // ── Announcements ───────────────────────────────────────────────────
+    // Announcements
     public async Task<List<Announcement>> AnnouncementsAsync()
     {
         await using var db = await dbFactory.CreateDbContextAsync();

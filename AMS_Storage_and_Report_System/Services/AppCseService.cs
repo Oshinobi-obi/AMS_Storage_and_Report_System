@@ -1,7 +1,7 @@
-// AppCseService.cs — loads each office's APP-CSE from an Excel file.
-// 1) Download the template (it already contains the current figures).
-// 2) Fill in / correct quantities in Excel.
-// 3) Upload: every row is checked and previewed; nothing is saved until "Import".
+// This loads the APP-CSE of each office from an Excel file.
+// 1) Download the template (it already has the current numbers).
+// 2) Fill in or fix the quantities in Excel.
+// 3) Upload it. Every row is checked and previewed, and nothing is saved until "Import".
 
 using System.Globalization;
 using System.Text.RegularExpressions;
@@ -29,9 +29,9 @@ public sealed class AppCseRowCheck
     public string? Warning { get; set; }
     public int OfficeId { get; set; }
     public int ItemId { get; set; }
-    /// The workbook sheet this row came from (official PS-DBM workbook only).
+    /// The sheet this row came from (only for the official PS-DBM workbook).
     public string? Sheet { get; set; }
-    /// Set when the item isn't in the Catalog yet; it is created on import if allowed.
+    /// Set when the item isn't in the Catalog yet. It gets added on import if allowed.
     public string? NewItemKey { get; set; }
 
     public string Change => Error is not null ? "Error"
@@ -52,7 +52,7 @@ public sealed class AppCsePreview
     public List<AppCseSheetInfo> Sheets { get; set; } = [];
     public List<NewCatalogItem> NewItems { get; set; } = [];
     public List<string> Notices { get; set; } = [];
-    /// Add items that aren't in the Catalog yet (official workbook). If off, their rows are skipped.
+    /// Add items that aren't in the Catalog yet (official workbook). If off, those rows are skipped.
     public bool AddMissingItems { get; set; } = true;
 
     public bool WillImport(AppCseRowCheck r) =>
@@ -88,11 +88,12 @@ public sealed class AppCseService(IDbContextFactory<AppDbContext> dbFactory)
 {
     public const int MaxFileBytes = 5 * 1024 * 1024;
 
-    /// Excel template: one row per requisitioning office × active item, filled with the current figures.
+    /// Excel template: one row per requisitioning office and active item, filled with the current numbers.
     public async Task<byte[]> TemplateAsync(int year)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        var offices = await db.Offices.AsNoTracking().Where(o => o.CanRequisition && o.IsActive).OrderBy(o => o.OfficeAcronym).ToListAsync();
+        // Units that use their division's APP-CSE (like LRPO) don't get rows of their own.
+        var offices = await db.Offices.AsNoTracking().Where(o => o.CanRequisition && o.IsActive && o.AppCseOfficeId == null).OrderBy(o => o.OfficeAcronym).ToListAsync();
         var items = await db.SupplyItems.AsNoTracking().Where(i => i.IsActive).OrderBy(i => i.StockNo).ToListAsync();
         var current = await db.AppCseAllocations.AsNoTracking().Where(a => a.FiscalYear == year)
             .ToDictionaryAsync(a => (a.OfficeId, a.ItemId));
@@ -119,7 +120,7 @@ public sealed class AppCseService(IDbContextFactory<AppDbContext> dbFactory)
                 if (a?.Q2Qty is int q2) ws.Cell(r, 6).Value = q2;
                 if (a?.Q3Qty is int q3) ws.Cell(r, 7).Value = q3;
                 if (a?.Q4Qty is int q4) ws.Cell(r, 8).Value = q4;
-                // Total adds up Q1–Q4; for yearly-only figures it keeps the stored total.
+                // Total adds up Q1 to Q4. For yearly-only numbers it keeps the saved total.
                 var fallback = a is null || a.Q1Qty is not null ? "\"\"" : a.AllocatedQty.ToString();
                 ws.Cell(r, 9).FormulaA1 = "IF(COUNT(E" + r + ":H" + r + ")>0,SUM(E" + r + ":H" + r + ")," + fallback + ")";
                 r++;
@@ -139,7 +140,7 @@ public sealed class AppCseService(IDbContextFactory<AppDbContext> dbFactory)
             "If you only have yearly totals, leave Q1–Q4 blank and type the yearly quantity in Total instead.",
             "Leave a row blank (or 0) when the office doesn't need that item.",
             "Don't change the Office and Stock No. columns. Item and Unit are only for reference.",
-            "You can delete rows you don't need. Save the file and upload it in AMS StockWatch → APP-CSE.",
+            "You can delete rows you don't need. Save the file and upload it in e-PINS → APP-CSE.",
         ];
         for (var i = 0; i < lines.Length; i++) notes.Cell(i + 3, 1).Value = $"{i + 1}. {lines[i]}";
         notes.Column(1).Width = 110;
@@ -159,7 +160,7 @@ public sealed class AppCseService(IDbContextFactory<AppDbContext> dbFactory)
 
         using (wb)
         {
-            // The Regional Office's official PS-DBM APP-CSE workbook (one sheet per office)?
+            // Is this the Regional Office's official PS-DBM APP-CSE workbook (one sheet per office)?
             if (wb.Worksheets.Any(sheet => FindOfficialHeader(sheet) is not null))
                 return await PreviewOfficialAsync(wb, preview);
 
@@ -240,7 +241,7 @@ public sealed class AppCseService(IDbContextFactory<AppDbContext> dbFactory)
                         check.Error = $"{office.OfficeAcronym} has already used {check.AlreadyUsed} (issued or pending). The new total can't be lower.";
                 }
 
-                // A blank row for an item the office never had: nothing to do.
+                // An empty row for an item the office never had, so nothing to do.
                 if (check.Error is null && check.Total == 0 && check.CurrentTotal is null) continue;
                 preview.Rows.Add(check);
             }
@@ -322,11 +323,9 @@ public sealed class AppCseService(IDbContextFactory<AppDbContext> dbFactory)
         return OpResult.Success($"APP-CSE {preview.FiscalYear} saved: {upload.Notes}.{catalogNote} Offices see the new figures right away.");
     }
 
-    // ════════════════════════════════════════════════════════════════════════
-    //  Official PS-DBM APP-CSE workbook (one sheet per office + a consolidated sheet)
-    // ════════════════════════════════════════════════════════════════════════
-    // Columns of the PS-DBM form: E–G, J–L, O–Q, T–V months · H, M, R, W quarters ·
-    // Y total for the year · Z unit price. Rows: category headings, items, PART II, totals.
+    // Official PS-DBM APP-CSE workbook (one sheet per office and a consolidated sheet)
+    // Columns of the PS-DBM form: E-G, J-L, O-Q, T-V are months, H, M, R, W are quarters,
+    // Y is the total for the year, Z is the unit price. Rows: category headings, items, PART II, totals.
     private static readonly int[] MonthCols = [5, 6, 7, 10, 11, 12, 15, 16, 17, 20, 21, 22];
     private static readonly int[] QuarterCols = [8, 13, 18, 23];
     private const int TotalCol = 25, PriceCol = 26;
@@ -341,7 +340,7 @@ public sealed class AppCseService(IDbContextFactory<AppDbContext> dbFactory)
         return Regex.Replace(t, @"\s+", " ").Trim();
     }
 
-    /// Number in a cell, whether stored as a number or as text ("811.6"). Blank = 0.
+    /// Number in a cell, whether it's saved as a number or as text ("811.6"). Blank is 0.
     private static bool TryNumber(IXLCell c, out double value)
     {
         value = 0;
@@ -353,7 +352,7 @@ public sealed class AppCseService(IDbContextFactory<AppDbContext> dbFactory)
         return t.Length == 0 || double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
     }
 
-    /// Row of the "Item & Specifications" heading (row 2 in 2026, row 4 in 2027), or null if not this form.
+    /// Row of the "Item & Specifications" heading (row 2 in 2026, row 4 in 2027), or null if it's not this form.
     private static int? FindOfficialHeader(IXLWorksheet ws)
     {
         for (var r = 1; r <= 15; r++)
@@ -363,7 +362,7 @@ public sealed class AppCseService(IDbContextFactory<AppDbContext> dbFactory)
         return null;
     }
 
-    /// "13 ORD" → "ORD", "ORD" → "ORD"
+    /// "13 ORD" becomes "ORD", "ORD" stays "ORD"
     private static string SheetOffice(string sheetName) => Regex.Replace(sheetName, @"^\s*\d+[\s.\-_)]*", "").Trim();
 
     private static bool IsConsolidated(string sheetName)
@@ -394,7 +393,7 @@ public sealed class AppCseService(IDbContextFactory<AppDbContext> dbFactory)
             var name = Text(ws.Cell(r, 3));
             if (a.StartsWith("PART II", StringComparison.OrdinalIgnoreCase)) { part = 2; section = "Other Items"; continue; }
             if (a.StartsWith("PART I", StringComparison.OrdinalIgnoreCase)) continue;
-            if (Regex.IsMatch(a, @"^[A-E]\.\s")) break;                       // "A. TOTAL", "B. ADDITIONAL PROVISION…"
+            if (Regex.IsMatch(a, @"^[A-E]\.\s")) break;                       // "A. TOTAL", "B. ADDITIONAL PROVISION..."
             var isNumbered = double.TryParse(a, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
             if (!isNumbered)
             {
@@ -444,19 +443,19 @@ public sealed class AppCseService(IDbContextFactory<AppDbContext> dbFactory)
             .Select(g => new { g.Key.OfficeId, g.Key.ItemId, Qty = g.Sum(x => x.RequestedQty) })
             .ToDictionaryAsync(x => (x.OfficeId, x.ItemId), x => x.Qty);
 
-        // Part II items get simple stock numbers (OTH-001, OTH-002, …) after the highest one in use
+        // Part II items get simple stock numbers (OTH-001, OTH-002...) after the highest one already used
         var nextOther = items.Select(i => Regex.Match(i.StockNo, @"^OTH-(\d+)$", RegexOptions.IgnoreCase))
                              .Where(m => m.Success).Select(m => int.Parse(m.Groups[1].Value)).DefaultIfEmpty(0).Max() + 1;
         var newItems = new Dictionary<string, NewCatalogItem>();
         var seenOffices = new Dictionary<int, string>();
-        var sheetTotals = new Dictionary<string, double>();      // item key → offices' sheets added up
+        var sheetTotals = new Dictionary<string, double>();      // item key and the offices' sheets added up
         List<SheetRow>? consolidated = null;
         string? consolidatedName = null;
 
         foreach (var ws in wb.Worksheets)
         {
             var header = FindOfficialHeader(ws);
-            if (header is null) continue;                          // e.g. an empty "Sheet1"
+            if (header is null) continue;                          // like an empty "Sheet1"
             var rowsRead = ReadOfficialSheet(ws, header.Value);
             if (IsConsolidated(ws.Name))
             {
@@ -506,7 +505,7 @@ public sealed class AppCseService(IDbContextFactory<AppDbContext> dbFactory)
                 var key = r.Code is not null ? r.Code.ToUpperInvariant() : "P2:" + NormalName(r.Name);
                 var check = new AppCseRowCheck { Sheet = ws.Name, RowNumber = r.Row, OfficeAcronym = office.OfficeAcronym, OfficeId = office.OfficeId, StockNo = r.Code ?? "", ItemName = r.Name };
 
-                // Quarters are the official figures; a row with only a yearly total is imported as a yearly total.
+                // The quarters are the official numbers. A row with only a yearly total is imported as a yearly total.
                 var hasQuarters = r.Quarters.Any(q => q > 0);
                 var total = hasQuarters ? r.Quarters.Sum() : r.Total;
                 if (r.Error is not null) check.Error = $"Row {r.Row}: {r.Error}";
@@ -537,7 +536,7 @@ public sealed class AppCseService(IDbContextFactory<AppDbContext> dbFactory)
                 }
                 else
                 {
-                    if (check.Error is null && check.Total == 0) continue;                                // not needed, not in catalog
+                    if (check.Error is null && check.Total == 0) continue;                                // not needed, not in the catalog
                     if (!newItems.TryGetValue(key, out var n))
                     {
                         n = new NewCatalogItem
@@ -563,7 +562,7 @@ public sealed class AppCseService(IDbContextFactory<AppDbContext> dbFactory)
 
         preview.NewItems = newItems.Values.OrderBy(n => n.FromPartII).ThenBy(n => n.Category).ThenBy(n => n.Name).ToList();
 
-        // Compare with the consolidated sheet (information only)
+        // Compare with the consolidated sheet (just for information)
         if (consolidated is not null)
         {
             var diffs = consolidated

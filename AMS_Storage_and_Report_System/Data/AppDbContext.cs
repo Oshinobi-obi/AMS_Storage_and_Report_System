@@ -19,6 +19,7 @@ public class AppDbContext : DbContext
     public DbSet<RisItem> RisItems => Set<RisItem>();
     public DbSet<RisStatusHistory> RisStatusHistory => Set<RisStatusHistory>();
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();
+    public DbSet<SupplyDelivery> SupplyDeliveries => Set<SupplyDelivery>();
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
     public DbSet<RisSignedCopy> RisSignedCopies => Set<RisSignedCopy>();
     public DbSet<ItemCategory> ItemCategories => Set<ItemCategory>();
@@ -68,7 +69,9 @@ public class AppDbContext : DbContext
             entity.Property(o => o.OfficeName).HasColumnName("office_name");
             entity.Property(o => o.OfficeAcronym).HasColumnName("office_acronym");
             entity.Property(o => o.ResponsibilityCenterCode).HasColumnName("responsibility_center_code");
+            entity.Property(o => o.RisCode).HasColumnName("ris_code");
             entity.Property(o => o.AppCseSheet).HasColumnName("appcse_sheet");
+            entity.Property(o => o.AppCseOfficeId).HasColumnName("appcse_office_id");
             entity.Property(o => o.CanRequisition).HasColumnName("can_requisition");
             entity.Property(o => o.IsActive).HasColumnName("is_active");
         });
@@ -99,9 +102,13 @@ public class AppDbContext : DbContext
             entity.Property(d => d.OfficeId).HasColumnName("office_id");
             entity.Property(d => d.DocumentType).HasColumnName("document_type");
             entity.Property(d => d.PropertyTypeId).HasColumnName("property_type_id");
+            entity.Property(d => d.EquipmentType).HasColumnName("equipment_type");
             entity.Property(d => d.PersonnelId).HasColumnName("personnel_id");
             entity.Property(d => d.FilePath).HasColumnName("file_path");
             entity.Property(d => d.OriginalFileName).HasColumnName("original_file_name");
+            entity.Property(d => d.DateSigned).HasColumnName("date_signed").HasColumnType("date");
+            entity.Property(d => d.ReturnedOn).HasColumnName("returned_on").HasColumnType("date");
+            entity.Property(d => d.ReturnSlipId).HasColumnName("return_slip_id");
             entity.Property(d => d.UploadedBy).HasColumnName("uploaded_by");
             entity.Property(d => d.UploadedAt).HasColumnName("uploaded_at");
 
@@ -124,7 +131,7 @@ public class AppDbContext : DbContext
             entity.HasOne(a => a.User).WithMany().HasForeignKey(a => a.UserId);
         });
     
-        // ── Supply / requisition tables (from the AMS Supplies portal) ──
+        // Supply / requisition tables (from e-SRS)
         modelBuilder.Entity<SupplyItem>(e =>
         {
             e.ToTable("supply_items");
@@ -144,6 +151,9 @@ public class AppDbContext : DbContext
             e.Property(x => x.IsPerishable).HasColumnName("is_perishable");
             e.Property(x => x.ManufacturedOn).HasColumnName("manufactured_on").HasColumnType("date");
             e.Property(x => x.ExpiresOn).HasColumnName("expires_on").HasColumnType("date");
+            e.Property(x => x.MfdMonthOnly).HasColumnName("mfd_month_only");
+            e.Property(x => x.ExpMonthOnly).HasColumnName("exp_month_only");
+            e.Property(x => x.ColorOptions).HasColumnName("color_options").HasMaxLength(500);
             e.Ignore(x => x.DaysToExpiry);
             e.HasOne(x => x.Category).WithMany().HasForeignKey(x => x.CategoryId);
             e.HasOne(x => x.Supplier).WithMany().HasForeignKey(x => x.SupplierId);
@@ -317,10 +327,26 @@ public class AppDbContext : DbContext
             e.Property(x => x.ReferenceType).HasColumnName("reference_type");
             e.Property(x => x.ReferenceNo).HasColumnName("reference_no");
             e.Property(x => x.RisId).HasColumnName("ris_id");
+            e.Property(x => x.DeliveryId).HasColumnName("delivery_id");
             e.Property(x => x.OfficeId).HasColumnName("office_id");
             e.Property(x => x.Remarks).HasColumnName("remarks");
             e.Property(x => x.PerformedBy).HasColumnName("performed_by");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        modelBuilder.Entity<SupplyDelivery>(e =>
+        {
+            e.ToTable("supply_deliveries");
+            e.HasKey(x => x.DeliveryId);
+            e.Property(x => x.DeliveryId).HasColumnName("delivery_id");
+            e.Property(x => x.ReferenceNo).HasColumnName("reference_no");
+            e.Property(x => x.ReceivedOn).HasColumnName("received_on").HasColumnType("date");
+            e.Property(x => x.Supplier).HasColumnName("supplier");
+            e.Property(x => x.Remarks).HasColumnName("remarks");
+            e.Property(x => x.FilePath).HasColumnName("file_path");
+            e.Property(x => x.OriginalFileName).HasColumnName("original_file_name");
+            e.Property(x => x.RecordedBy).HasColumnName("recorded_by");
+            e.Property(x => x.RecordedAt).HasColumnName("recorded_at");
         });
 
         modelBuilder.Entity<RisSignedCopy>(e =>
@@ -343,6 +369,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.PropertyNo).HasColumnName("property_no");
             e.Property(x => x.Description).HasColumnName("description");
             e.Property(x => x.Classification).HasColumnName("classification");
+            e.Property(x => x.EquipmentType).HasColumnName("equipment_type");
             e.Property(x => x.PropertyTypeId).HasColumnName("property_type_id");
             e.Property(x => x.Quantity).HasColumnName("quantity");
             e.Property(x => x.UnitCost).HasColumnName("unit_cost");
@@ -351,6 +378,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.PersonnelId).HasColumnName("personnel_id");
             e.Property(x => x.Status).HasColumnName("status");
             e.Property(x => x.DocumentId).HasColumnName("document_id");
+            e.Property(x => x.StatusBeforeReturn).HasColumnName("status_before_return");
             e.Property(x => x.Remarks).HasColumnName("remarks");
             e.Property(x => x.CreatedBy).HasColumnName("created_by");
             e.Ignore(x => x.TotalCost);

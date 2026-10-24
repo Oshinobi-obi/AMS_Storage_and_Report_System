@@ -1,10 +1,10 @@
-// RequisitionAdminService.cs — the AMS side of the RIS workflow:
-//   PendingApproval → (approve) ApprovedForIssuance → (release) Issued
-//                   ↘ (reject)  Rejected
-// Approval commits the office's APP-CSE and reserves the warehouse stock (nothing leaves
-// the stockroom yet). The stock on hand goes down only when AMS marks the RIS as issued,
-// i.e. when the items are actually handed over. Row locks keep two approvals from
-// promising the same pieces, and match the AMS Supplies portal's locks.
+// This is the AMS side of the RIS process:
+//   PendingApproval, then (approve) ApprovedForIssuance, then (release) Issued
+//                    or (reject) Rejected
+// Approving uses up the office's APP-CSE and reserves the warehouse stock (nothing leaves
+// the stockroom yet). The stock on hand only goes down when AMS marks the RIS as issued,
+// meaning when the items are actually handed over. Row locks stop two approvals from
+// promising the same items, and they match the locks in e-SRS.
 
 using System.Data;
 using AMS_Storage_and_Report_System.Data;
@@ -15,7 +15,7 @@ namespace AMS_Storage_and_Report_System.Services;
 
 public sealed record OpResult(bool Ok, string Message, IReadOnlyList<string>? Details = null)
 {
-    /// Id of a record that was just created (when relevant).
+    /// Id of the record that was just made (when it matters).
     public int? Id { get; init; }
 
     public static OpResult Success(string message) => new(true, message);
@@ -37,13 +37,13 @@ public sealed class QueueRow
     public int OfficeId { get; set; }
 }
 
-/// What AMS needs to see beside each line before approving.
+/// What AMS needs to see next to each line before approving.
 public sealed record LineContext(int StockOnHand, int ReorderLevel, int? Allocated, int? AlreadyIssued, int OtherPending, int Reserved = 0)
 {
     /// On hand minus what other approved requisitions are still waiting to pick up.
     public int Available => Math.Max(StockOnHand - Reserved, 0);
 
-    /// APP-CSE left for this line once this request is counted (null = item not in APP-CSE).
+    /// APP-CSE left for this line after counting this request (null means the item isn't in the APP-CSE).
     public int? RemainingIncludingThis(int requested) =>
         Allocated is null ? null : Allocated.Value - (AlreadyIssued ?? 0) - OtherPending - requested;
 }
@@ -52,7 +52,24 @@ public sealed record LineDecision(int IssueQty, string? Remarks);
 
 public sealed class RequisitionAdminService(IDbContextFactory<AppDbContext> dbFactory, ILogger<RequisitionAdminService> log)
 {
-    // ── Queries ────────────────────────────────────────────────────────
+    // This reads the admin toggle "Require APP-CSE for Requisitions" (system_settings).
+    // Missing or anything other than "0" means on, so existing databases keep the strict rule.
+    public const string RequireAppCseKey = "requisition.require_appcse";
+    private static async Task<bool> RequireAppCseAsync(AppDbContext db)
+    {
+        var v = await db.SystemSettings.AsNoTracking()
+            .Where(x => x.SettingKey == RequireAppCseKey).Select(x => x.SettingValue).FirstOrDefaultAsync();
+        return v != "0";
+    }
+
+    // Lets the review page show the APP-CSE column neutrally when the requirement is off.
+    public async Task<bool> AppCseRequiredAsync()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return await RequireAppCseAsync(db);
+    }
+
+    // Queries
     public async Task<int> CountPendingAsync()
     {
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -87,7 +104,7 @@ public sealed class RequisitionAdminService(IDbContextFactory<AppDbContext> dbFa
             Amount = r.Items.Sum(i => i.UnitCost * (i.IssuedQty ?? i.RequestedQty)),
         }).ToListAsync();
 
-        // Oldest pending first (first come, first served); everything else newest first.
+        // Oldest pending first (first come, first served), everything else newest first.
         return status == RisStatus.Pending
             ? rows.OrderBy(r => r.RequestedAt).ToList()
             : rows.OrderByDescending(r => r.RequestedAt).ToList();
@@ -108,7 +125,7 @@ public sealed class RequisitionAdminService(IDbContextFactory<AppDbContext> dbFa
             .FirstOrDefaultAsync(r => r.RisId == risId);
     }
 
-    /// Live stock and APP-CSE figures for every line of a RIS (keyed by ItemId).
+    /// Current stock and APP-CSE numbers for every line of an RIS (by ItemId).
     public async Task<Dictionary<int, LineContext>> LineContextAsync(RisTransaction ris)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -116,12 +133,15 @@ public sealed class RequisitionAdminService(IDbContextFactory<AppDbContext> dbFa
 
         var stock = await db.SupplyItems.AsNoTracking().Where(i => itemIds.Contains(i.ItemId))
             .ToDictionaryAsync(i => i.ItemId, i => (i.StockOnHand, i.ReorderLevel));
+        // An office can request on its division's APP-CSE (like LRPO on ESSD's), see AppCseScope.
+        var scope = await AppCseScope.ForAsync(db, ris.OfficeId);
+        var sharing = scope.SharingOfficeIds.ToList();
         var alloc = await db.AppCseAllocations.AsNoTracking()
-            .Where(a => a.OfficeId == ris.OfficeId && a.FiscalYear == ris.FiscalYear && itemIds.Contains(a.ItemId))
+            .Where(a => a.OfficeId == scope.BudgetOfficeId && a.FiscalYear == ris.FiscalYear && itemIds.Contains(a.ItemId))
             .ToDictionaryAsync(a => a.ItemId, a => (a.AllocatedQty, a.IssuedQty));
         var otherPending = await db.RisItems
             .Where(i => itemIds.Contains(i.ItemId) && i.RisId != ris.RisId)
-            .Join(db.RisTransactions.Where(r => r.OfficeId == ris.OfficeId && r.FiscalYear == ris.FiscalYear && r.Status == RisStatus.Pending),
+            .Join(db.RisTransactions.Where(r => sharing.Contains(r.OfficeId) && r.FiscalYear == ris.FiscalYear && r.Status == RisStatus.Pending),
                   i => i.RisId, r => r.RisId, (i, r) => i)
             .GroupBy(i => i.ItemId)
             .Select(g => new { g.Key, Qty = g.Sum(i => i.RequestedQty) })
@@ -138,10 +158,10 @@ public sealed class RequisitionAdminService(IDbContextFactory<AppDbContext> dbFa
         });
     }
 
-    // ── Reserved stock (approved, waiting for pickup) ──────────────────
-    /// Lines of approved requisitions whose items are still in the stockroom.
-    /// Requisitions approved before stock moved to "issue time" already had their stock taken
-    /// at approval (they have an ISSUE movement), so they are not counted again.
+    // Reserved stock (approved, waiting for pickup)
+    // Lines of approved requisitions whose items are still in the stockroom.
+    // Requisitions approved before I moved the stock deduction to "issue time" already had their stock
+    // taken when approved (they have an ISSUE movement), so I don't count them again.
     private static IQueryable<RisItem> AwaitingPickup(AppDbContext db) =>
         db.RisItems.Where(i => i.IssuedQty > 0
             && db.RisTransactions.Any(r => r.RisId == i.RisId && r.Status == RisStatus.Approved)
@@ -178,7 +198,7 @@ public sealed class RequisitionAdminService(IDbContextFactory<AppDbContext> dbFa
             .OrderBy(p => p.FullName).ToListAsync();
     }
 
-    // ── Approve: commit APP-CSE + reserve stock, all or nothing ────────
+    // Approve: use up the APP-CSE and reserve the stock, all or nothing
     public async Task<OpResult> ApproveAsync(uint adminUserId, int risId, IReadOnlyDictionary<int, LineDecision> decisions,
                                              int? approvedByPersonnelId, int? issuedByPersonnelId)
     {
@@ -191,13 +211,18 @@ public sealed class RequisitionAdminService(IDbContextFactory<AppDbContext> dbFa
         if (ris.Status != RisStatus.Pending)
             return OpResult.Fail($"{ris.RisNo} is already {RisStatus.Label(ris.Status).ToLowerInvariant()}. Reload the page.");
 
-        // Same per-office lock the portal takes when an office submits.
-        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT office_id FROM offices WHERE office_id = {ris.OfficeId} FOR UPDATE");
+        // Same lock per office that e-SRS uses when an office submits (on the office whose APP-CSE is used).
+        var budgetOfficeId = (await AppCseScope.ForAsync(db, ris.OfficeId)).BudgetOfficeId;
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT office_id FROM offices WHERE office_id = {budgetOfficeId} FOR UPDATE");
+
+        // The admin toggle "Require APP-CSE for Requisitions". When off, I still reserve warehouse stock
+        // but don't block or cap on the APP-CSE balance (the office may request items outside its APP-CSE).
+        var requireAppCse = await RequireAppCseAsync(db);
 
         var now = PhTime.Now;
         var problems = new List<string>();
 
-        foreach (var line in ris.Items.OrderBy(i => i.ItemId))   // fixed order → no deadlocks
+        foreach (var line in ris.Items.OrderBy(i => i.ItemId))   // always the same order so there are no deadlocks
         {
             var d = decisions.GetValueOrDefault(line.RisItemId, new LineDecision(line.RequestedQty, null));
             if (d.IssueQty < 0 || d.IssueQty > line.RequestedQty)
@@ -210,8 +235,8 @@ public sealed class RequisitionAdminService(IDbContextFactory<AppDbContext> dbFa
                 : d.Remarks.Trim()[..Math.Min(d.Remarks.Trim().Length, 255)];
             if (d.IssueQty == 0) continue;
 
-            // Reserve only: the stock on hand is not touched until the RIS is marked as issued.
-            // Locking the item row stops two approvals from promising the same pieces.
+            // Reserve only. The stock on hand isn't touched until the RIS is marked as issued.
+            // Locking the item row stops two approvals from promising the same items.
             await db.Database.ExecuteSqlInterpolatedAsync($"SELECT item_id FROM supply_items WHERE item_id = {line.ItemId} FOR UPDATE");
             var onHand = (int)await db.Database
                 .SqlQuery<long>($"SELECT CAST(stock_on_hand AS SIGNED) AS Value FROM supply_items WHERE item_id = {line.ItemId}")
@@ -226,11 +251,17 @@ public sealed class RequisitionAdminService(IDbContextFactory<AppDbContext> dbFa
                 continue;
             }
 
-            var quotaOk = await db.Database.ExecuteSqlInterpolatedAsync($@"
-                UPDATE app_cse_allocations SET issued_qty = issued_qty + {d.IssueQty}
-                 WHERE office_id = {ris.OfficeId} AND item_id = {line.ItemId}
-                   AND fiscal_year = {ris.FiscalYear} AND issued_qty + {d.IssueQty} <= allocated_qty");
-            if (quotaOk == 0) { problems.Add($"{line.StockNo}: more than the office's remaining APP-CSE."); continue; }
+            if (requireAppCse)
+            {
+                var quotaOk = await db.Database.ExecuteSqlInterpolatedAsync($@"
+                    UPDATE app_cse_allocations SET issued_qty = issued_qty + {d.IssueQty}
+                     WHERE office_id = {budgetOfficeId} AND item_id = {line.ItemId}
+                       AND fiscal_year = {ris.FiscalYear} AND issued_qty + {d.IssueQty} <= allocated_qty");
+                if (quotaOk == 0) { problems.Add($"{line.StockNo}: more than the office's remaining APP-CSE."); continue; }
+            }
+            // When APP-CSE is off I leave app_cse_allocations untouched: the office may be requesting
+            // outside its APP-CSE, and pushing issued_qty past allocated_qty would break the CHECK
+            // constraint. Only the warehouse stock (reserved above) controls the issue.
         }
 
         if (problems.Count > 0)
@@ -245,7 +276,7 @@ public sealed class RequisitionAdminService(IDbContextFactory<AppDbContext> dbFa
         ris.ApprovedByUserId = adminUserId;
         ris.ApprovedAt = now;
         if (approvedByPersonnelId is not null) ris.ApprovedByPersonnelId = approvedByPersonnelId;
-        // "Issued by" is printed on the slip the office takes to AMS, so fill it now (default from settings).
+        // "Issued by" is printed on the slip the office brings to AMS, so I fill it now (default from settings).
         ris.IssuedByPersonnelId = issuedByPersonnelId ?? ris.IssuedByPersonnelId ?? await DefaultIssuerAsync(db);
 
         var partial = ris.Items.Count(i => i.IssuedQty < i.RequestedQty);
@@ -262,7 +293,7 @@ public sealed class RequisitionAdminService(IDbContextFactory<AppDbContext> dbFa
         return OpResult.Success($"{ris.RisNo} is approved. The stock is reserved and will be deducted when you mark it as issued.");
     }
 
-    // ── Reject (the pending reservation is released automatically) ────
+    // Reject (the reserved quantity is released automatically)
     public async Task<OpResult> RejectAsync(uint adminUserId, int risId, string reason)
     {
         reason = reason?.Trim() ?? "";
@@ -291,7 +322,7 @@ public sealed class RequisitionAdminService(IDbContextFactory<AppDbContext> dbFa
         return OpResult.Success($"{ris.RisNo} was rejected. The office will see your reason.");
     }
 
-    // ── Signed copy ──────────────────────────────────────────────────────
+    // Signed copy
     public async Task<(string FileName, int Size, DateTime UploadedAt)?> SignedCopyInfoAsync(int risId)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -307,7 +338,7 @@ public sealed class RequisitionAdminService(IDbContextFactory<AppDbContext> dbFa
         return int.TryParse(value, out var id) && await db.RoPersonnel.AnyAsync(p => p.PersonnelId == id) ? id : null;
     }
 
-    // ── Release: items handed over to the office ──────────────────────
+    // Release: items handed over to the office
     public const int MaxSignedCopyBytes = 20 * 1024 * 1024;
 
     public async Task<OpResult> MarkIssuedAsync(uint adminUserId, int risId, int receivedByPersonnelId, int? issuedByPersonnelId,
@@ -331,13 +362,13 @@ public sealed class RequisitionAdminService(IDbContextFactory<AppDbContext> dbFa
 
         var now = PhTime.Now;
 
-        // The items leave the stockroom now: deduct the stock on hand and log it on each stock card.
-        // Lines that already have an ISSUE movement were approved before this change, when stock
-        // was taken at approval, so they are not deducted twice.
+        // The items leave the stockroom now, so I deduct the stock on hand and log it on each stock card.
+        // Lines that already have an ISSUE movement were approved before this change, back when stock
+        // was taken at approval, so I don't deduct them twice.
         var alreadyDeducted = await db.StockMovements
             .Where(m => m.RisId == risId && m.MovementType == "ISSUE").Select(m => m.ItemId).ToListAsync();
         var shortages = new List<string>();
-        foreach (var line in ris.Items.Where(i => i.IssuedQty > 0).OrderBy(i => i.ItemId))   // fixed order → no deadlocks
+        foreach (var line in ris.Items.Where(i => i.IssuedQty > 0).OrderBy(i => i.ItemId))   // always the same order so there are no deadlocks
         {
             if (alreadyDeducted.Contains(line.ItemId)) continue;
             var qty = line.IssuedQty!.Value;

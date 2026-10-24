@@ -8,7 +8,7 @@
 @inject LiveRefresh Live
 
 <div class="shell">
-    @* Phone / tablet top bar *@
+    @* Top bar for phones and tablets *@
     <header class="mobile-bar">
         <button type="button" class="menu-btn" aria-label="Open menu" aria-expanded="@(_menuOpen ? "true" : "false")"
                 aria-controls="app-sidebar" @onclick="() => _menuOpen = true">
@@ -19,13 +19,14 @@
     </header>
 
     <aside id="app-sidebar" class="sidebar @(_menuOpen ? "open" : "")" aria-label="Main menu">
+        <SeasonDecor />
         <div class="sidebar-brand">
             <a href="/dashboard" class="brand-pill brand-pill-wide" aria-label="Go to the dashboard">
                 <img src="images/one-ncr-stronger-together.png" alt="DepEd NCR, One NCR Stronger Together" width="150" height="48" />
             </a>
             <p class="sidebar-app">
-                <strong>DepEd NCR</strong>
-                <span>Asset Management Section</span>
+                <strong>e-PINS</strong>
+                <span>Property Inventory and<br />Information System</span>
             </p>
             <PhClock Class="sidebar-clock" />
         </div>
@@ -35,8 +36,17 @@
                 <NavLink class="nav-item" href="dashboard" Match="NavLinkMatch.All"><i class="bi bi-speedometer2" aria-hidden="true"></i>Dashboard</NavLink>
             </div>
 
-            <div class="nav-group">
-                <div class="nav-group-label">Supplies</div>
+            <div class="nav-group is-collapsible @(IsOpen("supplies") ? "is-open" : "")">
+                <button type="button" class="nav-group-toggle" aria-expanded="@(IsOpen("supplies") ? "true" : "false")" aria-controls="nav-supplies" @onclick='() => ToggleGroupAsync("supplies")'>
+                    <i class="bi bi-bag" aria-hidden="true"></i><span>Supplies</span>
+                    @if (!IsOpen("supplies") && _pending > 0)
+                    {
+                        <span class="nav-count" title="@($"{_pending} requisitions waiting for approval")">@_pending</span>
+                    }
+                    <i class="bi bi-chevron-down nav-group-chevron" aria-hidden="true"></i>
+                </button>
+                <div class="nav-group-items" id="nav-supplies" inert="@(!IsOpen("supplies"))">
+                <div class="nav-group-inner">
                 <NavLink class="nav-item" href="requisitions">
                     <i class="bi bi-inbox" aria-hidden="true"></i>Requisitions
                     @if (_pending > 0)
@@ -44,29 +54,45 @@
                         <span class="nav-count" title="@($"{_pending} waiting for approval")">@_pending</span>
                     }
                 </NavLink>
-                <NavLink class="nav-item" href="inventory"><i class="bi bi-box-seam" aria-hidden="true"></i>Inventory</NavLink>
+                <NavLink class="nav-item" href="inventory"><i class="bi bi-box-seam" aria-hidden="true"></i>Supplies Inventory</NavLink>
                 <NavLink class="nav-item" href="catalog"><i class="bi bi-grid" aria-hidden="true"></i>Catalog</NavLink>
                 <NavLink class="nav-item" href="app-cse"><i class="bi bi-clipboard-data" aria-hidden="true"></i>APP-CSE</NavLink>
                 <NavLink class="nav-item" href="suggestions"><i class="bi bi-lightbulb" aria-hidden="true"></i>Suggestions</NavLink>
                 <NavLink class="nav-item" href="reports"><i class="bi bi-file-earmark-bar-graph" aria-hidden="true"></i>Reports</NavLink>
+                </div>
+                </div>
             </div>
 
-            <div class="nav-group">
-                <div class="nav-group-label">Records</div>
+            <div class="nav-group is-collapsible @(IsOpen("records") ? "is-open" : "")">
+                <button type="button" class="nav-group-toggle" aria-expanded="@(IsOpen("records") ? "true" : "false")" aria-controls="nav-records" @onclick='() => ToggleGroupAsync("records")'>
+                    <i class="bi bi-archive" aria-hidden="true"></i><span>Property &amp; Equipment Records</span>
+                    <i class="bi bi-chevron-down nav-group-chevron" aria-hidden="true"></i>
+                </button>
+                <div class="nav-group-items" id="nav-records" inert="@(!IsOpen("records"))">
+                <div class="nav-group-inner">
                 <NavLink class="nav-item" href="employees"><i class="bi bi-people" aria-hidden="true"></i>Employees</NavLink>
                 <NavLink class="nav-item" href="property-register"><i class="bi bi-boxes" aria-hidden="true"></i>Property register</NavLink>
                 <NavLink class="nav-item" href="property-documents"><i class="bi bi-folder2-open" aria-hidden="true"></i>Property documents</NavLink>
                 <NavLink class="nav-item" href="semi-expendable"><i class="bi bi-truck" aria-hidden="true"></i>SPLV and SPHV</NavLink>
+                </div>
+                </div>
             </div>
 
-            <div class="nav-group">
-                <div class="nav-group-label">Administration</div>
+            <div class="nav-group is-collapsible @(IsOpen("admin") ? "is-open" : "")">
+                <button type="button" class="nav-group-toggle" aria-expanded="@(IsOpen("admin") ? "true" : "false")" aria-controls="nav-admin" @onclick='() => ToggleGroupAsync("admin")'>
+                    <i class="bi bi-gear" aria-hidden="true"></i><span>Administration</span>
+                    <i class="bi bi-chevron-down nav-group-chevron" aria-hidden="true"></i>
+                </button>
+                <div class="nav-group-items" id="nav-admin" inert="@(!IsOpen("admin"))">
+                <div class="nav-group-inner">
                 <AuthorizeView Roles="SuperAdmin" Context="superAdmin">
                     <NavLink class="nav-item" href="account"><i class="bi bi-person-gear" aria-hidden="true"></i>Accounts</NavLink>
                 </AuthorizeView>
                 <NavLink class="nav-item" href="announcements"><i class="bi bi-megaphone" aria-hidden="true"></i>Announcements</NavLink>
                 <NavLink class="nav-item" href="profile"><i class="bi bi-person-circle" aria-hidden="true"></i>My profile</NavLink>
                 <NavLink class="nav-item" href="settings"><i class="bi bi-sliders" aria-hidden="true"></i>Settings</NavLink>
+                </div>
+                </div>
             </div>
         </nav>
 
@@ -113,6 +139,11 @@
         @Body
     </main>
 
+    @* Back to top button (ui.js shows it after scrolling down) *@
+    <button type="button" class="scroll-top" data-scroll-top aria-label="Back to top" title="Back to top">
+        <i class="bi bi-arrow-up" aria-hidden="true"></i>
+    </button>
+
     <ModalHost />
 </div>
 
@@ -120,6 +151,38 @@
     [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
 
     private bool _menuOpen;
+
+    // The sidebar groups (Supplies, Records, Administration) open and close like a dropdown.
+    // The group of the current page is always open, and the others stay how you left them
+    // (remembered on this computer).
+    private static readonly Dictionary<string, string[]> GroupPages = new()
+    {
+        ["supplies"] = ["requisitions", "inventory", "catalog", "app-cse", "suggestions", "reports"],
+        ["records"] = ["employees", "property-register", "property-documents", "semi-expendable", "documents"],
+        ["admin"] = ["account", "activity", "announcements", "profile", "settings"],
+    };
+    private readonly HashSet<string> _openGroups = [];
+    private bool _groupsLoaded;
+
+    private string? _pinnedClosed;   // the current page's group, closed by the user
+    private bool IsOpen(string key) => _openGroups.Contains(key) || (key == CurrentGroup && _pinnedClosed != key);
+
+    private string? CurrentGroup
+    {
+        get
+        {
+            var first = Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].Split('/')[0].ToLowerInvariant();
+            return GroupPages.FirstOrDefault(g => g.Value.Contains(first)).Key;
+        }
+    }
+
+    private async Task ToggleGroupAsync(string key)
+    {
+        if (IsOpen(key)) { _openGroups.Remove(key); if (key == CurrentGroup) _pinnedClosed = key; }
+        else { _openGroups.Add(key); if (key == _pinnedClosed) _pinnedClosed = null; }   // opening another group doesn't close the others
+        try { await JS.InvokeVoidAsync("amsNav.save", _openGroups.ToArray()); }
+        catch (Exception) { /* page closed or an old ui.js: the menu still works, it just isn't remembered */ }
+    }
     private ElementReference _logoutForm;
 
     private int _pending;
@@ -135,10 +198,10 @@
     private async Task RefreshPendingAsync()
     {
         try { _pending = await Requisitions.CountPendingAsync(); }
-        catch { _pending = 0; }   // supply tables not created yet
+        catch { _pending = 0; }   // supply tables aren't made yet
     }
 
-    // A user flagged "must change password" can only use their profile page.
+    // A user marked "must change password" can only use their profile page.
     protected override async Task OnParametersSetAsync()
     {
         if (AuthState is null) return;
@@ -151,8 +214,21 @@
         }
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _groupsLoaded) return;
+        _groupsLoaded = true;
+        try
+        {
+            var saved = await JS.InvokeAsync<string[]?>("amsNav.load");
+            if (saved is { Length: > 0 }) { _openGroups.UnionWith(saved.Where(GroupPages.ContainsKey)); StateHasChanged(); }
+        }
+        catch (Exception) { /* page closed, still loading, or an old ui.js: all groups start normally */ }
+    }
+
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
+        _pinnedClosed = null;
         _menuOpen = false;
         _ = InvokeAsync(async () =>
         {
@@ -163,7 +239,7 @@
 
     private async Task ConfirmLogoutAsync()
     {
-        if (await Modal.ConfirmAsync("Log out?", "You'll need to sign in again to use AMS StockWatch.",
+        if (await Modal.ConfirmAsync("Log out?", "You'll need to sign in again to use e-PINS.",
                                      "Log out", "Stay signed in", ModalVariant.Warning))
             await JS.InvokeVoidAsync("ams.submitForm", _logoutForm);
     }

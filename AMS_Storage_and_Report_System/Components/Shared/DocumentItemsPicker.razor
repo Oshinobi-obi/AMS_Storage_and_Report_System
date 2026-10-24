@@ -1,0 +1,107 @@
+@* This is where AMS ticks the property register items that are on a PAR / ICS.
+   The person's own items come first, and the search looks at the property no. or description. *@
+
+<div class="doc-items">
+    <div class="doc-items-head">
+        <span class="form-label mb-0">@Label</span>
+        @if (Candidates is not null && Candidates.Count > 0)
+        {
+            <input class="form-control form-control-sm doc-items-search" type="search" placeholder="Search property no. or description"
+                   aria-label="Search the property register" @bind="_search" @bind:event="oninput" />
+        }
+    </div>
+
+    @if (Candidates is null)
+    {
+        <div class="doc-items-empty">Loading the property register…</div>
+    }
+    else if (Candidates.Count == 0)
+    {
+        <div class="doc-items-empty">
+            No @(PropertyTypeName ?? "property") in the register is free to put on this document.
+            Add it in <a href="/property-register" target="_blank" rel="noopener">Property register</a> first.
+        </div>
+    }
+    else
+    {
+        var shown = Shown.ToList();
+        <ul class="doc-items-list" role="list">
+            @foreach (var c in shown.Take(MaxShown))
+            {
+                var on = Selected.Contains(c.PropertyId);
+                <li @key="c.PropertyId" class="@(on ? "is-on" : null)">
+                    <label>
+                        <input class="form-check-input" type="checkbox" checked="@on" @onchange="e => Toggle(c.PropertyId, e.Value is true)" />
+                        <span class="doc-items-main">
+                            <span class="doc-items-desc">@c.Description</span>
+                            <span class="doc-items-meta">
+                                @c.PropertyNo · @c.Quantity @(c.Quantity == 1 ? "unit" : "units") · ₱@c.Total.ToString("N2")
+                                · <span class="doc-items-status">@c.Status</span>
+                                @if (!c.IsMine && c.HolderName is not null)
+                                {
+                                    <span class="doc-items-holder">@($" · now with {c.HolderName}")</span>
+                                }
+                            </span>
+                        </span>
+                    </label>
+                </li>
+            }
+        </ul>
+        @if (shown.Count > MaxShown)
+        {
+            <div class="form-text">Showing @MaxShown of @shown.Count. Search to find the rest.</div>
+        }
+        else if (shown.Count == 0)
+        {
+            <div class="doc-items-empty">Nothing matches “@_search”.</div>
+        }
+        <div class="doc-items-foot">
+            @if (Selected.Count == 0)
+            {
+                <span>No property ticked. @EmptyHint</span>
+            }
+            else
+            {
+                var picked = Candidates.Where(c => Selected.Contains(c.PropertyId)).ToList();
+                <span><strong>@picked.Count</strong> @(picked.Count == 1 ? "item" : "items") · <strong>₱@picked.Sum(c => c.Total).ToString("N2")</strong></span>
+                @if (picked.Any(c => !c.IsMine && c.PersonnelId is not null))
+                {
+                    <span class="doc-items-warn"><i class="bi bi-arrow-left-right" aria-hidden="true"></i>Items now with someone else move to @(PersonName ?? "this person").</span>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private const int MaxShown = 60;
+
+    [Parameter] public List<LinkCandidate>? Candidates { get; set; }
+    [Parameter, EditorRequired] public HashSet<int> Selected { get; set; } = [];
+    [Parameter] public EventCallback SelectedChanged { get; set; }
+    [Parameter] public string Label { get; set; } = "Property on this document";
+    [Parameter] public string? PersonName { get; set; }
+    [Parameter] public string? PropertyTypeName { get; set; }
+    [Parameter] public string EmptyHint { get; set; } = "You can add it later.";
+
+    private string _search = "";
+
+    private IEnumerable<LinkCandidate> Shown
+    {
+        get
+        {
+            var all = Candidates ?? [];
+            var q = _search.Trim();
+            if (q.Length == 0) return all;
+            return all.Where(c => c.PropertyNo.Contains(q, StringComparison.OrdinalIgnoreCase)
+                               || c.Description.Contains(q, StringComparison.OrdinalIgnoreCase)
+                               || Selected.Contains(c.PropertyId));
+        }
+    }
+
+    private Task Toggle(int id, bool on)
+    {
+        if (on) Selected.Add(id); else Selected.Remove(id);
+        return SelectedChanged.InvokeAsync();
+    }
+}

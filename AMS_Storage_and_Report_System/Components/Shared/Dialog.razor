@@ -1,9 +1,9 @@
-@* In-page dialog for forms (Add employee, Upload document, Reset password…).
-   Looks identical to the ModalService confirmations.
-   <Dialog Show="_open" Title="Add employee" OnClose="Close" Busy="_saving">
-       <ChildContent>fields</ChildContent>
-       <Footer>buttons</Footer>
-   </Dialog> *@
+@* This is my dialog for forms inside a page (Add employee, Upload document, Reset password...).
+   It looks the same as the ModalService confirmations.
+     <Dialog Show="_open" Title="Add employee" OnClose="Close" Busy="_saving">
+         <ChildContent>fields</ChildContent>
+         <Footer>buttons</Footer>
+     </Dialog> *@
 
 @if (Show)
 {
@@ -21,7 +21,7 @@
                     <i class="bi bi-x-lg" aria-hidden="true"></i>
                 </button>
             </header>
-            <div class="am-body">@ChildContent</div>
+            <div class="am-body"><CascadingValue Name="InDialog" Value="true" IsFixed="true">@ChildContent</CascadingValue></div>
             @if (Footer is not null)
             {
                 <footer class="am-footer">@Footer</footer>
@@ -35,9 +35,9 @@
     [Parameter, EditorRequired] public string Title { get; set; } = "";
     [Parameter] public string Size { get; set; } = "md";          // sm | md | lg | xl
     [Parameter] public string Variant { get; set; } = "neutral";  // neutral | success | warning | danger
-    [Parameter] public string? Icon { get; set; }                 // e.g. "bi-person-plus"
+    [Parameter] public string? Icon { get; set; }                 // like "bi-person-plus"
     [Parameter] public bool Busy { get; set; }
-    [Parameter] public bool DismissOnBackdrop { get; set; } = false;   // forms: don't lose typing on a stray click
+    [Parameter] public bool DismissOnBackdrop { get; set; } = false;   // forms: don't lose what was typed because of an accidental click
     [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
     [Parameter] public RenderFragment? Footer { get; set; }
@@ -51,7 +51,7 @@
         if (Show && !_wasShown)
         {
             _wasShown = true;
-            try { await _el.FocusAsync(); } catch { /* element gone */ }
+            try { await _el.FocusAsync(); } catch { /* element is gone */ }
         }
         else if (!Show) _wasShown = false;
     }

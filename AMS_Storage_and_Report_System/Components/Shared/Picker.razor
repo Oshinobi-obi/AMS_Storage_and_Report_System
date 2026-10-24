@@ -1,10 +1,10 @@
 @typeparam TValue
 @inject IJSRuntime JS
 @implements IAsyncDisposable
-@* Dropdown that replaces the browser's <select>. The list is exactly as wide as the
-   field, long text wraps instead of spilling out, and lists with many choices get a
-   filter box. Works with any value type:
-   <Picker TValue="int" Id="f-office" Options="OfficeOptions" @bind-Value="_officeId" @bind-Value:after="ReloadAsync" /> *@
+@* This is my dropdown that replaces the browser's <select>. The list is exactly as wide as
+   the field, long text wraps instead of overflowing, and long lists get a search box.
+   It works with any value type:
+     <Picker TValue="int" Id="f-office" Options="OfficeOptions" @bind-Value="_officeId" @bind-Value:after="ReloadAsync" /> *@
 
 <div class="picker @(_open ? "is-open" : "")">
     <button type="button" id="@Id" class="form-select picker-toggle" disabled="@Disabled" @ref="_toggle"
@@ -27,7 +27,7 @@
     @if (_open)
     {
         <div class="picker-backdrop" @onclick="Close"></div>
-        <div class="picker-panel @(Floating ? "is-floating" : "")" @ref="_panel">
+        <div class="picker-panel @(Floats ? "is-floating" : "")" @ref="_panel">
             @if (Searchable)
             {
                 <div class="picker-search">
@@ -68,12 +68,15 @@
     [Parameter] public EventCallback<TValue> ValueChanged { get; set; }
     [Parameter] public string Placeholder { get; set; } = "Select";
     [Parameter] public bool Disabled { get; set; }
-    /// Lists longer than this get a filter box.
+    /// Lists longer than this get a search box.
     [Parameter] public int SearchThreshold { get; set; } = 8;
-    /// Float the list over the page (for pickers inside tables or narrow cells in a dialog),
-    /// lined up with the field and kept on screen, like the calendar.
+    /// Float the list over the page (for pickers inside tables or small cells in a dialog),
+    /// lined up with the field and kept on screen, same as the calendar.
     [Parameter] public bool Floating { get; set; }
-    /// Narrowest the floating list may be (the field itself may be narrower).
+    /// Inside a dialog the list always floats, so opening it doesn't push the form down.
+    [CascadingParameter(Name = "InDialog")] public bool InDialog { get; set; }
+    private bool Floats => Floating || InDialog;
+    /// Smallest width of the floating list (the field itself can be smaller).
     [Parameter] public int MinPanelWidth { get; set; } = 280;
 
     private ElementReference _list, _searchBox, _toggle, _panel;
@@ -107,12 +110,12 @@
     public async ValueTask DisposeAsync()
     {
         if (!_placed) return;
-        try { await JS.InvokeVoidAsync("amsDatePicker.detach"); } catch { /* page closed */ }
+        try { await JS.InvokeVoidAsync("amsDatePicker.detach"); } catch { /* page already closed */ }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (Floating)
+        if (Floats)
         {
             try
             {
@@ -120,12 +123,12 @@
                 else if (_placed) { _placed = false; await JS.InvokeVoidAsync("amsDatePicker.detach"); }
             }
             catch (JSDisconnectedException) { }
-            catch (InvalidOperationException) { /* prerendering */ }
+            catch (InvalidOperationException) { /* still loading */ }
         }
 
         if (!_focusPending || !_open) return;
         _focusPending = false;
-        try { await (Searchable ? _searchBox : _list).FocusAsync(); } catch { /* closed meanwhile */ }
+        try { await (Searchable ? _searchBox : _list).FocusAsync(); } catch { /* already closed */ }
     }
 
     private void OnFilter(ChangeEventArgs e)

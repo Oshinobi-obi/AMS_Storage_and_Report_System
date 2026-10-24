@@ -1,11 +1,11 @@
-// SemiExpendableService.cs — SPLV / SPHV deliveries and their ICS / PAR numbers.
+// This is for SPLV / SPHV deliveries and their ICS / PAR numbers.
 //
-// Numbering (assigned when a delivery is saved, inside one transaction):
-//   • SPLV items get an ICS no.; SPHV items get an ICS no. below ₱50,000, a PAR no. at ₱50,000 and up.
-//   • Number = year-month delivered-running no., e.g. 2026-01-001; a line of 7 units takes 7
-//     numbers: 2026-01-001-007.
-//   • The running number keeps counting through the year (2026-01-050 → 2026-02-051) and starts
-//     again at 001 in a new year. SPLV ICS, SPHV ICS and SPHV PAR each have their own count.
+// Numbering (given when a delivery is saved, inside one transaction):
+//   SPLV items get an ICS no. SPHV items get an ICS no. below ₱50,000, and a PAR no. at ₱50,000 and up.
+//   Number = year-month delivered-running no., like 2026-01-001. A line of 7 units takes 7
+//   numbers: 2026-01-001-007.
+//   The running number keeps counting through the year (2026-01-050 then 2026-02-051) and goes
+//   back to 001 in a new year. SPLV ICS, SPHV ICS and SPHV PAR each have their own count.
 
 using System.Data;
 using AMS_Storage_and_Report_System.Data;
@@ -21,7 +21,7 @@ public sealed class SeLineForm
     public string Unit { get; set; } = "pc";
     public int Quantity { get; set; } = 1;
     public decimal UnitCost { get; set; }
-    /// End user: office id (End users = Office) or personnel id (End users = RO-Personnel); 0 = not chosen.
+    /// End user: office id (End users = Office) or personnel id (End users = RO-Personnel), 0 means none picked.
     public int EndUserId { get; set; }
     public decimal Total => Math.Max(Quantity, 0) * Math.Max(UnitCost, 0);
 }
@@ -47,7 +47,7 @@ public sealed class SemiExpendableService(IDbContextFactory<AppDbContext> dbFact
 {
     public const int MaxQuantity = 9_999;
 
-    // ── Reading ─────────────────────────────────────────────────────────
+    // Reading
     public async Task<List<SeDelivery>> ListAsync(SeFilter f)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -95,7 +95,7 @@ public sealed class SemiExpendableService(IDbContextFactory<AppDbContext> dbFact
             .ToList();
     }
 
-    /// The numbers a delivery would get if it were saved now (for the form; final numbers are given on save).
+    /// The numbers a delivery would get if saved now (for the form, the final numbers are given on save).
     public static List<string> Preview(SeDeliveryForm f, IReadOnlyList<SeSeriesInfo> series)
     {
         var next = series.ToDictionary(s => (s.Category, s.DocType), s => s.LastSeq);
@@ -113,7 +113,7 @@ public sealed class SemiExpendableService(IDbContextFactory<AppDbContext> dbFact
         return result;
     }
 
-    // ── Saving ──────────────────────────────────────────────────────────
+    // Saving
     public async Task<OpResult> SaveAsync(SeDeliveryForm f, uint userId)
     {
         if (f.Category is not (SeCategory.Splv or SeCategory.Sphv)) return OpResult.Fail("Choose SPLV or SPHV.");
@@ -140,8 +140,8 @@ public sealed class SemiExpendableService(IDbContextFactory<AppDbContext> dbFact
             var supplier = await check.Suppliers.AsNoTracking().FirstOrDefaultAsync(s => s.SupplierId == f.SupplierId);
             if (supplier is null) return OpResult.Fail("That supplier no longer exists. Choose another one.");
             var year = f.DeliveredOn.Year;
-            // Make sure each series row exists BEFORE the locked transaction (no lock is kept),
-            // so two people saving at the same moment simply wait for each other.
+            // I make sure each series row exists BEFORE the locked transaction (no lock is held here),
+            // so two people saving at the same time just wait for each other.
             foreach (var type in lines.Select(l => SeCategory.DocTypeFor(f.Category, l.UnitCost)).Distinct())
                 await check.Database.ExecuteSqlInterpolatedAsync(
                     $"INSERT IGNORE INTO se_number_series (doc_year, category, doc_type, last_seq) VALUES ({year}, {f.Category}, {type}, 0)");
@@ -170,7 +170,7 @@ public sealed class SemiExpendableService(IDbContextFactory<AppDbContext> dbFact
                 try { return await SaveOnceAsync(f, lines, supplier, names, userId); }
                 catch (Exception ex) when (attempt < 4 && IsDeadlock(ex))
                 {
-                    await Task.Delay(50 * attempt);   // someone else was saving at the same moment; try again
+                    await Task.Delay(50 * attempt);   // someone else was saving at the same time, try again
                 }
             }
         }
@@ -187,7 +187,7 @@ public sealed class SemiExpendableService(IDbContextFactory<AppDbContext> dbFact
         var year = f.DeliveredOn.Year;
         var types = lines.Select(l => SeCategory.DocTypeFor(f.Category, l.UnitCost)).Distinct().OrderBy(t => t).ToList();
 
-        // Lock each series this delivery uses (always in the same order), so no two saves get the same number.
+        // Lock each series this delivery uses (always in the same order), so two saves never get the same number.
         var last = new Dictionary<string, int>();
         foreach (var type in types)
         {
@@ -241,7 +241,7 @@ public sealed class SemiExpendableService(IDbContextFactory<AppDbContext> dbFact
             await db.Database.ExecuteSqlInterpolatedAsync(
                 $"UPDATE se_number_series SET last_seq = {value} WHERE doc_year = {year} AND category = {f.Category} AND doc_type = {type}");
 
-        // e.g. "ICS 2026-07-017-018 to 2026-07-019, PAR 2026-07-002"
+        // like "ICS 2026-07-017-018 to 2026-07-019, PAR 2026-07-002"
         var numbers = string.Join(", ", delivery.Lines.GroupBy(l => l.DocType).Select(g =>
             g.Count() == 1 ? $"{g.Key} {g.First().DocNo}" : $"{g.Key} {g.First().DocNo} to {g.Last().DocNo}"));
         db.UserActivities.Add(new UserActivity
@@ -254,8 +254,8 @@ public sealed class SemiExpendableService(IDbContextFactory<AppDbContext> dbFact
         return OpResult.Success($"Saved. {delivery.Lines.Count} item(s) numbered {numbers}.") with { Id = delivery.DeliveryId };
     }
 
-    /// Only the newest delivery of its series can be deleted, so the numbers stay unbroken;
-    /// its numbers are then given out again.
+    /// Only the newest delivery of its series can be deleted so the numbers have no gaps.
+    /// Its numbers are then given out again.
     public async Task<OpResult> DeleteAsync(int deliveryId, uint userId)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -291,7 +291,7 @@ public sealed class SemiExpendableService(IDbContextFactory<AppDbContext> dbFact
         return OpResult.Success("Delivery deleted. Its numbers will be used by the next delivery.");
     }
 
-    /// Sets the last number already used (for numbers given out on paper before using this page).
+    /// Sets the last number already used (for numbers that were given out on paper before this page).
     public async Task<OpResult> SetLastNumberAsync(int year, string category, string docType, int lastSeq, uint userId)
     {
         if (!SeCategory.Series.Contains((category, docType))) return OpResult.Fail("Unknown series.");
@@ -314,7 +314,7 @@ public sealed class SemiExpendableService(IDbContextFactory<AppDbContext> dbFact
         return OpResult.Success($"The next {category} {docType} no. in {year} will be {lastSeq + 1:000}.");
     }
 
-    // ── Excel ───────────────────────────────────────────────────────────
+    // Excel
     public async Task<byte[]?> DeliveryExcelAsync(int id, string entityName)
     {
         var d = await GetAsync(id);
@@ -355,7 +355,7 @@ public sealed class SemiExpendableService(IDbContextFactory<AppDbContext> dbFact
         List<string> headers = single
             ? ["Item", "ICS / PAR", "ICS / PAR No.", "Description", "Unit", "Quantity", "Unit Cost", "Total Cost"]
             : ["Date Delivered", "Type", "Supplier", "DR / Invoice No.", "ICS / PAR", "ICS / PAR No.", "Description", "Unit", "Quantity", "Unit Cost", "Total Cost"];
-        // "Office" / "End User" column right after the description, when end users were recorded
+        // "Office" / "End User" column right after the description, if end users were recorded
         var descIndex = single ? 3 : 6;
         var hasEndUser = deliveries.Any(d => d.Lines.Any(l => l.EndUser is not null));
         if (hasEndUser) headers.Insert(descIndex + 1, EndUserTitle(deliveries));
@@ -412,7 +412,7 @@ public sealed class SemiExpendableService(IDbContextFactory<AppDbContext> dbFact
         return ms.ToArray();
     }
 
-    // ── PDF ─────────────────────────────────────────────────────────────
+    // PDF
     public async Task<byte[]?> DeliveryPdfAsync(int id, string entityName, string preparedBy)
     {
         var d = await GetAsync(id);
@@ -533,7 +533,7 @@ public sealed class SemiExpendableService(IDbContextFactory<AppDbContext> dbFact
         pdf.Text(margin + width - pad, y, amount, 9.5f, true, SimplePdf.Align.Right);
         pdf.Text(margin + width - pad - SimplePdf.Measure(amount, 9.5f, true) - 14, y, "TOTAL", 9.5f, true, SimplePdf.Align.Right);
 
-        // Signatures (one delivery) or prepared-by line
+        // Signatures (one delivery) or the prepared-by line
         y += 40;
         if (single && y + 60 < bottom)
         {
@@ -549,11 +549,11 @@ public sealed class SemiExpendableService(IDbContextFactory<AppDbContext> dbFact
             }
         }
         // Footer on the last page
-        pdf.Text(margin, pdf.PageHeight - margin + 6, $"Generated {PhTime.Now:MMMM d, yyyy h:mm tt} by AMS StockWatch{(string.IsNullOrWhiteSpace(preparedBy) ? "" : " · " + preparedBy)}", 7.5f, false, color: muted);
+        pdf.Text(margin, pdf.PageHeight - margin + 6, $"Generated {PhTime.Now:MMMM d, yyyy h:mm tt} by e-PINS{(string.IsNullOrWhiteSpace(preparedBy) ? "" : " · " + preparedBy)}", 7.5f, false, color: muted);
         return pdf.Save(title);
     }
 
-    /// "Office" when every delivery shown records offices, otherwise "End User".
+    /// "Office" if every delivery shown has offices, otherwise "End User".
     private static string EndUserTitle(List<SeDelivery> deliveries) =>
         deliveries.Where(d => d.EndUserType is not null).Select(d => d.EndUserType).Distinct().ToList() is [SeCategory.EndUserOffice]
             ? "Office" : "End User";

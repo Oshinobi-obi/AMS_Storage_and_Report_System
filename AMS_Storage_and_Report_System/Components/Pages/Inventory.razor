@@ -3,6 +3,7 @@
 @attribute [Authorize]
 @inject CatalogAdminService CatalogSvc
 @inject StockService Stock
+@inject DeliveryDocumentStorage DeliveryFiles
 @inject RequisitionAdminService RisSvc
 @inject AuthenticationStateProvider AuthStateProvider
 @inject ModalService Modal
@@ -10,9 +11,9 @@
 @inject LiveRefresh Live
 @implements IDisposable
 
-<PageTitle>Inventory | AMS StockWatch</PageTitle>
+<PageTitle>Supplies inventory | e-PINS</PageTitle>
 
-<PageHeader Title="Inventory" Subtitle="Warehouse stock of every listed supply. Record deliveries and corrections here; issues come from approved requisitions.">
+<PageHeader Title="Supplies inventory" Subtitle="Warehouse stock of every listed supply. Record deliveries and corrections here; issues come from approved requisitions.">
     <Actions>
         <button type="button" class="btn btn-light" @onclick="OpenAdjust"><i class="bi bi-sliders2 me-1" aria-hidden="true"></i> Adjust stock</button>
         <button type="button" class="btn btn-accent" @onclick="OpenReceive"><i class="bi bi-truck me-1" aria-hidden="true"></i> Receive delivery</button>
@@ -65,7 +66,7 @@
                     <table class="data-table">
                         <thead><tr><th>Stock no.</th><th>Item</th><th class="t-num">On hand</th><th class="t-num">Low at</th><th class="t-num">Value</th><th>Status</th><th class="text-end"></th></tr></thead>
                         <tbody>
-                            @foreach (var i in Visible)
+                            @foreach (var i in Visible.Page(_pItems))
                             {
                                 <tr @key="i.ItemId">
                                     <td class="text-nowrap">@i.StockNo</td>
@@ -94,6 +95,7 @@
                         </tbody>
                     </table>
                 </div>
+                <Pager Total="Visible.Count()" @bind-Page="_pItems" ResetKey="@($"{_search}|{_stock}")" Label="Inventory pages" />
                 <div class="panel-body border-top d-flex justify-content-end">
                     <strong>Total value on hand: ₱@Visible.Sum(i => i.StockOnHand * i.UnitPrice).ToString("N2")</strong>
                 </div>
@@ -102,21 +104,30 @@
     }
 </div>
 
-@* ── Receive delivery ── *@
+@* Receive delivery *@
 <Dialog Show="_receiveOpen" Title="Receive delivery" Icon="bi-truck" Size="xl" OnClose="() => _receiveOpen = false">
     <ChildContent>
         <div class="row g-3">
-            <div class="col-sm-4">
+            <div class="col-sm-6 col-lg-3">
                 <label class="form-label" for="r-ref">IAR / delivery receipt no.</label>
                 <input id="r-ref" class="form-control" maxlength="50" autocomplete="off" @bind="_reference" placeholder="IAR 2026-10-015" />
             </div>
-            <div class="col-sm-4">
+            <div class="col-sm-6 col-lg-3">
                 <label class="form-label" for="r-date">Date received</label>
                 <DatePicker Id="r-date" @bind-Value="_receivedOn" Max="PhTime.Now.Date" />
             </div>
-            <div class="col-sm-4">
+            <div class="col-sm-6 col-lg-3">
+                <label class="form-label" for="r-supplier">Supplier</label>
+                <input id="r-supplier" class="form-control" maxlength="200" autocomplete="off" @bind="_supplier" placeholder="e.g. PS-DBM" />
+            </div>
+            <div class="col-sm-6 col-lg-3">
                 <label class="form-label" for="r-notes">Remarks</label>
-                <input id="r-notes" class="form-control" maxlength="500" autocomplete="off" @bind="_remarks" placeholder="Optional, e.g. PS-DBM, PO no." />
+                <input id="r-notes" class="form-control" maxlength="500" autocomplete="off" @bind="_remarks" placeholder="Optional, e.g. PO no." />
+            </div>
+            <div class="col-12">
+                <label class="form-label" for="r-file">Scanned DR, Sales Invoice and IAR <span class="text-muted-2 fw-normal">(one PDF)</span></label>
+                <InputFile id="r-file" class="form-control" OnChange="OnDeliveryFileSelected" accept=".pdf,application/pdf" />
+                <div class="form-text">Scan the Delivery Receipt, the Sales Invoice and the Inspection and Acceptance Report together into one PDF, up to 50 MB. It's kept in Reports → Deliveries.</div>
             </div>
         </div>
 
@@ -160,7 +171,7 @@
     </Footer>
 </Dialog>
 
-@* ── Adjust stock ── *@
+@* Adjust stock *@
 <Dialog Show="_adjustOpen" Title="Adjust stock" Icon="bi-sliders2" Variant="warning" OnClose="() => _adjustOpen = false">
     <ChildContent>
         <p class="am-message">Use this to correct the count after a physical inventory, or for damaged, expired or lost items. It's recorded on the item's stock card.</p>
@@ -198,6 +209,7 @@
 </Dialog>
 
 @code {
+    private int _pItems = 1;
     [SupplyParameterFromQuery(Name = "stock")] public string? StockQuery { get; set; }
 
     private static readonly IReadOnlyList<PickOption<string>> DirectionOptions =
@@ -208,7 +220,8 @@
     private uint _userId;
 
     private bool _receiveOpen, _adjustOpen, _updatePrices = true;
-    private string _reference = "", _remarks = "", _adjReason = "", _adjDirection = "out";
+    private string _reference = "", _remarks = "", _supplier = "", _adjReason = "", _adjDirection = "out";
+    private IBrowserFile? _deliveryFile;
     private DateTime _receivedOn = PhTime.Now.Date;
     private List<ReceiptLine> _lines = [];
     private int _adjItemId, _adjQty = 1;
@@ -255,7 +268,7 @@
         _reserved = await RisSvc.ReservedByItemAsync();
     }
 
-    // Approvals reserve stock and releases deduct it; refresh the figures when either happens.
+    // Approvals reserve stock and releases deduct it, so I refresh the numbers when either happens.
     private async Task OnLiveAsync(IReadOnlyList<RisEvent> _)
     {
         await LoadAsync();
@@ -270,7 +283,8 @@
 
     private void OpenReceive()
     {
-        _reference = _remarks = "";
+        _reference = _remarks = _supplier = "";
+        _deliveryFile = null;
         _receivedOn = PhTime.Now.Date;
         _lines = [new ReceiptLine()];
         _formError = null;
@@ -283,17 +297,43 @@
         if (line.UnitCost == 0 && _items?.FirstOrDefault(i => i.ItemId == itemId) is { } item) line.UnitCost = item.UnitPrice;
     }
 
+    private void OnDeliveryFileSelected(InputFileChangeEventArgs e)
+    {
+        _formError = null;
+        _deliveryFile = null;
+        if (!e.File.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) _formError = "The scanned documents must be one PDF file.";
+        else if (e.File.Size > DeliveryDocumentStorage.MaxBytes) _formError = $"This file is {e.File.Size / 1024.0 / 1024.0:F1} MB. The limit is 50 MB.";
+        else _deliveryFile = e.File;
+    }
+
     private async Task ReceiveAsync()
     {
         _formError = null;
+        if (_deliveryFile is null)
+        {
+            _formError = "Attach the scanned DR, Sales Invoice and IAR (one PDF).";
+            return;
+        }
         var count = _lines.Count(l => l.ItemId != 0);
         var ok = await Modal.ConfirmAsync("Record this delivery?",
             $"{count} item(s) will be added to the warehouse count under {_reference.Trim()}.",
             "Record delivery", "Go back", ModalVariant.Success,
             onConfirmAsync: async _ =>
             {
-                var r = await Stock.ReceiveAsync(_userId, _reference, _receivedOn, _remarks, _lines, _updatePrices);
-                return r.Ok ? null : r.Message;
+                string? stored = null;
+                try
+                {
+                    await using (var source = _deliveryFile.OpenReadStream(DeliveryDocumentStorage.MaxBytes))
+                        stored = await DeliveryFiles.SaveAsync(source);
+                    var r = await Stock.ReceiveAsync(_userId, _reference, _receivedOn, _supplier, _remarks, _lines, _updatePrices, stored, _deliveryFile.Name);
+                    if (!r.Ok) { DeliveryFiles.Delete(stored); return r.Message; }
+                    return null;
+                }
+                catch (Exception)
+                {
+                    DeliveryFiles.Delete(stored);
+                    return "The scanned PDF didn't upload. Check your connection and try again.";
+                }
             });
         if (!ok) return;
         _receiveOpen = false;
@@ -327,7 +367,7 @@
         await JS.InvokeVoidAsync("showToast", "Stock adjusted.", "success");
     }
 
-    // Live: when catalog change on either website, reload without a refresh.
+    // Live update: when the catalog changes on either website, reload without refreshing.
     private static readonly string[] LiveAreas = ["catalog"];
     protected override void OnInitialized() => Live.AreasChanged += OnAreasAsync;
 

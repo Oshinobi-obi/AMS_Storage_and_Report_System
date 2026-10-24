@@ -1,10 +1,11 @@
-@* Live updates for AMS: listens for requisition changes made on either website,
-   refreshes open pages silently, and announces new requisitions with a sound,
-   a toast and (when the tab is in the background) a desktop notification. *@
+@* This is the live notifier for AMS. It listens for requisition changes made on either website,
+   quietly refreshes the open pages, and announces new requisitions with a sound, a toast
+   and a desktop notification when the tab is in the background. *@
 @implements IDisposable
 @inject RisEventFeed Feed
 @inject LiveRefresh Refresh
 @inject IJSRuntime JS
+@inject SeasonState Season
 
 @if (_showPrompt)
 {
@@ -31,7 +32,7 @@
         if (!firstRender) return;
         try
         {
-            await JS.InvokeVoidAsync("amsLive.preload", (object)new[] { NewRequestSound });   // (object): send ONE array, not one argument per sound
+            await JS.InvokeVoidAsync("amsLive.preload", (object)new[] { NewRequestSound });   // (object) so I send ONE array, not one argument per sound
             _showPrompt = await JS.InvokeAsync<string>("amsLive.permission") == "default";
             _ready = true;
             if (_showPrompt) StateHasChanged();
@@ -76,10 +77,16 @@
             result == "granted" ? "success" : "danger");
     }
 
-    // Announcements, catalog, APP-CSE, … changed: open pages reload that data quietly.
+    // Announcements, catalog, APP-CSE and so on changed, so the open pages reload that data quietly.
     private void OnAreas(IReadOnlySet<string> areas) => _ = InvokeAsync(async () =>
     {
         if (!_ready) return;
+        if (areas.Contains("season"))
+        {
+            // The seasonal theme was changed in e-PINS, so I switch the open page to it right away.
+            Season.Forget();
+            try { await JS.InvokeVoidAsync("amsSeason.set", await Season.CurrentAsync()); } catch (JSDisconnectedException) { }
+        }
         await Refresh.RaiseAreasAsync(areas);
     });
 

@@ -1,0 +1,87 @@
+/* This is the stylesheet of the official paper forms, same on screen and on paper:
+   the Stock Card (Appendix 58) and the Report of Supplies and Materials Issued (RSMI).
+   The sheet is always black on white, even in dark mode. Printing goes through
+   amsPrint.form(), which prints only the sheet on A4 (ris.css has the @page and the print setup). */
+
+/* Paper on screen */
+.paper-scroll { overflow-x: auto; padding: 1.25rem; background: #e6e9f2; border-radius: var(--radius); }
+html[data-theme="dark"] .paper-scroll { background: #0b1022; }
+.paper {
+    width: 210mm; min-width: 210mm; margin: 0 auto; padding: 14mm 15mm;
+    background: #fff; color: #000; box-shadow: 0 8px 28px rgb(0 0 40 / .22);
+}
+.paper-pager .pager { border-top: 0; padding: .75rem 0 0; }
+.rsmi-doc .rsmi-paper + .rsmi-paper { margin-top: 1.25rem; }   /* every page is its own RSMI (NO. year-month-page) */
+
+.form-sheet { color: #000; background: #fff; }
+.form-sheet table { width: 100%; border-collapse: collapse; table-layout: fixed; color: #000; }
+.form-sheet td, .form-sheet th { color: #000; vertical-align: middle; overflow-wrap: anywhere; }
+.form-sheet .f-plain td { border: 0 !important; padding-left: 0; padding-right: 0; }
+.form-sheet .f-fill { display: inline-block; min-width: 38mm; border-bottom: 1px solid #000; padding: 0 1mm; }
+.form-sheet .t-c { text-align: center; }
+.form-sheet .t-r { text-align: right; font-variant-numeric: tabular-nums; }
+.form-sheet .t-l { text-align: left; }
+.form-sheet .f-fill-print { display: none; }
+
+/* Stock Card (Appendix 58): Times New Roman, every line ruled */
+.sc-sheet { font-family: "Times New Roman", Times, serif; font-size: 10.5pt; line-height: 1.2; }
+.sc-table td, .sc-table th { border: 1px solid #000; padding: 1mm 1.5mm; height: 7mm; }
+.sc-appendix { text-align: right; font-style: italic; font-size: 13pt; padding-bottom: 2mm !important; }
+.sc-title { text-align: center; font-weight: 700; font-size: 13pt; padding-bottom: 4mm !important; }
+.sc-entity td { padding-bottom: 1.5mm !important; font-size: 11pt; }
+.sc-entity .sc-fill-wide { min-width: 70mm; }
+.sc-entity .sc-fill-fund { min-width: 22mm; }
+.sc-entity td { white-space: nowrap; }
+.sc-table tbody td:nth-child(1), .sc-table tbody td:nth-child(2) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-info td { height: 5.5mm; padding-top: .5mm; padding-bottom: .5mm; }
+.sc-head th { text-align: center; font-weight: 700; height: 5.5mm; padding: .5mm 1mm; }
+.sc-head.sc-sub th { font-weight: 400; }
+.sc-table tbody td { font-size: 10pt; }
+
+/* RSMI: Arial, only column lines in the body, boxed recapitulation */
+.rsmi-sheet { font-family: Arial, "Helvetica Neue", Helvetica, sans-serif; font-size: 9pt; line-height: 1.2; }
+.rsmi-title { text-align: center; font-weight: 700; font-size: 14pt; padding-top: 4mm !important; }
+.rsmi-agency { text-align: center; font-size: 9.5pt; padding-bottom: 6mm !important; }
+.rsmi-agency span { font-size: 9.5pt; }
+.rsmi-dateline td { font-size: 10pt; padding-bottom: 2mm !important; }
+.rsmi-dateline td:last-child { text-align: right; }
+.rsmi-dateline .f-fill { min-width: 34mm; text-align: center; }
+
+.rsmi-table td, .rsmi-table th { border: 1px solid #000; padding: .6mm 1.2mm; }
+.rsmi-band td { text-align: center; border-top-width: 2px; }
+.rsmi-head th { text-align: center; font-weight: 400; border-bottom: 3px double #000; }
+.rsmi-head th:first-child { text-align: left; }
+.rsmi-small { font-size: 7.5pt; }
+/* Outer border */
+.rsmi-band td:first-child, .rsmi-head th:first-child, .rsmi-table tbody td:first-child { border-left-width: 2px; }
+.rsmi-band td:last-child, .rsmi-head th:last-child, .rsmi-table tbody td:last-child { border-right-width: 2px; }
+/* The lines and the recapitulation only have column lines */
+.rsmi-lines td, .rsmi-recap-row td, .rsmi-table .rsmi-open { border-top: 0; border-bottom: 0; height: 5.2mm; }
+.rsmi-lines tr:first-child td { padding-top: 1mm; }
+.rsmi-lines td:not(:nth-child(4)) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rsmi-boxed { height: 5mm; }
+.rsmi-recap-row td { height: 5mm; }
+.rsmi-certify td { border-top: 1px solid #000; border-bottom: 3px double #000; height: 5mm; }
+.rsmi-sign td { border-top: 0; border-bottom-width: 2px; vertical-align: top; padding: 1mm 2mm 1.5mm; }
+.rsmi-signer { padding: 9mm 0 0 14mm; line-height: 1.25; }
+.rsmi-signer strong { display: block; font-size: 10pt; }
+.rsmi-signer span { display: block; padding-left: 7mm; }
+.rsmi-posted { margin-bottom: 7mm; }
+.rsmi-accountant { margin: 0 1mm; text-align: center; line-height: 1.25; }
+.rsmi-accountant strong { display: block; font-size: 9pt; white-space: nowrap; border-bottom: 1px solid #000; padding: 0 1mm .4mm; }
+.rsmi-accountant span { display: block; }
+.rsmi-lines tr.rsmi-group-start td { padding-top: 2mm; }
+
+/* Print */
+@media print {
+    .paper-scroll { padding: 0 !important; background: none !important; overflow: visible !important; border-radius: 0; }
+    .paper { width: auto !important; min-width: 0 !important; padding: 0 !important; margin: 0 !important; box-shadow: none !important; }
+    .form-sheet, .form-sheet * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .form-sheet thead { display: table-header-group; }
+    .rsmi-paper + .rsmi-paper { break-before: page; margin-top: 0 !important; }   /* the heading repeats on every sheet */
+    .form-sheet tr { break-inside: avoid; }
+    .rsmi-recap, .rsmi-sign { break-inside: avoid; }
+    .form-sheet .f-fill-screen { display: none; }
+    .form-sheet .f-fill-print { display: table-row; }
+    .form-sheet .pg-off { display: table-row; }
+}

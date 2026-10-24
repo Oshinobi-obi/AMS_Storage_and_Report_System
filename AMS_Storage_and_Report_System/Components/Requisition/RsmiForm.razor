@@ -1,0 +1,216 @@
+@* This is the REPORT OF SUPPLIES AND MATERIALS ISSUED (RSMI), laid out like the AMS form.
+   RIS No. = month-day-office code, like 09-01-001 for ORD on September 1 (the codes are in
+   Settings, always 3 digits). Each office's RIS No. and name are only written on its first line,
+   and the same item issued to the same office on the same day is added into one line.
+   Every page is its own report: NO. = year-month-page (2026-09-0001, 2026-09-0002, ...), with
+   its own total, recapitulation and signatures. *@
+
+<div class="rsmi-doc">
+    @for (var p = 0; p < _pages.Count; p++)
+    {
+        var pg = _pages[p];
+        <div class="paper rsmi-paper">
+            <div class="form-sheet rsmi-sheet">
+                <table class="rsmi-table">
+                    <colgroup>
+                        <col style="width: 11%" /><col style="width: 14%" /><col style="width: 11.5%" /><col style="width: 29.5%" />
+                        <col style="width: 10.5%" /><col style="width: 11.5%" /><col style="width: 12%" />
+                    </colgroup>
+                    <thead>
+                        <tr class="f-plain"><td colspan="7" class="rsmi-title">REPORT OF SUPPLIES AND MATERIALS ISSUED</td></tr>
+                        <tr class="f-plain"><td colspan="7" class="rsmi-agency">@Agency<br /><span>AGENCY</span></td></tr>
+                        <tr class="f-plain rsmi-dateline">
+                            <td colspan="4"><strong>DATE:</strong> <span class="f-fill">@Date.ToString("MMMM d, yyyy")</span></td>
+                            <td colspan="3"><strong>NO:</strong> <span class="f-fill">@PageNumber(p)</span></td>
+                        </tr>
+                        <tr class="rsmi-band">
+                            <td colspan="4">To be filled up in the Supply and Property Unit</td>
+                            <td colspan="3">To be filled in the Accounting Unit</td>
+                        </tr>
+                        <tr class="rsmi-head">
+                            <th class="t-l"><strong>RIS NO.</strong></th><th>Division / Unit</th><th>Stock No.</th><th>Item.</th>
+                            <th class="rsmi-small">Qty. Issued</th><th>Unit Cost</th><th>Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody class="rsmi-lines">
+                        @for (var n = 0; n < pg.Rows.Count; n++)
+                        {
+                            var r = pg.Rows[n];
+                            var head = n == 0 || r.First;   // RIS No. and office: on the first line of each group, and at the top of a page
+                            <tr class="@(r.First && n > 0 ? "rsmi-group-start" : "")">
+                                <td class="t-c">@(head ? r.RisNo : "")</td>
+                                <td>@(head ? r.Office : "")</td>
+                                <td>@r.StockNo</td>
+                                <td>@r.Item</td>
+                                <td class="t-c">@r.Qty.ToString("N0")</td>
+                                <td class="t-r">@r.UnitCost.ToString("N2")</td>
+                                <td class="t-r">@r.Amount.ToString("N2")</td>
+                            </tr>
+                        }
+                        @for (var n = 0; n < pg.Fill; n++)
+                        {
+                            <tr class="rsmi-blank"><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+                        }
+                    </tbody>
+                    <tbody class="rsmi-recap">
+                        <tr>
+                            <td class="rsmi-open"></td>
+                            <td colspan="2" class="t-c rsmi-boxed">Recapitulation:</td>
+                            <td class="rsmi-open"></td>
+                            <td class="rsmi-open"></td>
+                            <td class="rsmi-boxed rsmi-small">Total Amount</td>
+                            <td class="rsmi-boxed t-r"><strong>@pg.Rows.Sum(r => r.Amount).ToString("N2")</strong></td>
+                        </tr>
+                        <tr>
+                            <td class="rsmi-open"></td>
+                            <td class="t-c rsmi-boxed">Stock No.</td>
+                            <td class="t-c rsmi-boxed">Total Cost</td>
+                            <td class="rsmi-open"></td>
+                            <td colspan="3" class="t-c rsmi-boxed">Recapitulation:</td>
+                        </tr>
+                        <tr>
+                            <td class="rsmi-open"></td>
+                            <td class="rsmi-open"></td>
+                            <td class="rsmi-open"></td>
+                            <td class="rsmi-open"></td>
+                            <td class="t-c rsmi-boxed">Stock No.</td>
+                            <td colspan="2" class="t-c rsmi-boxed">Total Cost</td>
+                        </tr>
+                        @foreach (var c in pg.Recap)
+                        {
+                            <tr class="rsmi-recap-row">
+                                <td class="rsmi-open"></td>
+                                <td class="t-c">@c.StockNo</td>
+                                <td class="t-r">@c.Total</td>
+                                <td class="rsmi-open"></td>
+                                <td class="t-c">@c.StockNo</td>
+                                <td colspan="2" class="t-r">@c.Total</td>
+                            </tr>
+                        }
+                        <tr class="rsmi-certify">
+                            <td colspan="4">I here certify to the correctness of the above Information</td>
+                            <td></td><td colspan="2"></td>
+                        </tr>
+                        <tr class="rsmi-sign">
+                            <td colspan="4">
+                                <div class="rsmi-signer">
+                                    <strong>@CertifiedBy</strong>
+                                    <span>@CertifiedPosition</span>
+                                </div>
+                            </td>
+                            <td colspan="3">
+                                <div class="rsmi-posted">Posted by / date:</div>
+                                <div class="rsmi-accountant">
+                                    <strong>@PostedBy</strong>
+                                    <span>@PostedPosition</span>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    // The RSMI is always certified by the Administrative Officer V and posted by the Accountant III.
+    private const string CertifiedBy = "ERNESTO M. MAGDAONG JR.", CertifiedPosition = "Administrative Officer V";
+    private const string PostedBy = "ROMAR ROENTGENT I. BALANAO", PostedPosition = "Accountant III";
+
+    [Parameter, EditorRequired] public List<RsmiLine> Lines { get; set; } = [];
+    [Parameter] public string Agency { get; set; } = "";
+    [Parameter] public DateTime Date { get; set; }
+    /// Year and month of the report. Page 1 is numbered {Month:yyyy-MM}-0001.
+    [Parameter] public DateTime Month { get; set; }
+
+    /// How many pages the report has (shown next to the Print button).
+    public int PageCount => _pages.Count;
+
+    public static string NumberOf(DateTime month, int pageIndex) => $"{month:yyyy-MM}-{pageIndex + 1:0000}";
+    private string PageNumber(int pageIndex) => NumberOf(Month, pageIndex);
+
+    private sealed record Row(string RisNo, string Office, string StockNo, string Item, int Qty, decimal UnitCost, bool First)
+    {
+        public decimal Amount => Qty * UnitCost;
+    }
+    private sealed record RecapRow(string StockNo, string Total);
+    private sealed record Page(List<Row> Rows, List<RecapRow> Recap, int Fill);
+
+    private List<Page> _pages = [];
+
+    // Space on one A4 page for the lines and the recapitulation, in millimeters (the heading,
+    // the recapitulation headings, the certification and the signatures take the rest).
+    private const double BodyMm = 186, LineMm = 5.4, GroupGapMm = 2, RecapMm = 5.2;
+    // A long item description wraps in the Item column (about 30 characters per line at 9 pt),
+    // and every extra line makes the row about 3.8 mm taller.
+    private const double WrapMm = 3.8;
+    private const int ItemCharsPerLine = 30;
+    private static double RowMm(Row r) => LineMm + (WrappedLines(r.Item) - 1) * WrapMm;
+    private static int WrappedLines(string text)
+    {
+        int lines = 1, len = 0;
+        foreach (var word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var w = word.Length;
+            if (len == 0) len = w;
+            else if (len + 1 + w <= ItemCharsPerLine) len += 1 + w;
+            else { lines++; len = w; }
+            while (len > ItemCharsPerLine) { lines++; len -= ItemCharsPerLine; }
+        }
+        return lines;
+    }
+    private const int MinRecap = 5;
+
+    protected override void OnParametersSet()
+    {
+        // One group per office per day, sorted by date then RIS code. One line per item and price.
+        var rows = Lines
+            .GroupBy(l => (Day: l.IssuedAt.Date, Code: l.RisCode ?? "", l.OfficeAcronym))
+            .OrderBy(g => g.Key.Day).ThenBy(g => CodeOrder(g.Key.Code)).ThenBy(g => g.Key.OfficeAcronym)
+            .SelectMany(g => g
+                .GroupBy(l => (l.StockNo, l.UnitCost))
+                .OrderBy(x => x.Key.StockNo, StringComparer.OrdinalIgnoreCase)
+                .Select((x, i) => new Row(RisNo(g.Key.Day, g.Key.Code), g.Key.OfficeAcronym, x.Key.StockNo, ItemText(x.First()),
+                                          x.Sum(l => l.Quantity), x.Key.UnitCost, i == 0)))
+            .ToList();
+
+        // Keep filling the page until the lines and their recapitulation won't fit anymore.
+        _pages = [];
+        var current = new List<Row>();
+        var used = 0.0;
+        var stockNos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in rows)
+        {
+            var h = RowMm(r) + (r.First && current.Count > 0 ? GroupGapMm : 0);
+            var recapAfter = Math.Max(MinRecap, stockNos.Count + (stockNos.Contains(r.StockNo) ? 0 : 1)) * RecapMm;
+            if (current.Count > 0 && used + h + recapAfter > BodyMm)
+            {
+                _pages.Add(Close(current, used, stockNos));
+                current = []; used = 0; stockNos.Clear();
+                h = RowMm(r);
+            }
+            current.Add(r);
+            used += h;
+            stockNos.Add(r.StockNo);
+        }
+        _pages.Add(Close(current, used, stockNos));   // also gives a blank form when nothing was issued
+    }
+
+    private static Page Close(List<Row> rows, double used, HashSet<string> stockNos)
+    {
+        var recap = rows.GroupBy(r => r.StockNo, StringComparer.OrdinalIgnoreCase).OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new RecapRow(g.Key, g.Sum(r => r.Amount).ToString("N2"))).ToList();
+        while (recap.Count < MinRecap) recap.Add(new RecapRow("", ""));
+        var fill = (int)Math.Floor((BodyMm - used - recap.Count * RecapMm) / LineMm);
+        return new Page(rows, recap, Math.Max(0, fill));
+    }
+
+    // 09-01-001: month, day, then the office's RIS code in 3 digits.
+    private static string RisNo(DateTime day, string code) =>
+        code.Length == 0 ? $"{day:MM}-{day:dd}" : $"{day:MM}-{day:dd}-{code.TrimStart('0').PadLeft(3, '0')}";
+
+    private static int CodeOrder(string code) => int.TryParse(code, out var n) ? n : int.MaxValue;
+
+    private static string ItemText(RsmiLine l) => string.IsNullOrWhiteSpace(l.Unit) ? l.Item : $"{l.Item}, {l.Unit}";
+}

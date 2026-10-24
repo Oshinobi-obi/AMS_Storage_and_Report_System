@@ -2,13 +2,14 @@
 @using System.Globalization
 @inject IJSRuntime JS
 @implements IAsyncDisposable
-@* Calendar that replaces the browser's plain date box, styled like the rest of AMS StockWatch.
-   Works with DateTime and DateTime? fields:
+@* This is my calendar that replaces the browser's plain date box, styled like the rest of e-PINS.
+   It works with DateTime and DateTime? fields:
      <DatePicker Id="r-date" @bind-Value="_receivedOn" Max="PhTime.Now.Date" />
-     <DatePicker Id="q-from" @bind-Value="_from" Placeholder="Any date" />           (DateTime? → has "Clear")
+     <DatePicker Id="q-from" @bind-Value="_from" Placeholder="Any date" />           (DateTime? has "Clear")
      <DatePicker Id="an-start" @bind-Value="_form.StartsAt" ShowTime="true" />       (date and time)
      <DatePicker Id="rs-month" @bind-Value="_month" MonthOnly="true" />              (month and year)
-   Keyboard: arrows move a day/week, Page Up/Down a month, Enter picks, Esc closes. *@
+     <DatePicker Id="bday" @bind-Value="_bday" StartWithYears="true" OpenAt="..." />  (birthday, year first)
+   Keys: arrows move a day or a week, Page Up/Down a month, Enter picks, Esc closes. *@
 
 <div class="datepicker @(_open ? "is-open" : "")">
     <button type="button" id="@Id" class="form-control datepicker-toggle" disabled="@Disabled" @ref="_toggle"
@@ -104,8 +105,13 @@
                 </div>
             }
 
+            @if (!HideToday || ShowTime || (Clearable && Current is not null))
+            {
             <div class="dp-foot">
-                <button type="button" class="dp-link" @onclick="PickTodayAsync" disabled="@(!TodayAllowed)">@(MonthOnly ? "This month" : ShowTime ? "Now" : "Today")</button>
+                @if (!HideToday)
+                {
+                    <button type="button" class="dp-link" @onclick="PickTodayAsync" disabled="@(!TodayAllowed)">@(MonthOnly ? "This month" : ShowTime ? "Now" : "Today")</button>
+                }
                 @if (Clearable && Current is not null)
                 {
                     <button type="button" class="dp-link is-muted" @onclick="ClearAsync">Clear</button>
@@ -115,6 +121,7 @@
                     <button type="button" class="btn btn-primary btn-sm ms-auto" @onclick="Close">Done</button>
                 }
             </div>
+            }
         </div>
     }
 </div>
@@ -125,13 +132,19 @@
     [Parameter] public EventCallback<TValue> ValueChanged { get; set; }
     [Parameter] public string Placeholder { get; set; } = "Select a date";
     [Parameter] public bool Disabled { get; set; }
-    /// Earliest and latest date that can be picked (the time part is ignored).
+    /// Earliest and latest date that can be picked (the time is ignored).
     [Parameter] public DateTime? Min { get; set; }
     [Parameter] public DateTime? Max { get; set; }
     /// Pick a date and a time (hour, minute, AM/PM).
     [Parameter] public bool ShowTime { get; set; }
-    /// Pick only a month and year; the value is the 1st of that month.
+    /// Pick only the month and year. The value is the 1st of that month.
     [Parameter] public bool MonthOnly { get; set; }
+    /// If the field is empty, open on this date instead of today.
+    [Parameter] public DateTime? OpenAt { get; set; }
+    /// If the field is empty, start with the years, then months, then days (for birthdays).
+    [Parameter] public bool StartWithYears { get; set; }
+    /// Hide the "Today" button (it doesn't make sense for a birthday).
+    [Parameter] public bool HideToday { get; set; }
 
     private enum View { Days, Months, Years }
     private static readonly CultureInfo En = CultureInfo.GetCultureInfo("en-US");
@@ -145,7 +158,7 @@
     private readonly string _uid = Guid.NewGuid().ToString("N")[..8];
 
     private static DateTime Today => PhTime.Now.Date;
-    private bool Clearable => default(TValue) is null;   // DateTime? fields can be emptied
+    private bool Clearable => default(TValue) is null;   // DateTime? fields can be cleared
     private DateTime? Current => (object?)Value is DateTime d ? d : null;
 
     private string Display(DateTime d) =>
@@ -178,7 +191,7 @@
     private bool YearAllowed(int y) => (Min is null || y >= Min.Value.Year) && (Max is null || y <= Max.Value.Year);
     private bool TodayAllowed => MonthOnly ? MonthAllowed(new DateTime(Today.Year, Today.Month, 1)) : Allowed(Today);
 
-    // ── Time ──
+    // Time
     private TimeSpan TimeOfDay => Current?.TimeOfDay ?? new TimeSpan(8, 0, 0);
     private int Hour12 => TimeOfDay.Hours % 12 == 0 ? 12 : TimeOfDay.Hours % 12;
     private int Minute => TimeOfDay.Minutes;
@@ -191,14 +204,14 @@
     private Task SetTimeAsync(int hours, int minutes) =>
         SetAsync((Current?.Date ?? _active.Date).Add(new TimeSpan(hours, minutes, 0)));
 
-    // ── Open / close / move ──
+    // Open, close and move
     private void Toggle()
     {
         if (_open) { Close(); return; }
-        _active = MonthOnly ? (Current ?? Today) : (Current?.Date ?? Clamp(Today));
-        _view = MonthOnly ? View.Months : View.Days;
+        _active = MonthOnly ? (Current ?? OpenAt ?? Today) : (Current?.Date ?? Clamp(OpenAt?.Date ?? Today));
+        _view = MonthOnly ? View.Months : StartWithYears && Current is null ? View.Years : View.Days;
         _open = true;
-        _focusPending = !MonthOnly;
+        _focusPending = _view == View.Days;
     }
 
     private void Close() => _open = false;
@@ -208,25 +221,25 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        // The calendar floats over the page (even inside a dialog), lined up with the field.
-        // ui.js places it below the field, or above it when there's no room, and keeps it on screen.
+        // The calendar floats over the page (even in a dialog) and lines up with the field.
+        // ui.js puts it below the field, or above if there's no room, and keeps it on screen.
         try
         {
             if (_open) { await JS.InvokeVoidAsync("amsDatePicker.attach", _toggle, _panel); _placed = true; }
             else if (_placed) { _placed = false; await JS.InvokeVoidAsync("amsDatePicker.detach"); }
         }
         catch (JSDisconnectedException) { }
-        catch (InvalidOperationException) { /* prerendering */ }
+        catch (InvalidOperationException) { /* still loading */ }
 
         if (!_focusPending || !_open || _view != View.Days) return;
         _focusPending = false;
-        try { await _grid.FocusAsync(); } catch { /* closed meanwhile */ }
+        try { await _grid.FocusAsync(); } catch { /* already closed */ }
     }
 
     public async ValueTask DisposeAsync()
     {
         if (!_placed) return;
-        try { await JS.InvokeVoidAsync("amsDatePicker.detach"); } catch { /* page closed */ }
+        try { await JS.InvokeVoidAsync("amsDatePicker.detach"); } catch { /* page already closed */ }
     }
 
     private void Page(int step) => _active = _view switch

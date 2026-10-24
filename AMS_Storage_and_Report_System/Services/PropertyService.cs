@@ -1,4 +1,4 @@
-// PropertyService.cs — the property register (property_items) and the figures
+// This is the property register (property_items) and the numbers
 // behind the property charts on the dashboard.
 
 using AMS_Storage_and_Report_System.Data;
@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AMS_Storage_and_Report_System.Services;
 
-/// One bar or slice: a label, its value, and (optionally) a colour and a link.
+/// One bar or slice: a label, its value, and optionally a color and a link.
 public sealed record ChartPoint(string Label, decimal Value, string? Color = null, string? Href = null, string? Note = null, string? Tooltip = null);
 
 public sealed class PropertyDashboard
@@ -27,7 +27,7 @@ public sealed class PropertyDashboard
 
 public sealed class PropertyService(IDbContextFactory<AppDbContext> dbFactory)
 {
-    // ── Register ────────────────────────────────────────────────────────
+    // Register
     public async Task<List<PropertyItem>> ListAsync()
     {
         await using var db = await dbFactory.CreateDbContextAsync();
@@ -63,6 +63,7 @@ public sealed class PropertyService(IDbContextFactory<AppDbContext> dbFactory)
         item.PropertyNo = no;
         item.Description = desc[..Math.Min(desc.Length, 500)];
         item.Classification = f.Classification;
+        item.EquipmentType = string.IsNullOrWhiteSpace(f.EquipmentType) ? null : f.EquipmentType.Trim()[..Math.Min(f.EquipmentType.Trim().Length, 80)];
         item.PropertyTypeId = f.PropertyTypeId;
         item.Quantity = f.Quantity;
         item.UnitCost = Math.Round(f.UnitCost, 2);
@@ -70,6 +71,7 @@ public sealed class PropertyService(IDbContextFactory<AppDbContext> dbFactory)
         item.OfficeId = f.OfficeId;
         item.PersonnelId = f.OfficeId is null ? null : f.PersonnelId;
         item.Status = f.Status;
+        if (oldStatus != f.Status) item.StatusBeforeReturn = null;   // changed by hand, so nothing to put back
         item.Remarks = string.IsNullOrWhiteSpace(f.Remarks) ? null : f.Remarks.Trim()[..Math.Min(f.Remarks.Trim().Length, 500)];
         if (f.PropertyId == 0) db.PropertyItems.Add(item);
 
@@ -92,14 +94,14 @@ public sealed class PropertyService(IDbContextFactory<AppDbContext> dbFactory)
         return OpResult.Success($"{item.PropertyNo} was removed from the register.");
     }
 
-    // ── Dashboard figures ───────────────────────────────────────────────
-    /// `since` limits the document and requisition charts to a period (null = all time).
+    // Dashboard numbers
+    // `since` limits the document and requisition charts to a period (null means all time).
     public async Task<PropertyDashboard> DashboardAsync(DateTime? since = null)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         var d = new PropertyDashboard();
 
-        // Counts are in units (quantity), so a lot of 10 chairs counts as 10.
+        // I count units (quantity), so a lot of 10 chairs counts as 10.
         var rows = await db.PropertyItems.AsNoTracking()
             .Select(p => new { p.Status, p.Classification, p.PropertyTypeId, p.Quantity, p.UnitCost, p.PersonnelId, Office = p.Office != null ? p.Office.OfficeAcronym : null })
             .ToListAsync();
@@ -129,7 +131,7 @@ public sealed class PropertyService(IDbContextFactory<AppDbContext> dbFactory)
             new("Returned", rows.Where(r => r.Status == "Returned").Sum(r => r.Quantity), "#3aa1a6"),
         ];
 
-        // Property documents (PAR / ICS / return slips) — the pie charts
+        // Property documents (PAR / ICS / return slips) for the pie charts
         var docs = await db.PropertyDocuments.AsNoTracking()
             .Where(x => since == null || x.UploadedAt >= since)
             .Select(x => new { x.DocumentType, Type = x.PropertyType != null ? x.PropertyType.TypeName : "" }).ToListAsync();

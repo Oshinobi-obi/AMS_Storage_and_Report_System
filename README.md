@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banner.svg" width="100%" alt="AMS StockWatch: stock, approvals and reports for the Asset Management Section">
+  <img src="docs/banner.svg" width="100%" alt="e-PINS: stock, approvals and reports for the Asset Management Section">
 </p>
 
 <p align="center">
@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Oshinobi-obi/AMS_Shopee">AMS Supplies (office portal)</a> ·
+  <a href="https://github.com/Oshinobi-obi/AMS_Shopee">e-SRS (office portal)</a> ·
   <a href="#getting-started">Run it locally</a>
 </p>
 
@@ -114,7 +114,7 @@ AMS_Storage_and_Report_System/
 ### 1. Requirements
 * [.NET 10 SDK](https://dotnet.microsoft.com/download)
 * MySQL **8.0.16 or newer**
-* The **database scripts** from the [AMS Supplies repository](https://github.com/Oshinobi-obi/AMS_Shopee/tree/master/AMS_Shopee/Database). Both websites share one database.
+* The **database scripts** from the [e-SRS repository](https://github.com/Oshinobi-obi/AMS_Shopee/tree/master/AMS_Shopee/Database). Both websites share one database.
 
 ### 2. Database
 Run `Database/000_base_schema.sql` (new databases only), then `001` → `006` in order. The starter account from `000` is:
@@ -158,7 +158,7 @@ The site opens at the sign-in page. Then set up in this order: **Catalog → Inv
 * HTTPS-only cookies, security headers, safe file paths, and sign-in keys encrypted at rest where the host allows it.
 
 ## Related
-* **[AMS Supplies](https://github.com/Oshinobi-obi/AMS_Shopee)**, the office portal: catalog, cart and RIS, My requisitions, My APP-CSE.
+* **[e-SRS](https://github.com/Oshinobi-obi/AMS_Shopee)**, the office portal: catalog, cart and RIS, My requisitions, My APP-CSE.
 
 ---
 

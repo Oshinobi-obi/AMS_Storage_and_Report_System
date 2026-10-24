@@ -1,0 +1,91 @@
+@* This is the STOCK CARD (Appendix 58), laid out like the official form, for the screen and print.
+   On screen it shows one page of rows at a time (Page / PageSize). When printing, every row is
+   printed, the header repeats on each sheet, and short cards get filled up to 22 ruled lines. *@
+
+<div class="form-sheet sc-sheet">
+    <table class="sc-table">
+        <colgroup>
+            <col style="width: 12%" /><col style="width: 17%" /><col style="width: 10%" /><col style="width: 10%" />
+            <col style="width: 18%" /><col style="width: 12%" /><col style="width: 21%" />
+        </colgroup>
+        <thead>
+            <tr class="f-plain"><td colspan="7" class="sc-appendix">Appendix 58</td></tr>
+            <tr class="f-plain"><td colspan="7" class="sc-title">STOCK CARD</td></tr>
+            <tr class="f-plain sc-entity">
+                <td colspan="5"><strong>Entity Name:</strong> <span class="f-fill sc-fill-wide">@EntityName</span></td>
+                <td colspan="2"><strong>Fund Cluster:</strong> <span class="f-fill sc-fill-fund">@FundCluster</span></td>
+            </tr>
+            <tr class="sc-info">
+                <td colspan="5">Item : <strong>@Item.ItemName</strong></td>
+                <td colspan="2">Stock No. : <strong>@Item.StockNo</strong></td>
+            </tr>
+            <tr class="sc-info">
+                <td colspan="5">Description : @Item.Specifications</td>
+                <td colspan="2">Re-order Point : @Item.ReorderLevel.ToString("N0")</td>
+            </tr>
+            <tr class="sc-info">
+                <td colspan="5">Unit of Measurement : @Item.UnitOfMeasure</td>
+                <td colspan="2"></td>
+            </tr>
+            <tr class="sc-head">
+                <th rowspan="2">Date</th>
+                <th rowspan="2">Reference</th>
+                <th><em>Receipt</em></th>
+                <th colspan="2"><em>Issue</em></th>
+                <th><em>Balance</em></th>
+                <th rowspan="2">No. of Days to Consume</th>
+            </tr>
+            <tr class="sc-head sc-sub">
+                <th>Qty.</th><th>Qty.</th><th>Office</th><th>Qty.</th>
+            </tr>
+        </thead>
+        <tbody>
+            @for (var n = 0; n < Rows.Count; n++)
+            {
+                var r = Rows[n];
+                <tr class="@Paging.RowClass(n, Page, Rows.Count, PageSize)">
+                    <td class="t-c">@r.Date.ToString("MM/dd/yyyy")</td>
+                    <td>@(string.IsNullOrWhiteSpace(r.Reference) ? r.Type : r.Reference)</td>
+                    <td class="t-c">@(r.Receipt == 0 ? "" : r.Receipt.ToString("N0"))</td>
+                    <td class="t-c">@(r.Issue == 0 ? "" : r.Issue.ToString("N0"))</td>
+                    <td>@(r.Issue == 0 ? "" : r.Office ?? r.Type)</td>
+                    <td class="t-c">@r.Balance.ToString("N0")</td>
+                    <td></td>
+                </tr>
+            }
+            @* Empty ruled lines: on screen they keep the page the same height, on paper they fill the card *@
+            @for (var n = 0; n < ScreenFill; n++)
+            {
+                <tr class="f-fill-screen"><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+            }
+            @for (var n = 0; n < PrintFill; n++)
+            {
+                <tr class="f-fill-print"><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public SupplyItem Item { get; set; } = default!;
+    [Parameter, EditorRequired] public List<StockCardRow> Rows { get; set; } = [];
+    [Parameter] public string EntityName { get; set; } = "";
+    [Parameter] public string FundCluster { get; set; } = "";
+    [Parameter] public int Page { get; set; } = 1;
+    [Parameter] public int PageSize { get; set; } = Paging.Size;
+
+    private const int PaperLines = 22;
+
+    private int RowsOnPage
+    {
+        get
+        {
+            var pages = Math.Max(1, (Rows.Count + PageSize - 1) / PageSize);
+            var p = Math.Clamp(Page, 1, pages);
+            return Math.Max(0, Math.Min(PageSize, Rows.Count - (p - 1) * PageSize));
+        }
+    }
+
+    private int ScreenFill => PageSize - RowsOnPage;
+    private int PrintFill => Math.Max(0, PaperLines - Rows.Count);
+}

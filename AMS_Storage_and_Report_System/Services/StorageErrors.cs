@@ -2,7 +2,7 @@ using MySqlConnector;
 
 namespace AMS_Storage_and_Report_System.Services;
 
-/// Turns database errors from saving files (photos, signed RIS) into a message AMS can act on.
+/// Turns database errors from saving files (photos, signed RIS) into a message AMS can understand.
 public static class StorageErrors
 {
     public static string Explain(Exception ex, string what)

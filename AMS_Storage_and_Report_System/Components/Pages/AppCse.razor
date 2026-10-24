@@ -9,7 +9,7 @@
 @inject ModalService Modal
 @inject IJSRuntime JS
 
-<PageTitle>APP-CSE | AMS StockWatch</PageTitle>
+<PageTitle>APP-CSE | e-PINS</PageTitle>
 
 <PageHeader Title="APP-CSE" Subtitle="Each office's Annual Procurement Plan for Common-Use Supplies. Offices can only request what's in their APP-CSE.">
     <Actions>
@@ -105,13 +105,14 @@
                                         <table class="data-table">
                                             <thead><tr><th>Stock no.</th><th>Item</th><th>Unit</th><th class="t-num">Unit price</th><th>Category</th></tr></thead>
                                             <tbody>
-                                                @foreach (var n in _preview.NewItems)
+                                                @foreach (var n in _preview.NewItems.Page(_pNew))
                                                 {
                                                     <tr><td class="text-nowrap">@n.StockNo</td><td>@n.Name</td><td>@n.Unit</td><td class="t-num">@(n.Price > 0 ? "₱" + n.Price.ToString("N2") : "–")</td><td class="is-muted">@n.Category</td></tr>
                                                 }
                                             </tbody>
                                         </table>
                                     </div>
+                                    <Pager Total="_preview.NewItems.Count" @bind-Page="_pNew" ResetKey="@_preview.GetHashCode().ToString()" Label="New item pages" />
                                 </details>
                             </div>
                         }
@@ -139,7 +140,7 @@
                     <table class="data-table">
                         <thead><tr><th>@(_preview.Format == "official" ? "Sheet / row" : "Row")</th><th>Office</th><th>Item</th><th class="t-num">Q1</th><th class="t-num">Q2</th><th class="t-num">Q3</th><th class="t-num">Q4</th><th class="t-num">New total</th><th class="t-num">Was</th><th>Result</th></tr></thead>
                         <tbody>
-                            @foreach (var r in _preview.Rows.OrderBy(r => r.Error is null).ThenBy(r => r.Change == "Unchanged").ThenBy(r => r.RowNumber).Take(500))
+                            @foreach (var r in _preview.Rows.OrderBy(r => r.Error is null).ThenBy(r => r.Change == "Unchanged").ThenBy(r => r.RowNumber).Page(_pPreview))
                             {
                                 <tr>
                                     <td class="is-muted text-nowrap">@(r.Sheet is null ? r.RowNumber.ToString() : $"{r.Sheet} · {r.RowNumber}")</td>
@@ -161,10 +162,7 @@
                         </tbody>
                     </table>
                 </div>
-                @if (_preview.Rows.Count > 500)
-                {
-                    <p class="small text-muted-2 px-3 py-2 mb-0">Showing the first 500 rows. All @_preview.Rows.Count rows will be imported.</p>
-                }
+                <Pager Total="_preview.Rows.Count" @bind-Page="_pPreview" ResetKey="@_preview.GetHashCode().ToString()" Label="Preview pages" />
             }
         </section>
     }
@@ -188,7 +186,7 @@
                 <table class="data-table">
                     <thead><tr><th>Office</th><th>Item</th><th class="t-num">Q1</th><th class="t-num">Q2</th><th class="t-num">Q3</th><th class="t-num">Q4</th><th class="t-num">Total</th><th class="t-num">Issued</th></tr></thead>
                     <tbody>
-                        @foreach (var a in _allocations.Take(400))
+                        @foreach (var a in _allocations.Page(_pAlloc))
                         {
                             <tr>
                                 <td class="cell-strong">@a.Office?.OfficeAcronym</td>
@@ -201,10 +199,7 @@
                     </tbody>
                 </table>
             </div>
-            @if (_allocations.Count > 400)
-            {
-                <p class="small text-muted-2 px-3 py-2 mb-0">Showing 400 of @_allocations.Count rows. Choose an office to see all of its items.</p>
-            }
+            <Pager Total="_allocations.Count" @bind-Page="_pAlloc" ResetKey="@($"{_year}|{_officeId}")" Label="APP-CSE pages" />
         }
     </section>
 
@@ -216,18 +211,23 @@
                 <table class="data-table">
                     <thead><tr><th>When</th><th>File</th><th>Result</th></tr></thead>
                     <tbody>
-                        @foreach (var u in _uploads)
+                        @foreach (var u in _uploads.Page(_pUploads))
                         {
                             <tr><td class="text-nowrap">@u.UploadedAt.ToString("MMM d, yyyy h:mm tt")</td><td>@u.OriginalFileName</td><td class="is-muted">@u.Notes</td></tr>
                         }
                     </tbody>
                 </table>
             </div>
+            <Pager Total="_uploads.Count" @bind-Page="_pUploads" ResetKey="@_year.ToString()" Label="Upload pages" />
         </section>
     }
 </div>
 
 @code {
+    private int _pNew = 1;
+    private int _pPreview = 1;
+    private int _pUploads = 1;
+    private int _pAlloc = 1;
     private int _year = PhTime.Now.Year;
     private int _officeId;
     private uint _userId;
@@ -326,14 +326,14 @@
         await JS.InvokeVoidAsync("showToast", $"APP-CSE for FY {p.FiscalYear} saved.", "success");
     }
 
-    // Live: when appcse, catalog change on either website, reload without a refresh.
+    // Live update: when APP-CSE or the catalog changes on either website, reload without refreshing.
     private static readonly string[] LiveAreas = ["appcse", "catalog"];
     protected override void OnInitialized() => Live.AreasChanged += OnAreasAsync;
 
     private async Task OnAreasAsync(IReadOnlySet<string> areas)
     {
         if (!areas.Overlaps(LiveAreas)) return;
-        // Swap the rows in place (no "Loading…" blink while someone is reading the table)
+        // Swap the rows in place (no "Loading..." blink while someone is reading the table)
         _allocations = await AppCseSvc.AllocationsAsync(_year, _officeId);
         StateHasChanged();
     }

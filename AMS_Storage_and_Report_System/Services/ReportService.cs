@@ -1,8 +1,8 @@
-// ReportService.cs — AMS reports, on screen and as Excel files:
-//   • RSMI (Report of Supplies and Materials Issued) for a month
-//   • APP-CSE utilization per office
-//   • Reorder list (items at or below their low-stock level)
-//   • Stock card per item (rows come from StockService)
+// These are the AMS reports, on screen and as Excel files:
+//   RSMI (Report of Supplies and Materials Issued) for a month
+//   APP-CSE utilization per office
+//   Reorder list (items at or below their low-stock level)
+//   Stock card per item (the rows come from StockService)
 
 using AMS_Storage_and_Report_System.Data;
 using AMS_Storage_and_Report_System.Models;
@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore;
 namespace AMS_Storage_and_Report_System.Services;
 
 public sealed record RsmiLine(DateTime IssuedAt, string RisNo, string? ResponsibilityCenterCode, string OfficeAcronym,
-                              string StockNo, string Item, string Unit, int Quantity, decimal UnitCost)
+                              string StockNo, string Item, string Unit, int Quantity, decimal UnitCost, string? RisCode = null)
 {
     public decimal Amount => Quantity * UnitCost;
 }
@@ -28,19 +28,25 @@ public sealed record UtilizationRow(string OfficeAcronym, string OfficeName, str
 
 public sealed record ReorderRow(string StockNo, string Item, string Unit, int OnHand, int ReorderLevel, int IssuedLast90Days, decimal UnitPrice)
 {
-    /// A rough guide: enough to cover about three months of issues plus the low-stock buffer.
+    /// Just a rough guide: enough for about three months of issues plus the low-stock buffer.
     public int SuggestedOrder => Math.Max(0, IssuedLast90Days + ReorderLevel - OnHand);
 }
 
 public sealed class ReportService(IDbContextFactory<AppDbContext> dbFactory, StockService stock)
 {
-    // ── RSMI ────────────────────────────────────────────────────────────
+    // RSMI
     public async Task<List<RsmiLine>> RsmiAsync(int year, int month)
     {
         var from = new DateTime(year, month, 1);
         var to = from.AddMonths(1);
         await using var db = await dbFactory.CreateDbContextAsync();
-        return await db.RisItems.AsNoTracking()
+        // RIS code of each office (01 ORD, 02 ARD...). A unit without its own code uses its division's.
+        var codes = (await db.Database.SqlQuery<OfficeRisCode>($@"
+                SELECT o.office_acronym AS Acronym, COALESCE(NULLIF(o.ris_code, ''), p.ris_code) AS Code
+                  FROM offices o LEFT JOIN offices p ON p.office_id = o.parent_office_id").ToListAsync())
+            .GroupBy(c => c.Acronym, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Code, StringComparer.OrdinalIgnoreCase);
+        var lines = await db.RisItems.AsNoTracking()
             .Join(db.RisTransactions.Where(r => r.Status == RisStatus.Issued && r.IssuedAt >= from && r.IssuedAt < to),
                   i => i.RisId, r => r.RisId, (i, r) => new { i, r })
             .Where(x => x.i.IssuedQty > 0)
@@ -48,6 +54,13 @@ public sealed class ReportService(IDbContextFactory<AppDbContext> dbFactory, Sto
             .Select(x => new RsmiLine(x.r.IssuedAt!.Value, x.r.RisNo, x.r.ResponsibilityCenterCode, x.r.Office!.OfficeAcronym,
                                       x.i.StockNo, x.i.ItemDescription, x.i.UnitOfMeasure, x.i.IssuedQty!.Value, x.i.UnitCost))
             .ToListAsync();
+        return lines.Select(l => l with { RisCode = codes.GetValueOrDefault(l.OfficeAcronym) }).ToList();
+    }
+
+    private sealed class OfficeRisCode
+    {
+        public string Acronym { get; set; } = "";
+        public string? Code { get; set; }
     }
 
     public static List<RsmiRecap> Recap(IEnumerable<RsmiLine> lines) =>
@@ -55,15 +68,19 @@ public sealed class ReportService(IDbContextFactory<AppDbContext> dbFactory, Sto
              .Select(g => new RsmiRecap(g.Key.StockNo, g.First().Item, g.First().Unit, g.Sum(l => l.Quantity), g.Key.UnitCost, g.Sum(l => l.Amount)))
              .OrderBy(r => r.StockNo).ToList();
 
-    // ── APP-CSE utilization ─────────────────────────────────────────────
+    // APP-CSE utilization
     public async Task<List<UtilizationRow>> UtilizationAsync(int year, int officeId)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        var pending = await db.RisItems
+        // Pending requests count on the APP-CSE they use (LRPO's count on ESSD's).
+        var budgetOf = await AppCseScope.BudgetMapAsync(db);
+        var pending = (await db.RisItems
             .Join(db.RisTransactions.Where(r => r.FiscalYear == year && r.Status == RisStatus.Pending), i => i.RisId, r => r.RisId, (i, r) => new { r.OfficeId, i.ItemId, i.RequestedQty })
             .GroupBy(x => new { x.OfficeId, x.ItemId })
             .Select(g => new { g.Key.OfficeId, g.Key.ItemId, Qty = g.Sum(x => x.RequestedQty) })
-            .ToDictionaryAsync(x => (x.OfficeId, x.ItemId), x => x.Qty);
+            .ToListAsync())
+            .GroupBy(x => (budgetOf.GetValueOrDefault(x.OfficeId, x.OfficeId), x.ItemId))
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.Qty));
 
         var rows = await db.AppCseAllocations.AsNoTracking()
             .Where(a => a.FiscalYear == year && (officeId == 0 || a.OfficeId == officeId))
@@ -75,7 +92,7 @@ public sealed class ReportService(IDbContextFactory<AppDbContext> dbFactory, Sto
                                                    a.AllocatedQty, a.IssuedQty, pending.GetValueOrDefault((a.OfficeId, a.ItemId)))).ToList();
     }
 
-    // ── Reorder list ────────────────────────────────────────────────────
+    // Reorder list
     public async Task<List<ReorderRow>> ReorderAsync(bool onlyLow)
     {
         var since = PhTime.Now.AddDays(-90);
@@ -90,7 +107,7 @@ public sealed class ReportService(IDbContextFactory<AppDbContext> dbFactory, Sto
                                                 issued.GetValueOrDefault(i.ItemId), i.UnitPrice)).ToList();
     }
 
-    // ── Excel exports ───────────────────────────────────────────────────
+    // Excel exports
     public async Task<byte[]> RsmiExcelAsync(int year, int month, string entityName)
     {
         var lines = await RsmiAsync(year, month);
@@ -150,7 +167,7 @@ public sealed class ReportService(IDbContextFactory<AppDbContext> dbFactory, Sto
         return Save(wb, ws);
     }
 
-    // ── Excel helpers ───────────────────────────────────────────────────
+    // Excel helpers
     private static int Header(IXLWorksheet ws, int row, params string[] titles)
     {
         for (var c = 0; c < titles.Length; c++) ws.Cell(row, c + 1).Value = titles[c];

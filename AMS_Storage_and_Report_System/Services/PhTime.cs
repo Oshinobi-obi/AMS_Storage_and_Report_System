@@ -1,8 +1,8 @@
 namespace AMS_Storage_and_Report_System.Services;
 
-/// One clock for the whole app. The database's CURRENT_TIMESTAMP defaults and the
-/// AMS Supplies portal both use Philippine time, so the admin side does too.
-/// Some Windows hosts don't know "Asia/Manila", so fall back to the Windows name, then to UTC+8.
+/// One clock for the whole app. The database CURRENT_TIMESTAMP defaults and e-SRS
+/// both use Philippine time, so the admin side does too.
+/// Some Windows hosts don't know "Asia/Manila", so I try the Windows name next, then UTC+8.
 public static class PhTime
 {
     private static readonly TimeZoneInfo Manila = Find();

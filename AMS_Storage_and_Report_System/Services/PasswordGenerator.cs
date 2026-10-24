@@ -18,7 +18,7 @@ public class PasswordGenerator
         var allChars = LowercaseChars + UppercaseChars + DigitChars + SpecialChars;
         var password = new StringBuilder(length);
 
-        // Ensure at least one character from each category
+        // Make sure there's at least one character from each group
         password.Append(GetRandomChar(LowercaseChars));
         password.Append(GetRandomChar(UppercaseChars));
         password.Append(GetRandomChar(DigitChars));
@@ -30,7 +30,7 @@ public class PasswordGenerator
             password.Append(GetRandomChar(allChars));
         }
 
-        // Shuffle the password to avoid predictable patterns
+        // Shuffle the password so there's no pattern
         return ShuffleString(password.ToString());
     }
 
